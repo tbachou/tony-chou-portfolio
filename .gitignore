@@ -1,0 +1,24 @@
+node_modules/
+
+# Build output
+dist/
+.next/
+out/
+build/
+
+# Env files (each workspace's own .env is gitignored individually too)
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Prisma generated client
+src/generated/prisma/
