@@ -61,6 +61,21 @@ During the confirmation review, the engineer added streaming (the Anthropic SDK 
 
 The database host was then reconsidered separately: Neon versus Prisma's own Prisma Postgres, a real, current, generally available product built on Prisma's own infrastructure, not Neon under the hood. Prisma Postgres removes the database's own cold start entirely and the pooled/direct URL split, at the cost of Neon's database branching feature and being the newer product of the two. The engineer picked Prisma Postgres, one vendor for ORM and database instead of two, and in the same message also cut Docker, which had been kept through the first complexity pass on the grounds that container skills are broadly transferable. On reflection that reasoning still held on its own terms, but with NestJS, Prisma, Prisma Postgres, and streaming already new in this stack, Docker was one more new piece the engineer judged not worth adding at the same time, the same complexity discipline applied a second time rather than a one off exception. The final stack is NestJS, Prisma, Prisma Postgres, and Render's native buildpack: every remaining piece maps to either the stated learning goal or a real functional requirement (streaming, rate limiting), and nothing is carried for its own sake.
 
+## Reconsidered: Arcjet for bot detection and abuse prevention (2026-08-03)
+
+After the initial build, the engineer asked whether the already decided rate limiting plan was enough to stop the public /conversation/turn endpoint from being abused, and specifically whether Arcjet (a hosted bot detection and rate limiting tool) would help, wanting to make sure the answer was a good tradeoff and not just more system for its own sake, the same discipline that cut Docker and Turborepo earlier in this spec.
+
+**What Arcjet would add.** A dedicated `@arcjet/nest` package gives basic, fully server side bot signals (user agent pattern matching, IP reputation, reverse DNS) with a small amount of integration code. Its stronger detection, called Advanced Bot Signals, catches automation that mimics a real browser session, but that detection depends on a WebAssembly telemetry collector running in the browser tab.
+
+**Why it was not adopted.** Three reasons, checked against current Arcjet documentation and pricing:
+- The endpoint this would protect is a pure backend API, not a browser rendered page. A scripted abuser calls it directly and never runs the browser telemetry collector, so Advanced Bot Signals, Arcjet's actual differentiator, does not see that traffic at all. Only the basic, easily spoofed user agent and IP checks would apply, a weak improvement over what is already planned.
+- Arcjet is a hosted, SaaS dependent service: it needs its own account and API key, and the SDK calls out to Arcjet's servers for each decision. That is a new runtime dependency and a new vendor account on a project that already, on its own terms earlier in this spec, cut Docker and Turborepo specifically to avoid adding pieces that were not clearly earning their cost.
+- Its free tier request limits are not published; the docs say it is "generous for side projects" without a number, which is not something to build a cost sensitive, solo, no revenue project's abuse plan around without contacting sales first. Separately, Arcjet's current package is ESM only and does not natively support CommonJS, which this project's apps/api deliberately kept (the engineer considered and declined a full ES module migration in the same session), so adopting it now would either need an experimental Node flag or reopening that closed question.
+
+**Why the existing plan already covers the real risk.** The persisted daily counter in Postgres (see the Rate limiting row in index.md) caps total spend regardless of how abuse is distributed across IPs or how convincing the traffic looks, which is the actual financial exposure. Arcjet's marginal value on top of that is closer to a quality of service concern, keeping bots from eating the daily budget before real visitors arrive, than a spend risk, and that concern is real but low likelihood for a low traffic personal portfolio site. Anthropic's own console spend cap remains the last resort backstop either way.
+
+**When to revisit.** If real abuse is actually observed in production logs or spend, or if a browser facing surface is added elsewhere in the app (a public facing form, for example) where Arcjet's browser telemetry based detection would actually apply, this is worth a fresh look.
+
 ## References
 
 **Project sources** (verifiable, in this repo):
@@ -83,3 +98,8 @@ The database host was then reconsidered separately: Neon versus Prisma's own Pri
 - Prisma Postgres overview: https://www.prisma.io/docs/postgres
 - Prisma Postgres launch blog: https://www.prisma.io/blog/prisma-postgres-the-future-of-serverless-databases
 - Prisma Postgres vs Neon pricing comparison, 2026: https://www.prisma.io/blog/prisma-postgres-vs-neon-pricing-2026
+- Arcjet NestJS reference docs: https://docs.arcjet.com/reference/nestjs/
+- Arcjet bot protection docs: https://docs.arcjet.com/bot-protection/
+- Arcjet advanced bot signals announcement: https://blog.arcjet.com/announcing-advanced-bot-signals-to-detect-automation-without-captchas/
+- Arcjet pricing: https://arcjet.com/pricing
+- Arcjet limitations: https://docs.arcjet.com/limitations
