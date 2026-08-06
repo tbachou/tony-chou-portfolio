@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   InternalServerErrorException,
   Post,
@@ -7,28 +8,21 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { ConversationService, HistoryTurn } from './conversation.service';
+import { ConversationService } from './conversation.service';
+import { ConversationTurnRequestDto } from './dto/conversation-turn-request.dto';
 import { hashIp, resolveClientIp } from './ip-hash.util';
 import { writeSseEvent } from './sse.util';
-
-type ConversationTurnRequestBody = {
-  topicId?: string;
-  conversationId?: string;
-  history?: HistoryTurn[];
-};
 
 @Controller('conversation')
 export class ConversationController {
   constructor(private readonly conversationService: ConversationService) {}
 
   @Post('turn')
-  async turn(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const body = req.body as ConversationTurnRequestBody;
-
-    if (!body?.topicId || typeof body.topicId !== 'string') {
-      throw new BadRequestException('topicId is required');
-    }
-
+  async turn(
+    @Body() body: ConversationTurnRequestDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
     const topic = await this.conversationService.resolveTopic(body.topicId);
     if (!topic) {
       throw new BadRequestException('topicId does not match any seeded Topic');
@@ -44,16 +38,27 @@ export class ConversationController {
     }
 
     const hashedIp = hashIp(resolveClientIp(req));
-    const history = body.history ?? [];
+    const history = body.history;
 
+    // Resolves turnIndex, rejects an already-concluded conversation, and
+    // claims the turn slot via the DB unique constraint — all before any
+    // SSE stream opens, so these failures surface as plain HTTP errors.
+    const prepared = await this.conversationService.prepareTurn({
+      topic,
+      conversationId: body.conversationId,
+      history,
+      hashedIp,
+    });
+
+    res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    await this.conversationService.runTurnPair({
+    await this.conversationService.generateTurnPair({
       topic,
-      conversationId: body.conversationId,
+      prepared,
       history,
       hashedIp,
       emit: (event, data) => writeSseEvent(res, event, data),
