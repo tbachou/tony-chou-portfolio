@@ -10,7 +10,7 @@ A public, no-auth portfolio web app centered on a **3D interactive room** (Three
 
 - **AI role — "Showcase mode"**: AI generates both the interviewer's questions and Tony's answers. Visitor watches/steers; doesn't need to type their own answers.
 - **V1 scope — full 3D from day one**: build the Three.js interactive room now, not a 2D placeholder first. (This was a deliberate choice against the lower-risk recommendation of 2D-first — go in with eyes open that this is the harder, slower path, but it's the one Tony wants.)
-- **Backend — NestJS + TypeORM**, not Next.js API routes alone. Deliberate choice to get real practice with the stack Tony is currently learning, even though a public no-auth app doesn't strictly need this much backend. Treat "built a NestJS backend" as itself a resume-worthy line from this project.
+- **Backend — NestJS + Prisma (Prisma Postgres)**, not Next.js API routes alone. Deliberate choice to get real practice with the stack Tony is currently learning, even though a public no-auth app doesn't strictly need this much backend. Treat "built a NestJS backend" as itself a resume-worthy line from this project. (Superseded TypeORM with Prisma during the [0001 backend-stack spec](docs/specs/_root/0001-backend-ai-stack/index.md) — Prisma won on tooling/schema workflow.)
 - **Location**: `/Users/tonychou/source/portfolio` (separate from the `product-forge` client repo — do not mix them).
 - **No auth required** — it's a public showcase app.
 

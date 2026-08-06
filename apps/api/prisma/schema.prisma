@@ -14,17 +14,57 @@ datasource db {
   provider = "postgresql"
 }
 
-// Starter models — replace with your own
-model Author {
-  id    Int    @id @default(autoincrement())
-  name  String
-  posts Post[]
+enum StoryOwnership {
+  SOLO
+  CONTRIBUTED
+  CO_LED
 }
 
-model Post {
-  id       Int    @id @default(autoincrement())
-  title    String
-  content  String?
-  author   Author @relation(fields: [authorId], references: [id])
-  authorId Int
+enum ConversationRole {
+  INTERVIEWER
+  TONY
+}
+
+model Story {
+  id              String         @id @default(cuid())
+  title           String
+  ownership       StoryOwnership
+  engagement      String
+  summary         String
+  requiredFraming String?
+  topics          Topic[]
+}
+
+model Topic {
+  id                String             @id @default(cuid())
+  slug              String             @unique
+  label             String
+  description       String
+  sortOrder         Int
+  stories           Story[]
+  conversationTurns ConversationTurn[]
+}
+
+model ConversationTurn {
+  id             String           @id @default(cuid())
+  conversationId String
+  topic          Topic            @relation(fields: [topicId], references: [id])
+  topicId        String
+  turnIndex      Int
+  role           ConversationRole
+  text           String
+  tokenCount     Int
+  hashedIp       String
+  createdAt      DateTime         @default(now())
+
+  @@unique([conversationId, turnIndex, role])
+  @@index([conversationId])
+  @@index([createdAt])
+  @@index([hashedIp])
+}
+
+model DailyUsageCounter {
+  date       DateTime @id @db.Date
+  turnCount  Int      @default(0)
+  tokenCount Int      @default(0)
 }
