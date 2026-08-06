@@ -1,8 +1,14 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Render sits behind a proxy; trust its first hop so req.ip resolves the
+  // real caller instead of the proxy, for the conversation endpoint's
+  // hashedIp and rate limiting.
+  app.set('trust proxy', 1);
 
   const corsOrigin = process.env.CORS_ORIGIN?.split(',') ?? [
     'http://localhost:3000',
