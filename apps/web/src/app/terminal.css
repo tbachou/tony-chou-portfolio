@@ -1,7 +1,7 @@
-/* Retro terminal / CRT design system — scoped to .terminal-theme only.
-   See apps/web/design.md for the art direction; this file is the token
-   source of truth. Deliberately does not touch :root or globals.css, so
-   the public site's own theme is untouched. */
+/* Retro terminal / CRT design system — scoped to .terminal-theme, applied
+   to <body> in the root layout so the whole app (public site + internal
+   admin) shares one identity. See apps/web/design.md for the art
+   direction; this file is the token source of truth. */
 
 .terminal-theme {
   /* Colors — contrast ratios verified against #0a0a0f canvas in design.md */
@@ -117,4 +117,47 @@
     animation: none;
     opacity: 1;
   }
+}
+
+/* Custom mouse cursor — a phosphor-block trail with a mix-blend-mode
+   invert, the same trick as a spotlight blend cursor but sharp-edged and
+   green, matching the CRT identity. RetroCursor.tsx only adds the
+   `retro-cursor-active` class when JS has confirmed a fine pointer and no
+   reduced-motion preference, so the native cursor is the safe default. */
+body.retro-cursor-active,
+body.retro-cursor-active a,
+body.retro-cursor-active button,
+body.retro-cursor-active [role='button'] {
+  cursor: none;
+}
+
+.retro-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  background: var(--color-accent);
+  mix-blend-mode: difference;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  transition:
+    width var(--duration-base) var(--ease-standard),
+    height var(--duration-base) var(--ease-standard),
+    opacity var(--duration-base) var(--ease-standard);
+}
+
+body.retro-cursor-active .retro-cursor {
+  opacity: 1;
+}
+
+.retro-cursor[data-hover='true'] {
+  width: 24px;
+  height: 24px;
+}
+
+.retro-cursor[data-hidden='true'] {
+  opacity: 0;
 }

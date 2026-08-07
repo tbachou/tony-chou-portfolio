@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ConversationTurn, Topic, fetchTopics, streamNextTurn } from '@/lib/api';
+import { TerminalWindow } from './TerminalWindow';
 import { TopicPicker } from './TopicPicker';
 
 type PanelState =
@@ -115,43 +116,37 @@ export function ConversationPanel() {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+    <TerminalWindow path={topic ? `tonychou@portfolio:~/interview/${topic.slug}$` : 'tonychou@portfolio:~/interview$'}>
       {panelState.status === 'loading-topics' ? (
-        <div className="p-6 sm:p-8">
-          <p className="text-sm text-muted" role="status" aria-live="polite">
-            Loading topics&hellip;
-          </p>
-        </div>
+        <p className="text-term-sm text-term-muted" role="status" aria-live="polite">
+          LOADING TOPICS<span className="terminal-cursor" aria-hidden="true" />
+        </p>
       ) : panelState.status === 'topics-error' ? (
-        <div className="p-6 sm:p-8">
-          <p className="text-sm text-red-400" role="alert">
-            {panelState.message}
-          </p>
-        </div>
+        <p className="text-term-sm text-term-error" role="alert">
+          !! {panelState.message}
+        </p>
       ) : panelState.status === 'idle' && !topic ? (
-        <div className="p-6 sm:p-8">
-          <TopicPicker topics={panelState.topics} onSelect={handleSelectTopic} />
-        </div>
+        <TopicPicker topics={panelState.topics} onSelect={handleSelectTopic} />
       ) : (
         <div>
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.02] px-6 py-4 sm:px-8">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted">{topic?.label}</p>
-              <h2 className="mt-0.5 text-base font-semibold text-foreground">Live interview</h2>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-term-sm text-term-muted">
+              <span aria-hidden="true">$ </span>
+              {topic?.label}
+            </p>
             {panelState.status !== 'concluded' ? (
               <button
                 type="button"
                 onClick={handleRestart}
-                className="shrink-0 text-xs text-muted underline decoration-dotted underline-offset-4 transition-colors hover:text-foreground"
+                className="shrink-0 text-term-xs text-term-muted underline decoration-term-border underline-offset-4 transition-colors duration-term-instant hover:text-term-ink"
               >
-                Change topic
+                [ change topic ]
               </button>
             ) : null}
           </div>
 
           <div
-            className="max-h-[55vh] space-y-5 overflow-y-auto px-6 py-6 sm:px-8"
+            className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto border-t border-term-border pt-5"
             aria-live="polite"
             aria-label="Interview transcript"
           >
@@ -164,43 +159,42 @@ export function ConversationPanel() {
             <div ref={transcriptEndRef} />
           </div>
 
-          <div className="border-t border-white/10 bg-white/[0.02] px-6 py-5 sm:px-8">
+          <div className="mt-5 border-t border-term-border pt-5">
             {panelState.status === 'awaiting-advance' ? (
               <button
                 type="button"
                 onClick={handleAdvance}
-                className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-interviewer px-5 py-2.5 text-sm font-medium text-black transition-colors hover:bg-interviewer/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-interviewer"
+                className="inline-flex min-h-[44px] items-center gap-2 border border-term-border px-4 py-2 text-term-base text-term-ink transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent"
               >
-                Continue the interview
-                <span aria-hidden="true">→</span>
+                [ continue the interview → ]
               </button>
             ) : panelState.status === 'concluded' ? (
               <div className="flex flex-wrap items-center gap-4">
-                <p className="text-sm text-muted">That&rsquo;s the end of this topic.</p>
+                <p className="text-term-sm text-term-muted">That&rsquo;s the end of this topic.</p>
                 <button
                   type="button"
                   onClick={handleRestart}
-                  className="inline-flex min-h-[44px] items-center rounded-lg border border-white/15 px-4 py-2 text-sm text-foreground transition-colors hover:border-white/30 hover:bg-white/5"
+                  className="inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-sm text-term-ink transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent"
                 >
-                  Pick another topic
+                  [ pick another topic ]
                 </button>
               </div>
             ) : panelState.status === 'turn-error' ? (
               <div className="flex flex-wrap items-center gap-4" role="alert">
-                <p className="text-sm text-red-400">{panelState.message}</p>
+                <p className="text-term-sm text-term-error">!! {panelState.message}</p>
                 <button
                   type="button"
                   onClick={handleAdvance}
-                  className="inline-flex min-h-[44px] items-center rounded-lg border border-white/15 px-4 py-2 text-sm text-foreground transition-colors hover:border-white/30 hover:bg-white/5"
+                  className="inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-sm text-term-ink transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent"
                 >
-                  Retry
+                  [ retry ]
                 </button>
               </div>
             ) : null}
           </div>
         </div>
       )}
-    </div>
+    </TerminalWindow>
   );
 }
 
@@ -217,16 +211,14 @@ function TranscriptLine({
   return (
     <div className="flex gap-3">
       <span
-        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-black ${isInterviewer ? 'bg-interviewer' : 'bg-tony'}`}
+        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-term-canvas ${isInterviewer ? 'bg-interviewer' : 'bg-tony'}`}
         aria-hidden="true"
       >
         {isInterviewer ? 'IV' : 'T'}
       </span>
       <div>
-        <p className={`text-xs font-medium ${isInterviewer ? 'text-interviewer' : 'text-tony'}`}>
-          {ROLE_LABEL[role]}
-        </p>
-        <p className="mt-1 text-sm leading-relaxed text-foreground">
+        <p className={`text-term-xs ${isInterviewer ? 'text-interviewer' : 'text-tony'}`}>{ROLE_LABEL[role]}</p>
+        <p className="mt-1 text-term-sm leading-relaxed text-term-body">
           {text}
           {isStreaming ? (
             <span

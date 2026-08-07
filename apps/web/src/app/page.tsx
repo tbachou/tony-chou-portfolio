@@ -1,51 +1,72 @@
 import { AboutSection } from '@/components/AboutSection';
 import { ContactSection } from '@/components/ContactSection';
 import { ConversationPanel } from '@/components/ConversationPanel';
-import { ResumeSection } from '@/components/ResumeSection';
+import { ResumeModalProvider } from '@/components/ResumeModalProvider';
+import { SiteIntroProvider } from '@/components/SiteIntroProvider';
 import { SiteNav } from '@/components/SiteNav';
+import { TerminalWindow } from '@/components/TerminalWindow';
 
 export default function HomePage() {
   return (
-    <div id="top" className="min-h-dvh bg-background text-foreground">
-      <SiteNav />
+    <SiteIntroProvider>
+      <ResumeModalProvider>
+        <div id="top">
+          <SiteNav />
 
-      <main>
-        <section className="mx-auto max-w-3xl px-6 pb-10 pt-14 sm:px-8 sm:pb-14 sm:pt-20">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-interviewer">Interactive portfolio</p>
-          <h1 className="mt-3 text-3xl font-semibold leading-tight text-foreground sm:text-5xl">
-            Watch an AI interview me about my actual work.
-          </h1>
-          <p className="mt-4 max-w-prose text-base leading-relaxed text-muted sm:text-lg">
-            Pick a topic below. An AI interviewer and an AI version of me talk it through, a few
-            exchanges at a time — every claim checked against what I actually built, git history
-            and all, never inflated for a better story.
-          </p>
-        </section>
+          <main>
+            <section className="mx-auto flex min-h-dvh max-w-4xl flex-col justify-center px-4 py-10 sm:px-0 sm:py-14">
+              <TerminalWindow path="tonychou@portfolio:~$">
+                <p className="text-term-sm text-term-muted">
+                  <span aria-hidden="true">$ </span>
+                  whoami
+                </p>
+                <h1 className="mt-2 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
+                  Tony Chou
+                </h1>
+                <p className="mt-1 text-term-base text-term-body">
+                  Senior Software Engineer — TypeScript, React &amp; AI-integrated products
+                </p>
 
-        <AboutSection />
+                <p className="mt-8 text-term-sm text-term-muted">
+                  <span aria-hidden="true">$ </span>
+                  cat mission.txt
+                </p>
+                <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+                  I ship production AI features and real-time systems for growth-stage teams — AI
+                  content generation at Mailchimp, collaborative editing at Product Forge, trading
+                  analytics at Topstep. Six years in, still happiest when I own a problem end to
+                  end.
+                </p>
 
-        <section id="interview" className="mx-auto max-w-3xl scroll-mt-20 px-6 py-16 sm:px-8 sm:py-24">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-interviewer">Interview</p>
-          <h2 className="mt-3 text-2xl font-semibold text-foreground sm:text-3xl">Live interview</h2>
-          <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted sm:text-base">
-            Streamed live from Claude, grounded in the real stories below — no answer here claims
-            more credit than the git-verified history allows.
-          </p>
-          <div className="mt-8">
-            <ConversationPanel />
-          </div>
-        </section>
+                <a
+                  href="#interview"
+                  className="mt-8 inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent"
+                >
+                  [ talk to ai-tony → ]
+                </a>
+              </TerminalWindow>
+            </section>
 
-        <ResumeSection />
-        <ContactSection />
-      </main>
+            <AboutSection />
 
-      <footer className="mx-auto max-w-6xl px-6 pb-10 sm:px-8">
-        <p className="text-xs text-muted">
-          Built with a NestJS backend, streamed live from Claude. No answer here claims more
-          credit than the real, git-verified story allows.
-        </p>
-      </footer>
-    </div>
+            <section
+              id="interview"
+              className="mx-auto flex min-h-dvh max-w-4xl scroll-mt-20 flex-col justify-center px-4 py-10 sm:px-0 sm:py-14"
+            >
+              <ConversationPanel />
+            </section>
+
+            <ContactSection />
+          </main>
+
+          <footer className="mx-auto max-w-4xl px-4 pb-10 sm:px-0">
+            <p className="text-term-xs text-term-muted">
+              Built with a NestJS backend, streamed live from Claude. No answer here claims more
+              credit than the real, git-verified story allows.
+            </p>
+          </footer>
+        </div>
+      </ResumeModalProvider>
+    </SiteIntroProvider>
   );
 }
