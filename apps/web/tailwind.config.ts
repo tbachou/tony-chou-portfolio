@@ -7,6 +7,11 @@ const config: Config = {
       colors: {
         background: '#0a0a0f',
         foreground: '#f5f5f7',
+        // Public site system (apps/web/design.md, System 1), extracted from
+        // InterviewRoom.tsx's already-shipped figure colors.
+        muted: '#9a9aa8',
+        interviewer: '#5b7fff',
+        tony: '#ff9d5b',
         // Retro terminal system (apps/web/design.md), scoped to .terminal-theme
         // pages only. Wired via CSS custom properties so they only resolve
         // inside that scope, never bleeding into the public site's colors.

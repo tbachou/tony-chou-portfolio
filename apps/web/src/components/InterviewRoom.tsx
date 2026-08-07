@@ -27,8 +27,11 @@ function Figure({ position, color, label, facing = 0 }: FigureProps) {
         <sphereGeometry args={[0.28, 24, 24]} />
         <meshStandardMaterial color={color} roughness={0.4} />
       </mesh>
+      {/* Counter-rotate: the label must stay camera-facing regardless of
+          which way this figure's body faces, or it renders mirrored. */}
       <Text
         position={[0, 2.6, 0]}
+        rotation={[0, -facing, 0]}
         fontSize={0.22}
         color="white"
         anchorX="center"
