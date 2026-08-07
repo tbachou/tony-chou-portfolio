@@ -1,7 +1,7 @@
 ---
 name: portfolio-design-systems
 source: derived (public site) + derived (internal admin)
-character: "Two deliberately distinct systems in one app: a dark 3D interview showcase for the public site (blue/orange dual accent, extracted from the already-shipped InterviewRoom.tsx), and a retro CRT terminal for the internal admin surface. They share only the near-black canvas darkness; everything else diverges on purpose."
+character: "Two deliberately distinct systems in one app: a dark editorial single-page portfolio for the public site (blue/orange dual accent carried over from the AI-interview feature), and a retro CRT terminal for the internal admin surface. They share only the near-black canvas darkness; everything else diverges on purpose."
 tokens: "public site: apps/web/src/app/globals.css and the base tailwind.config.ts colors (background/foreground). internal admin: apps/web/src/app/internal/terminal.css and the tailwind.config.ts term.* colors. Never duplicated here."
 contrast: "see each system's own section below"
 ---
@@ -12,17 +12,17 @@ You are a senior product designer. Every page ships as a complete, professional 
 
 ---
 
-# System 1: Public site (3D interview showcase)
+# System 1: Public site (editorial single-page portfolio)
 
 ## Scope
 
-Everything a visitor reaches without signing in: the page shell (`page.tsx`), the 3D interview room (`InterviewRoom.tsx`), and the 2D conversation UI (`TopicPicker.tsx`, `ConversationPanel.tsx`). This is the actual product the whole app is built to demonstrate.
+Everything a visitor reaches without signing in: the page shell (`page.tsx`), the sticky section nav (`SiteNav.tsx`), and each section — About, the AI interview (`TopicPicker.tsx`, `ConversationPanel.tsx`), Resume, and Contact. This is the actual product the whole app is built to demonstrate, now framed as one portfolio rather than a single-feature demo.
 
 ## Character & direction
 
-Content-forward, 3D as supporting accent — not a full-bleed 3D hero. A real editorial page carries the content: header, headline, and copy in normal document flow, then a two-column section where the 2D conversation panel is the primary focus and the 3D room sits alongside it, contained in a bordered, glow-framed card rather than filling the viewport. This direction was chosen deliberately after the original full-bleed-3D-plus-floating-overlay layout read as visually weak — the room is a nice accent, not a strong enough visual to carry the whole page on its own.
+Content-forward editorial, no 3D on the page. The original direction ran a 3D interview room (two capsule-figure placeholders) as either a full-bleed hero or a contained accent card — both read as visually weak ("looks very childish" was the actual verdict), so it was dropped entirely rather than iterated on further. `InterviewRoom.tsx` still exists in the codebase (unused) as a starting point for a lighter-weight 3D touch later, but nothing on the page currently renders it.
 
-The two figures remain color-coded by role — blue `#5b7fff` for the interviewer, orange `#ff9d5b` for Tony (AI) — and that pairing is load-bearing in the 3D scene (each figure's material color) before any 2D UI existed. The 2D transcript reuses the same two colors for the same purpose (avatar badge + label color per speaker), so the conversation panel reads as continuous with the room, not a bolted-on interface.
+In its place: a single scrolling page with a sticky anchor nav (About / Interview / Resume / Contact), each section a normal-flow content block on a `max-w-6xl` (or `max-w-3xl` for prose-heavy sections) measure. The blue/orange dual accent — blue `#5b7fff` for the interviewer, orange `#ff9d5b` for Tony (AI) — persists as the one deliberate two-color exception, but its scope is now just the interview section's transcript (avatar badge + label color per speaker); nowhere else on the page uses it as a UI color, only as the eyebrow-label accent color repeated per section for continuity.
 
 ## Contrast (verified before writing CSS)
 
@@ -33,24 +33,25 @@ The two figures remain color-coded by role — blue `#5b7fff` for the interviewe
 
 ## Composition patterns
 
-- **Page shell**: header (name + title) in normal flow, then a hero section (eyebrow label, headline, dek copy) constrained to a readable measure (`max-w-3xl`), then a two-column section (`md:grid-cols-[1fr_1.5fr]`) with the 3D room on the left and the conversation panel on the right — panel gets the wider column since it's the primary focus.
-- **3D room card**: `aspect-[4/3]`, rounded corners, hairline border, contained with a soft accent-colored glow shadow (not full-bleed, not edge-to-edge), sticky-positioned on scroll on desktop so it stays in view alongside a longer transcript. A one-line caption underneath explains it's interactive ("drag to look around").
-- **Idle / topic picker state**: the conversation panel shows numbered topic cards (topic label + description per card, from `GET /topics`) in its own bordered card, with a hover-revealed "start this interview" affordance per card.
-- **Active conversation state**: topic cards replaced by a scrollable transcript (avatar-badge speaker rows, role-colored label + streamed text), inside the same bordered card, with a header (topic name, "change topic" control) and footer action area, plus a **click to advance** control once a turn pair completes (the visitor drives pacing, per PROJECT_BRIEF's "watch/steer" framing — it does not auto-play continuously).
-- **Wrap up state**: once `isFinal: true`, the footer action area shows a close-out message and "pick another topic" control, not left as a dead end.
-- **Streaming feedback**: a visible role-colored blinking caret at the end of the in-progress line while `token` events are arriving, distinct from the idle "click to advance" state, so the visitor never wonders if it's frozen.
+- **Nav**: sticky top bar, `bg-background/80 backdrop-blur`, name on the left, section anchor links on the right; `html { scroll-behavior: smooth }` (disabled under `prefers-reduced-motion`) drives the jump, each section carries `scroll-mt-20` so the sticky nav doesn't cover the heading it scrolled to.
+- **Hero**: eyebrow label, headline, one paragraph of dek copy, `max-w-3xl`, normal document flow — no full-bleed visual behind it.
+- **About**: two-column on desktop — summary paragraph on the left, a `dl` of skill-group pill lists on the right; collapses to one column on mobile.
+- **Interview**: unchanged internally from the previous iteration — topic picker card → transcript card with avatar-badge speaker rows and a **click to advance** control once a turn pair completes (visitor drives pacing, doesn't auto-play) → wrap-up state once `isFinal: true`. Now lives as one section among several instead of the whole page.
+- **Resume**: a bordered left-rail timeline of experience entries (org, role, dates, tech-stack pills, bullets) plus a "Download PDF" button that links straight to the static PDF asset; an education entry below the timeline.
+- **Contact**: email (`mailto:`), LinkedIn, and location as three simple label/value pairs — no phone number published on the public site by default.
 
 ## Component & usage rules
 
-- Interviewer copy/UI always uses the blue accent; Tony copy/UI always uses the orange accent. Never swap or mix. Each transcript line pairs a small colored avatar circle (initial: "IV" / "T") with a same-colored role label.
-- The conversation panel is a solid card (`bg-white/[0.03]`, hairline `border-white/10`), not a translucent HUD over the 3D view — the two live in separate columns, so there's no glass-over-3D effect to maintain.
-- Buttons/controls sized for touch (44×44px minimum), since this is the primary visitor-facing interaction.
+- Interviewer copy/UI always uses the blue accent; Tony copy/UI always uses the orange accent, scoped to the interview section only. Never swap or mix.
+- Section eyebrow labels (`ABOUT`, `INTERVIEW`, `RESUME`, `CONTACT`) always use the interviewer blue as a page-wide continuity thread, independent of the interview-specific role coloring.
+- Skill/tech pills: `rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-xs`, reused identically in About's skill groups and Resume's per-role stack tags.
+- Buttons/controls sized for touch (44×44px minimum).
 
 ## Responsive & accessibility direction
 
-- Below `md` (768px), the grid collapses to a single column; the conversation panel comes first in source order (it's the primary content) with the 3D card below it, so mobile visitors reach the interview immediately without scrolling past the room.
-- `OrbitControls` (3D camera drag) is scoped to its own contained card, so it never competes with page-level touch scrolling the way a full-viewport 3D background would.
-- Streamed text updates announce via `aria-live="polite"` on the transcript region so screen reader users get the conversation without a flood of per-token announcements (batch by turn, not by token).
+- Nav links wrap on narrow viewports rather than collapsing into a hamburger menu — there are only four of them, so wrapping stays legible and avoids extra interactive state.
+- About's skill `dl` and Resume's tech-stack pills wrap freely; no fixed-width assumptions.
+- Streamed text updates in the interview section announce via `aria-live="polite"` so screen reader users get the conversation without a flood of per-token announcements (batch by turn, not by token).
 
 ---
 
