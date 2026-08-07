@@ -1,0 +1,120 @@
+/* Retro terminal / CRT design system — scoped to .terminal-theme only.
+   See apps/web/design.md for the art direction; this file is the token
+   source of truth. Deliberately does not touch :root or globals.css, so
+   the public site's own theme is untouched. */
+
+.terminal-theme {
+  /* Colors — contrast ratios verified against #0a0a0f canvas in design.md */
+  --color-canvas: #0a0a0f;
+  --color-surface: #10160f;
+  --color-border: #458045;
+  --color-muted: #608c60;
+  --color-body: #5fcc5f;
+  --color-ink: #39ff14;
+  --color-accent: #39ff14;
+  --color-on-accent: #0a0a0f;
+  --color-success: #39ff14;
+  --color-error: #ff3b3b;
+
+  /* Typography */
+  --font-mono: var(--font-ibm-plex-mono), ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  --text-xs: 0.6875rem; /* 11px */
+  --text-sm: 0.8125rem; /* 13px */
+  --text-base: 1rem; /* 16px */
+  --text-lg: 1.1875rem; /* 19px */
+  --text-xl: 1.4375rem; /* 23px */
+  --text-2xl: 1.75rem; /* 28px */
+  --text-3xl: 2.0625rem; /* 33px */
+  --text-4xl: 2.5rem; /* 40px */
+  --leading-body: 1.5;
+  --leading-display: 1.2;
+
+  /* Spacing (4px base, 8px rhythm) */
+  --space-xxs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-section: 4rem;
+
+  /* Radius — deliberately small/sharp */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-full: 9999px;
+
+  /* Motion — fast and a little harsh, no springs */
+  --duration-instant: 80ms;
+  --duration-base: 120ms;
+  --duration-slow: 200ms;
+  --ease-standard: ease-out;
+  --cursor-blink-interval: 900ms;
+
+  background: var(--color-canvas);
+  color: var(--color-body);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  min-height: 100dvh;
+}
+
+.terminal-theme :focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Decorative scanline texture. Purely visual, never affects text contrast
+   (layered on top of already-passing solid colors, per design.md). */
+.terminal-scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(57, 255, 20, 0.035) 0,
+    rgba(57, 255, 20, 0.035) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.terminal-glow {
+  text-shadow:
+    0 0 4px rgba(57, 255, 20, 0.55),
+    0 0 12px rgba(57, 255, 20, 0.25);
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  background: var(--color-accent);
+  vertical-align: text-bottom;
+  animation: terminal-blink var(--cursor-blink-interval) steps(1) infinite;
+}
+
+@keyframes terminal-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-theme *,
+  .terminal-theme *::before,
+  .terminal-theme *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  .terminal-cursor {
+    animation: none;
+    opacity: 1;
+  }
+}

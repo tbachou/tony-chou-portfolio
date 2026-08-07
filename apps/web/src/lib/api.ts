@@ -13,9 +13,23 @@ export type Story = {
   summary: string;
 };
 
+export type UsageSummary = {
+  dailyTotals: { date: string; turnCount: number; tokenCount: number }[];
+  topSources: { hashedIp: string; tokenCount: number }[];
+};
+
 export async function fetchStories(): Promise<Story[]> {
   const res = await fetch(`${API_URL}/stories`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Failed to fetch stories: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchUsageSummary(): Promise<UsageSummary> {
+  const res = await fetch(`${API_URL}/internal/usage/summary`, {
+    cache: 'no-store',
+    credentials: 'include'
+  });
+  if (!res.ok) throw new Error(`Failed to fetch usage summary: ${res.status}`);
   return res.json();
 }
 
