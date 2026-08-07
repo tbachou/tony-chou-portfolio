@@ -5,6 +5,8 @@ import { AppModule } from './app.module';
 import { validationExceptionFactory } from './common/pipes/validation-exception-factory';
 
 async function bootstrap() {
+  // AuthModule (app.module.ts) disables and replaces Nest's default body
+  // parser itself; nothing to configure here for that.
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Render sits behind a proxy; trust its first hop so req.ip resolves the
