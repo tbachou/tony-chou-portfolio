@@ -1,6 +1,6 @@
 # Verify: conversation engine and usage dashboard · spec 0002 · updated 2026-08-07
 
-_Steps derived from spec 0002 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones. Covers build plan steps 1-10 (data model through the usage summary endpoint); step 11 (the apps/web /internal/usage page) is not built yet._
+_Steps derived from spec 0002 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones. Covers the full build plan (steps 1-12): data model through the public site's topic picker and live transcript._
 
 ## Commands
 
@@ -25,6 +25,10 @@ _Steps derived from spec 0002 acceptance criteria. `/check verify` runs these; `
 - [ ] `POST /api/auth/sign-in/email` with the seeded admin's email/password → `200`, a `better-auth.session_token` cookie is set; `GET /internal/usage/summary` with that cookie → `200`, already proven this session → AC-13
 - [ ] `POST /api/auth/sign-up/email` with any email/password → `400 EMAIL_PASSWORD_SIGN_UP_DISABLED`, confirming no second account can ever be created, already proven this session → AC-13
 - [ ] With a real turn pair run today, `GET /internal/usage/summary` (authenticated) → `dailyTotals` contains today's row with the correct `turnCount`/`tokenCount`, `topSources` contains the calling IP's hash with the correct summed `tokenCount`, already proven this session with real data → AC-14
+- [ ] On `/`, pick a topic → the interviewer's turn streams first, then Tony's, correctly role-labeled and color-coded (never both labeled the same role), a "Continue the interview" control appears once the pair completes → AC-3, AC-4
+- [ ] Click "Continue the interview" → the next turn pair streams and appends to the transcript with the prior turns still visible, grounded to a different Story (round robin), already proven this session with two real consecutive pairs → AC-4
+- [ ] A CONTRIBUTED or CO_LED story's Tony turn, viewed on the actual page (not just the API) → visibly hedged language, already proven this session with a real CONTRIBUTED story ("I contributed to the data model design... not solo") → AC-8
+- [ ] Rapid or duplicate clicks on a topic card or "Continue the interview" → only one `POST /conversation/turn` fires (a synchronous re-entrancy guard blocks a second call while one is in flight), verified this session after finding and fixing a real duplicate-fire bug → AC-3, AC-4
 
 ## Acceptance-criteria coverage
 
