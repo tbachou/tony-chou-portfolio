@@ -1,15 +1,10 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
+import { utcDateOnly } from '../../common/utils/date.util';
 
 const DAILY_TURN_CAP = Number(process.env.DAILY_TURN_CAP ?? 300);
 const DAILY_TOKEN_CAP = Number(process.env.DAILY_TOKEN_CAP ?? 150000);
-
-function utcDateOnly(date: Date): Date {
-  return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-}
 
 @Injectable()
 export class DailyUsageService {
