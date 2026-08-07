@@ -6,7 +6,9 @@ import {
   Post,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { ConversationService } from './conversation.service';
 import { ConversationTurnRequestDto } from './dto/conversation-turn-request.dto';
@@ -18,6 +20,11 @@ export class ConversationController {
   constructor(private readonly conversationService: ConversationService) {}
 
   @Post('turn')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    short: { limit: 5, ttl: 60_000 },
+    long: { limit: 30, ttl: 3_600_000 },
+  })
   async turn(
     @Body() body: ConversationTurnRequestDto,
     @Req() req: Request,

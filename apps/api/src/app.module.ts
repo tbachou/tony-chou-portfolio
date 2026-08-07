@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -13,6 +14,12 @@ import { ConversationModule } from './modules/conversation/conversation.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { name: 'short', ttl: 60_000, limit: 5 },
+        { name: 'long', ttl: 3_600_000, limit: 30 },
+      ],
+    }),
     PrismaModule,
     HealthModule,
     StoriesModule,

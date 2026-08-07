@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnthropicService } from '../anthropic/anthropic.service';
@@ -6,6 +6,12 @@ import { ConversationRole } from '../../generated/prisma/enums';
 import { Prisma } from '../../generated/prisma/client';
 import type { StoryModel, TopicModel } from '../../generated/prisma/models';
 import { INTERVIEWER_SYSTEM_PROMPT, TONY_SYSTEM_PROMPT } from './tony-persona';
+import {
+  evaluateTonyResponse,
+  GENERIC_GUARD_FALLBACK,
+  splitIntoChunks,
+} from './ownership-guard';
+import { DailyUsageService } from '../daily-usage/daily-usage.service';
 
 export type HistoryTurn = {
   role: 'interviewer' | 'tony';
@@ -28,9 +34,12 @@ export type PreparedTurn = {
 
 @Injectable()
 export class ConversationService {
+  private readonly logger = new Logger(ConversationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly anthropic: AnthropicService,
+    private readonly dailyUsage: DailyUsageService,
   ) {}
 
   async resolveTopic(topicId: string): Promise<TopicWithStories | null> {
@@ -69,6 +78,10 @@ export class ConversationService {
     hashedIp: string;
   }): Promise<PreparedTurn> {
     const { topic, history, hashedIp } = params;
+
+    // Independent of the per IP throttle: a global hard backstop on daily
+    // Anthropic spend, checked before any AI call regardless of who's asking.
+    await this.dailyUsage.assertCapNotExceeded();
 
     const isNewConversation = !params.conversationId || history.length === 0;
     const conversationId = isNewConversation
@@ -144,7 +157,10 @@ export class ConversationService {
       });
 
       emit('turn_start', { role: 'tony' });
-      const tonyResult = await this.anthropic.streamMessage({
+      // Buffered, not live: the ownership guard below must see the complete
+      // response before anything reaches the client, so onToken here only
+      // accumulates internally (via AnthropicService's return value), never emits.
+      const tonyGenerated = await this.anthropic.streamMessage({
         system: TONY_SYSTEM_PROMPT,
         userMessage: buildTonyUserMessage(
           story,
@@ -152,16 +168,33 @@ export class ConversationService {
           isFinal,
         ),
         maxTokens: 400,
-        onToken: (text) => emit('token', { text }),
+        onToken: () => undefined,
       });
+
+      const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
+      let tonyText = tonyGenerated.text;
+      if (!guardResult.ok) {
+        tonyText = story.requiredFraming ?? GENERIC_GUARD_FALLBACK;
+        this.logger.warn(
+          `Ownership guard fired for story ${story.id} (${story.title}): ${guardResult.reason}`,
+        );
+      }
+
+      for (const chunk of splitIntoChunks(tonyText)) {
+        emit('token', { text: chunk });
+      }
+
+      const interviewerTokenCount =
+        interviewerResult.inputTokens + interviewerResult.outputTokens;
+      const tonyTokenCount =
+        tonyGenerated.inputTokens + tonyGenerated.outputTokens;
 
       await this.prisma.$transaction([
         this.prisma.conversationTurn.update({
           where: { id: interviewerTurnId },
           data: {
             text: interviewerResult.text,
-            tokenCount:
-              interviewerResult.inputTokens + interviewerResult.outputTokens,
+            tokenCount: interviewerTokenCount,
           },
         }),
         this.prisma.conversationTurn.create({
@@ -170,11 +203,15 @@ export class ConversationService {
             topicId: topic.id,
             turnIndex,
             role: ConversationRole.TONY,
-            text: tonyResult.text,
-            tokenCount: tonyResult.inputTokens + tonyResult.outputTokens,
+            text: tonyText,
+            tokenCount: tonyTokenCount,
             hashedIp,
           },
         }),
+        // Running counter incremented per persisted ConversationTurn row (one
+        // interviewer + one Tony row this pair), not recomputed by aggregation,
+        // so the AC-11 backstop check stays a single fast read.
+        this.dailyUsage.incrementOp(2, interviewerTokenCount + tonyTokenCount),
       ]);
 
       emit('turn_end', { conversationId, turnIndex, isFinal });
