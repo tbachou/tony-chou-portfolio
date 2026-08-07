@@ -10,4 +10,8 @@ export const auth = betterAuth({
     // directly (prisma/seed.ts), never created through this app's own API.
     disableSignUp: true,
   },
+  // apps/web and apps/api are separate origins; better-auth's own CSRF
+  // origin check needs the frontend's origin(s) allowed, same list as
+  // main.ts's CORS_ORIGIN.
+  trustedOrigins: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:3000'],
 });

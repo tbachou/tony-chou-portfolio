@@ -26,7 +26,9 @@ async function bootstrap() {
   const corsOrigin = process.env.CORS_ORIGIN?.split(',') ?? [
     'http://localhost:3000',
   ];
-  app.enableCors({ origin: corsOrigin });
+  // credentials: true is required for better-auth's session cookie to be
+  // set/sent cross origin (apps/web and apps/api are separate origins).
+  app.enableCors({ origin: corsOrigin, credentials: true });
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port, '0.0.0.0');
