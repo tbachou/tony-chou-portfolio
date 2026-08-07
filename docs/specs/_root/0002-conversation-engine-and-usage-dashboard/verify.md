@@ -1,6 +1,6 @@
-# Verify: conversation engine and usage dashboard · spec 0002 · updated 2026-08-06
+# Verify: conversation engine and usage dashboard · spec 0002 · updated 2026-08-07
 
-_Steps derived from spec 0002 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones. Covers build plan steps 1-8 (data model through rate limiting); steps 9-11 (better auth, usage dashboard) are not built yet, so AC-13, AC-14 have no steps below._
+_Steps derived from spec 0002 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones. Covers build plan steps 1-10 (data model through the usage summary endpoint); step 11 (the apps/web /internal/usage page) is not built yet._
 
 ## Commands
 
@@ -21,6 +21,10 @@ _Steps derived from spec 0002 acceptance criteria. `/check verify` runs these; `
 - [ ] Fire 31 requests from the same IP within an hour (or seed the long throttler's counter directly) → the 31st receives `429` → AC-10
 - [ ] Seed `DailyUsageCounter` for today at or above `DAILY_TURN_CAP` (300) or `DAILY_TOKEN_CAP` (150000) → the next `POST /conversation/turn` receives `429` instantly, before any AI call, independent of per IP throttle state, already proven this session → AC-11
 - [ ] Run one successful turn pair → `DailyUsageCounter` for today increments by exactly `turnCount: 2` and `tokenCount` by the real combined Anthropic usage for that pair (not recomputed by aggregation), already proven this session → AC-11
+- [ ] `GET /internal/usage/summary` with no session cookie → `401`, already proven this session → AC-13
+- [ ] `POST /api/auth/sign-in/email` with the seeded admin's email/password → `200`, a `better-auth.session_token` cookie is set; `GET /internal/usage/summary` with that cookie → `200`, already proven this session → AC-13
+- [ ] `POST /api/auth/sign-up/email` with any email/password → `400 EMAIL_PASSWORD_SIGN_UP_DISABLED`, confirming no second account can ever be created, already proven this session → AC-13
+- [ ] With a real turn pair run today, `GET /internal/usage/summary` (authenticated) → `dailyTotals` contains today's row with the correct `turnCount`/`tokenCount`, `topSources` contains the calling IP's hash with the correct summed `tokenCount`, already proven this session with real data → AC-14
 
 ## Acceptance-criteria coverage
 
@@ -31,4 +35,5 @@ _Steps derived from spec 0002 acceptance criteria. `/check verify` runs these; `
 - AC-10: covered by the per IP throttle command steps
 - AC-11: covered by the daily cap and counter increment command steps
 - AC-12: covered by the `tokenCount`/`hashedIp` command step
-- AC-13 · AC-14: not built yet (better auth, usage dashboard are steps 9-11); no steps here until then
+- AC-13: covered by the auth session and closed sign-up command steps
+- AC-14: covered by the usage summary data command step

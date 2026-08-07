@@ -12,6 +12,7 @@ import { PrismaModule } from './modules/prisma/prisma.module';
 import { StoriesModule } from './modules/stories/stories.module';
 import { TopicsModule } from './modules/topics/topics.module';
 import { ConversationModule } from './modules/conversation/conversation.module';
+import { UsageSummaryModule } from './modules/usage-summary/usage-summary.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ConversationModule } from './modules/conversation/conversation.module';
     StoriesModule,
     TopicsModule,
     ConversationModule,
+    UsageSummaryModule,
   ],
   controllers: [AppController],
   providers: [
