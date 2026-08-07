@@ -5,16 +5,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: '#0a0a0f',
-        foreground: '#f5f5f7',
-        // Public site system (apps/web/design.md, System 1), extracted from
-        // InterviewRoom.tsx's already-shipped figure colors.
-        muted: '#9a9aa8',
-        interviewer: '#5b7fff',
-        tony: '#ff9d5b',
+        // Interview transcript speaker colors — the one deliberate exception
+        // to the terminal system's single accent (apps/web/design.md), a
+        // dual-phosphor pairing (green/amber) rather than a modern UI palette.
+        interviewer: '#39ff14',
+        tony: '#ffb000',
         // Retro terminal system (apps/web/design.md), scoped to .terminal-theme
-        // pages only. Wired via CSS custom properties so they only resolve
-        // inside that scope, never bleeding into the public site's colors.
+        // which now wraps the whole app.
         term: {
           canvas: 'var(--color-canvas)',
           surface: 'var(--color-surface)',
