@@ -1,4 +1,5 @@
 import { prisma } from '../src/lib/prisma';
+import { auth } from '../src/lib/auth';
 import { StoryOwnership } from '../src/generated/prisma/enums';
 
 type TopicSeed = {
@@ -286,6 +287,52 @@ async function main() {
   }
 
   console.log(`Seeded ${topics.length} topics and ${stories.length} stories.`);
+
+  await seedAdmin();
+}
+
+// The single admin account (INTERNAL_ADMIN_EMAIL/PASSWORD), created directly
+// via better-auth's own password hashing so a later sign-in verifies
+// correctly. Sign up stays closed (auth.ts's disableSignUp): this seed script
+// is the only way this row is ever created. Safe to re-run; updates the
+// stored password hash if the env var password has changed.
+async function seedAdmin() {
+  const email = process.env.INTERNAL_ADMIN_EMAIL;
+  const password = process.env.INTERNAL_ADMIN_PASSWORD;
+  if (!email || !password) {
+    console.log('INTERNAL_ADMIN_EMAIL/INTERNAL_ADMIN_PASSWORD not set, skipping admin seed.');
+    return;
+  }
+
+  const ctx = await auth.$context;
+  const hashedPassword = await ctx.password.hash(password);
+
+  let user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    const id = ctx.generateId({ model: 'user' });
+    if (id === false) throw new Error('better-auth did not generate a user id');
+    user = await prisma.user.create({
+      data: { id, email, name: 'Tony Chou', emailVerified: true },
+    });
+  }
+
+  const existingAccount = await prisma.account.findFirst({
+    where: { userId: user.id, providerId: 'credential' },
+  });
+  if (existingAccount) {
+    await prisma.account.update({
+      where: { id: existingAccount.id },
+      data: { password: hashedPassword },
+    });
+  } else {
+    const id = ctx.generateId({ model: 'account' });
+    if (id === false) throw new Error('better-auth did not generate an account id');
+    await prisma.account.create({
+      data: { id, accountId: user.id, providerId: 'credential', userId: user.id, password: hashedPassword },
+    });
+  }
+
+  console.log(`Seeded admin account: ${email}`);
 }
 
 main()

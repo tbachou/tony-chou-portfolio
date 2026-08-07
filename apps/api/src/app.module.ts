@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { AuthModule } from '@thallesp/nestjs-better-auth';
+import { auth } from './lib/auth';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -20,6 +22,12 @@ import { ConversationModule } from './modules/conversation/conversation.module';
         { name: 'long', ttl: 3_600_000, limit: 30 },
       ],
     }),
+    // Registers a global auth guard (every route requires a session unless
+    // marked @AllowAnonymous()) and mounts better-auth's own /api/auth/*
+    // routes. This also disables and replaces Nest's default body parser
+    // internally (confirmed from the package's own type definitions), so
+    // nothing needs configuring here or in main.ts for that.
+    AuthModule.forRoot({ auth }),
     PrismaModule,
     HealthModule,
     StoriesModule,
