@@ -5,11 +5,32 @@ import { ResumeModalProvider } from '@/components/ResumeModalProvider';
 import { SiteIntroProvider } from '@/components/SiteIntroProvider';
 import { SiteNav } from '@/components/SiteNav';
 import { TerminalWindow } from '@/components/TerminalWindow';
+import { aboutSummary, contactInfo } from '@/lib/resume-data';
+import { siteUrl } from '@/lib/site';
+
+const personJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  name: 'Tony Chou',
+  jobTitle: 'Senior Software Engineer',
+  description: aboutSummary,
+  url: siteUrl,
+  email: `mailto:${contactInfo.email}`,
+  sameAs: [contactInfo.linkedin],
+  address: {
+    '@type': 'PostalAddress',
+    addressLocality: contactInfo.location
+  }
+};
 
 export default function HomePage() {
   return (
     <SiteIntroProvider>
       <ResumeModalProvider>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(personJsonLd) }}
+        />
         <div id="top">
           <SiteNav />
 
@@ -53,6 +74,7 @@ export default function HomePage() {
               id="interview"
               className="mx-auto flex min-h-dvh max-w-4xl scroll-mt-20 flex-col justify-center px-4 py-10 sm:px-0 sm:py-14"
             >
+              <h2 className="sr-only">Interview</h2>
               <ConversationPanel />
             </section>
 

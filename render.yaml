@@ -1,0 +1,43 @@
+# Render Blueprint for apps/api. Repo root is the service root since this
+# is an npm-workspaces monorepo - the build/start commands are scoped to
+# apps/api explicitly instead.
+#
+# `sync: false` env vars are declared here so Render knows they exist, but
+# their actual values are never committed - set them in the dashboard
+# after the first deploy. Double-check `preDeployCommand` against Render's
+# current docs/dashboard before relying on blueprint sync; if it doesn't
+# take, set the equivalent "Pre-Deploy Command" field manually instead.
+services:
+  - type: web
+    name: tony-chou-portfolio-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build --workspace=apps/api
+    startCommand: npm run start:prod --workspace=apps/api
+    preDeployCommand: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
+      - key: IP_HASH_SALT
+        sync: false
+      - key: TURN_PAIR_CAP
+        value: '5'
+      - key: DAILY_TURN_CAP
+        value: '300'
+      - key: DAILY_TOKEN_CAP
+        value: '150000'
+      - key: CORS_ORIGIN
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: INTERNAL_ADMIN_EMAIL
+        sync: false
+      - key: INTERNAL_ADMIN_PASSWORD
+        sync: false
