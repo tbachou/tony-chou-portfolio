@@ -11,8 +11,10 @@
   "dependencies": {
     "@react-three/drei": "^9.121.0",
     "@react-three/fiber": "^9.0.0",
+    "@react-three/postprocessing": "^3.0.4",
     "better-auth": "^1.6.26",
     "next": "^15.1.0",
+    "postprocessing": "^6.39.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.171.0"

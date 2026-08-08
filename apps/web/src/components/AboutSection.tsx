@@ -8,10 +8,10 @@ export function AboutSection() {
       className="mx-auto flex min-h-dvh max-w-4xl scroll-mt-20 flex-col justify-center px-4 py-10 sm:px-0 sm:py-14"
     >
       <TerminalWindow path="tonychou@portfolio:~/about$">
-        <p className="text-term-sm text-term-muted">
+        <h2 className="text-term-sm font-normal text-term-muted">
           <span aria-hidden="true">$ </span>
           cat about.txt
-        </p>
+        </h2>
         <p className="mt-3 max-w-prose text-term-base leading-relaxed text-term-body">{aboutSummary}</p>
 
         <p className="mt-8 text-term-sm text-term-muted">
