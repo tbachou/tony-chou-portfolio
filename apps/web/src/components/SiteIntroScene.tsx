@@ -504,19 +504,17 @@ function ImportedDesk({
     [],
   );
 
-  // Reports the objects that should bloom up to the parent once they exist,
-  // so SelectiveBloom can target exactly those instead of a global
-  // luminance threshold that also catches ordinary lit props like the
-  // mug/keycaps. The screen itself is deliberately excluded - running
-  // postprocess bloom directly on the text softened the glyphs themselves,
-  // not just the halo around them. The phosphor-glow look now comes from a
-  // shadowBlur baked into the canvas texture instead (see
-  // drawScreenContent), which glows behind the text without touching its
-  // edges.
+  // Bloom is deliberately never applied to anything on this desk anymore -
+  // it was meant to give the screen and backlight a soft glow, but
+  // SelectiveBloom's blur softened the screen text's actual glyphs at an
+  // angle (see drawScreenContent), not just a halo around them, the same
+  // failure mode as the shadowBlur approach tried before it. Left as an
+  // always-empty selection (rather than removing the EffectComposer/
+  // SelectiveBloom scaffold entirely) so it's a one-line change to bring
+  // bloom back for a future target that doesn't have this problem.
   useEffect(() => {
     if (!transform) return;
     const targets: THREE.Object3D[] = [];
-    if (glowDiscRef.current) targets.push(glowDiscRef.current);
     onBloomTargetsReady?.(targets);
   }, [transform, onBloomTargetsReady]);
 
@@ -617,7 +615,7 @@ function ImportedDesk({
         maxV = Math.max(maxV, v);
       });
 
-      const MARGIN = 1.3;
+      const MARGIN = 1.45;
       backlightWidth = (maxU - minU) * MARGIN;
       backlightHeight = (maxV - minV) * MARGIN;
     }
