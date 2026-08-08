@@ -7,6 +7,13 @@
 # after the first deploy. Double-check `preDeployCommand` against Render's
 # current docs/dashboard before relying on blueprint sync; if it doesn't
 # take, set the equivalent "Pre-Deploy Command" field manually instead.
+#
+# preDeployCommand must `cd apps/api` rather than pass `--schema` from the
+# repo root - Prisma 7's config system (prisma.config.ts, which is what
+# actually supplies datasource.url here, not schema.prisma) is discovered
+# relative to the current working directory, not relative to --schema.
+# Running from the repo root with just --schema fails with "The
+# datasource.url property is required in your Prisma config file".
 services:
   - type: web
     name: tony-chou-portfolio-api
@@ -14,7 +21,7 @@ services:
     plan: free
     buildCommand: npm install && npm run build --workspace=apps/api
     startCommand: npm run start:prod --workspace=apps/api
-    preDeployCommand: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+    preDeployCommand: cd apps/api && npx prisma migrate deploy
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV

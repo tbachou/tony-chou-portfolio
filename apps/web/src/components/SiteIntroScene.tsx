@@ -113,11 +113,11 @@ export default function SiteIntroScene({
               target={ESTABLISHING_TARGET.toArray()}
               enableDamping
               dampingFactor={0.08}
-              minDistance={6}
-              maxDistance={9}
-              minAzimuthAngle={-0.45}
-              maxAzimuthAngle={0.45}
-              minPolarAngle={Math.PI / 3}
+              minDistance={5}
+              maxDistance={10}
+              minAzimuthAngle={-0.9}
+              maxAzimuthAngle={0.9}
+              minPolarAngle={Math.PI / 4}
               maxPolarAngle={Math.PI / 2}
             />
           ) : null}
