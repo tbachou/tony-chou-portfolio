@@ -14,4 +14,17 @@ export const auth = betterAuth({
   // origin check needs the frontend's origin(s) allowed, same list as
   // main.ts's CORS_ORIGIN.
   trustedOrigins: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:3000'],
+  advanced: {
+    // Default SameSite=Lax cookies never reach the session-check request:
+    // that's a cross-origin fetch, not a top-level navigation, so the
+    // browser withholds a Lax cookie from it and the client never sees a
+    // session despite sign-in succeeding. SameSite=None fixes that but
+    // requires Secure, which local http://localhost dev can't satisfy —
+    // so only flip it in production, where both apps are served over
+    // HTTPS.
+    defaultCookieAttributes:
+      process.env.NODE_ENV === 'production'
+        ? { sameSite: 'none', secure: true }
+        : {},
+  },
 });
