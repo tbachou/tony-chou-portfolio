@@ -7,7 +7,7 @@ Source of truth for the interview-simulator portfolio app. Everything below is f
 ## Identity & Positioning
 
 - **Name**: Tony Chou
-- **Current status**: Senior Software Engineer, employed by Tensure Consulting, currently on bench (between client engagements) as of Aug 2026. Last client engagement (Topstep) ended July 31, 2026.
+- **Current status**: Senior Software Engineer, employed by Tensure Consulting. Since Jul 2026, working an internal Tensure project (diagnosing a HubSpot-to-Ruddr integration and scoping a resourcing dashboard) rather than an external client engagement. Last client engagement (Topstep) ended July 31, 2026.
 - **Headline positioning**: Senior Software Engineer | React, TypeScript, Node.js | AI-Integrated & Real-Time Collaborative Products | Former Occupational Therapist
 - **Career arc**: Former Occupational Therapist (6+ years, neuro rehab + skilled nursing, C/NDT certified, M.S. OT from Ohio State) → career change into software engineering → 6 years production experience, all via long-term embedded consulting engagements through Tensure Consulting.
 - **Differentiator narrative**: OT background shapes an engineering approach of "understand a system deeply before changing it, and design for the people who'll actually use it." This is a deliberate positioning choice, not an afterthought — lean into it in the app rather than treat it as a gap to explain away.
@@ -20,6 +20,7 @@ Source of truth for the interview-simulator portfolio app. Everything below is f
 | Mailchimp / Intuit | Software Engineer II | Jan 2020 – Dec 2023 | Tensure Consulting |
 | Product Forge | Full-Stack Engineer | Jan 2024 – Sep 2025 | Tensure Consulting |
 | Topstep | Senior Software Engineer | Sep 2025 – Jul 2026 | Tensure Consulting |
+| Tensure Consulting (Internal Project) | Senior Software Engineer | Jul 2026 – Present | Direct, not a client engagement |
 | Fugue AI | Co-Founder & Engineering Lead | 2022 – 2024 (part-time, alongside consulting) | N/A |
 | Pre-engineering: Occupational Therapist roles (Carepointe Companions, Premier Health Partners, UC Health) | 2015 – 2019 | — |
 | Pre-engineering: Taiwanese Navy, mechanical department | 2005 – 2006 (mandatory service) | — |
@@ -57,6 +58,7 @@ Each entry: **[OWNERSHIP LEVEL]** Story — key technical facts an AI "answering
 ### Ongoing / current
 
 21. **[SOLO, ONGOING]** Mentors a software engineer on the Product Forge team via structured 1:1s — career guidance and technical development support. This is a Tensure-wide activity, independent of any single client engagement, and continues even though Tony has rotated off Product Forge itself.
+22. **[SOLO, ACTIVE/EARLY-STAGE]** HubSpot-to-Ruddr integration reliability diagnosis (Tensure Consulting internal project, Jul 2026 – present). Diagnosed reliability failures in an internal HubSpot-to-Ruddr integration, tracing the root cause to strict downstream data-formatting requirements and the absence of automated error recovery, which had been forcing manual intervention to keep resourcing data accurate. Recommended deprioritizing the direct system-to-system integration in favor of a custom dashboard aggregating multi-platform data for reliable resourcing visibility. Scope note: still in the requirements/technical-approach scoping phase — the dashboard itself is not built or shipped yet, don't imply otherwise.
 
 ## Explicitly NOT verified / do not claim
 
