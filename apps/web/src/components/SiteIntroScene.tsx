@@ -147,7 +147,7 @@ export default function SiteIntroScene({
         <div className='pointer-events-none absolute inset-x-0 bottom-16 flex flex-col items-center gap-2'>
           <p className='text-term-sm text-term-muted'>
             <span className={screenHovered ? 'text-term-ink' : undefined}>
-              [ click the screen to boot
+              [ click the monitor to boot
             </span>
             <span className='terminal-cursor ml-1' aria-hidden='true' />
             <span className={screenHovered ? 'text-term-ink' : undefined}>
@@ -155,7 +155,6 @@ export default function SiteIntroScene({
               ]
             </span>
           </p>
-          <p className='text-term-xs text-term-muted'>drag to look around</p>
         </div>
       ) : null}
     </div>
