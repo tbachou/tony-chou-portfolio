@@ -18,7 +18,7 @@ type StorySeed = {
   topics: string[];
 };
 
-// Topic slugs group the 21 verified stories from KNOWLEDGE_BASE.md into curated
+// Topic slugs group the 22 verified stories from KNOWLEDGE_BASE.md into curated
 // conversation topics. Every topic below maps to 3+ stories; the seed fails
 // loudly if that ever drops under 2 (the round-robin story selection in
 // spec 0002 needs at least 2 to rotate).
@@ -240,6 +240,16 @@ const stories: StorySeed[] = [
     requiredFraming:
       'I co-led our SQL to Google Cloud Spanner migration, learning Spanner and Cloud Dataflow alongside the rest of the team as we drove a $500K per year infrastructure cost reduction.',
     topics: ['data-infrastructure'],
+  },
+  {
+    title: 'HubSpot-to-Ruddr integration reliability diagnosis',
+    ownership: StoryOwnership.SOLO,
+    engagement: 'Tensure Consulting (Internal Project, Jul 2026 - Present)',
+    summary:
+      'Diagnosed reliability failures in an internal HubSpot-to-Ruddr integration, tracing the root cause to strict downstream data-formatting requirements and the absence of automated error recovery, which had been forcing manual intervention to keep resourcing data accurate. Recommended deprioritizing the direct system-to-system integration in favor of a custom dashboard aggregating multi-platform data for reliable resourcing visibility.',
+    requiredFraming:
+      "This is an active, early-stage internal project — I've diagnosed the root cause and made a build-vs-integrate recommendation, but the dashboard itself is still in the scoping phase, not built or shipped yet.",
+    topics: ['product-ownership', 'data-infrastructure'],
   },
   {
     title: 'Ongoing engineering mentorship',
