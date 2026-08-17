@@ -5,9 +5,7 @@ import dynamic from 'next/dynamic';
 
 const SiteIntroScene = dynamic(() => import('./SiteIntroScene'), { ssr: false });
 
-const STORAGE_KEY = 'portfolio:intro-seen';
-
-type Phase = 'checking' | 'intro' | 'site';
+type Phase = 'intro' | 'site';
 
 const SiteIntroContext = createContext<{ reenter: () => void } | null>(null);
 
@@ -19,20 +17,20 @@ export function useSiteIntro() {
   return ctx;
 }
 
+// The 3D scene used to gate every first visit behind a click-to-boot
+// interaction before any real content was reachable - real friction for a
+// portfolio whose job is to get a busy visitor to actual content fast.
+// It's demoted to opt-in now: the site loads straight to `children`, and the
+// scene is only ever reached by explicitly asking for it via `reenter()`.
 export function SiteIntroProvider({ children }: { children: React.ReactNode }) {
-  const [phase, setPhase] = useState<Phase>('checking');
+  const [phase, setPhase] = useState<Phase>('site');
   const [introInitialPhase, setIntroInitialPhase] = useState<'idle' | 'exiting'>('idle');
 
-  useEffect(() => {
-    const seen = window.localStorage.getItem(STORAGE_KEY);
-    setPhase(seen ? 'site' : 'intro');
-  }, []);
-
-  // `children` (and any #hash target inside it, e.g. #projects) only exists
-  // in the DOM once phase flips to 'site' - the browser's own hash-scroll-
-  // on-navigation already ran by then and doesn't retry, so a link like
-  // /#projects silently lands at the top instead. Scroll manually once the
-  // real content is actually mounted.
+  // Direct navigation to a hash link (e.g. /#projects) needs its target to
+  // already be in the DOM before the browser's own hash-scroll-on-navigation
+  // runs, or it silently lands at the top instead. Content mounts
+  // immediately now, but keep this as a defensive scroll-on-mount in case
+  // that ever changes again.
   useEffect(() => {
     if (phase !== 'site') return;
     if (!window.location.hash) return;
@@ -40,7 +38,6 @@ export function SiteIntroProvider({ children }: { children: React.ReactNode }) {
   }, [phase]);
 
   function handleZoomInComplete() {
-    window.localStorage.setItem(STORAGE_KEY, '1');
     setPhase('site');
   }
 
@@ -51,9 +48,7 @@ export function SiteIntroProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SiteIntroContext.Provider value={{ reenter }}>
-      {phase === 'checking' ? (
-        <div className="fixed inset-0 bg-term-canvas" aria-hidden="true" />
-      ) : phase === 'intro' ? (
+      {phase === 'intro' ? (
         <SiteIntroScene initialPhase={introInitialPhase} onZoomInComplete={handleZoomInComplete} />
       ) : (
         children
