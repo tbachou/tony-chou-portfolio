@@ -70,6 +70,9 @@ export function SiteNav() {
                 </li>
               );
             })}
+            <li aria-hidden="true" className="text-term-border">
+              |
+            </li>
             <li>
               <button
                 type="button"
