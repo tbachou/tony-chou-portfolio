@@ -1,6 +1,7 @@
 import { AboutSection } from '@/components/AboutSection';
 import { ContactSection } from '@/components/ContactSection';
 import { ConversationPanel } from '@/components/ConversationPanel';
+import { ProjectsSection } from '@/components/ProjectsSection';
 import { ResumeModalProvider } from '@/components/ResumeModalProvider';
 import { SiteIntroProvider } from '@/components/SiteIntroProvider';
 import { SiteNav } from '@/components/SiteNav';
@@ -69,6 +70,8 @@ export default function HomePage() {
             </section>
 
             <AboutSection />
+
+            <ProjectsSection />
 
             <section
               id="interview"

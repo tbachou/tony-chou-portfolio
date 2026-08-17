@@ -1,0 +1,194 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { RequestAccessForm } from '@/components/RequestAccessForm';
+import { TerminalWindow } from '@/components/TerminalWindow';
+
+const title = 'Carryover — Project Case Study';
+const description =
+  'Carryover is a drafting aid for OT/PT clinicians building home exercise program handouts, built as a standalone Electron app. Early-stage — walking skeleton in progress, no public release yet.';
+
+export const metadata: Metadata = {
+  title,
+  description,
+  alternates: { canonical: '/projects/carryover' },
+  openGraph: {
+    title,
+    description,
+    url: '/projects/carryover',
+    siteName: 'Tony Chou — Interactive Portfolio',
+    type: 'website',
+    locale: 'en_US'
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title,
+    description
+  }
+};
+
+const AGENTS = [
+  {
+    name: 'Exercise Selection agent',
+    role: 'Drafts a candidate set of exercises against the case profile — functional presentation, goals, cognitive/mobility level.'
+  },
+  {
+    name: 'Safety & Precautions agent',
+    role: 'Checks the draft against the entered precautions and flags anything that conflicts.'
+  },
+  {
+    name: 'Patient Instructions agent',
+    role: 'Drafts plain-language, patient-facing instructions for each selected exercise.'
+  },
+  {
+    name: 'Orchestrator agent',
+    role: 'Merges the three specialist drafts into one coherent handout for clinician review.'
+  }
+];
+
+const GUARDRAILS = [
+  'No diagnosis field, by design — the case profile captures functional presentation, precautions, goals, and cognitive/mobility level, not a diagnosis. This keeps the tool clearly on the drafting-aid side of the line, not diagnosing or delivering treatment.',
+  'Every generated exercise is labeled "suggested," never presented as a finished recommendation.',
+  'Each suggested item requires explicit per-item acceptance before it can be included in a handout.',
+  'Nothing is exportable or printable until an explicit sign-off: "I am the treating clinician and have reviewed this draft."'
+];
+
+export default function CarryoverProjectPage() {
+  return (
+    <div className="min-h-dvh">
+      <header className="border-b border-term-border">
+        <div className="mx-auto max-w-4xl px-4 py-3 sm:px-0">
+          <Link
+            href="/"
+            className="text-term-sm text-term-muted transition-colors duration-term-instant hover:text-term-ink"
+          >
+            <span aria-hidden="true">$ </span>
+            cd ~/portfolio
+          </Link>
+        </div>
+      </header>
+
+      <main id="main-content" className="mx-auto max-w-4xl px-4 py-10 sm:px-0 sm:py-14">
+        <TerminalWindow path="tonychou@portfolio:~/projects/carryover$">
+          <p className="text-term-sm text-term-muted">
+            <span aria-hidden="true">$ </span>
+            cat status.txt
+          </p>
+          <p className="mt-2 text-term-xs uppercase tracking-wide text-term-accent">
+            [ in progress — walking skeleton, no public release yet ]
+          </p>
+
+          <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
+            Carryover
+          </h1>
+          <p className="mt-1 max-w-prose text-term-base text-term-body">
+            A drafting aid for OT/PT clinicians building home exercise program handouts.
+          </p>
+
+          <section className="mt-10">
+            <h2 className="text-term-sm text-term-muted">
+              <span aria-hidden="true">$ </span>
+              cat what-it-does.txt
+            </h2>
+            <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+              Carryover is a standalone Electron app, separate from this portfolio&apos;s codebase.
+              A clinician enters a case profile — functional presentation, precautions, goals, and
+              cognitive/mobility level — and the app drafts a home exercise program (HEP) handout
+              for review. It&apos;s built on the same local-first, multi-agent architecture pattern
+              as Panel, Tony&apos;s other project here.
+            </p>
+          </section>
+
+          <section className="mt-10">
+            <h2 className="text-term-sm text-term-muted">
+              <span aria-hidden="true">$ </span>
+              cat architecture.txt
+            </h2>
+            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+              Four Claude agents run per draft: three specialists work the case profile
+              concurrently, and a fourth orchestrator merges their output into one handout.
+            </p>
+            <ol className="mt-4 space-y-4">
+              {AGENTS.map((agent, index) => (
+                <li key={agent.name} className="flex gap-3 border-l border-term-border pl-4">
+                  <span aria-hidden="true" className="text-term-muted tabular-nums">
+                    {index + 1}.
+                  </span>
+                  <div>
+                    <p className="text-term-sm font-bold text-term-ink">{agent.name}</p>
+                    <p className="mt-1 text-term-sm leading-relaxed text-term-body">{agent.role}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="mt-10">
+            <h2 className="text-term-sm text-term-muted">
+              <span aria-hidden="true">$ </span>
+              cat guardrails.txt
+            </h2>
+            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+              This is a drafting aid, not a clinical decision system. A few things are load-bearing
+              to that:
+            </p>
+            <ul className="mt-4 space-y-3">
+              {GUARDRAILS.map((item) => (
+                <li key={item} className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+                  <span aria-hidden="true" className="text-term-muted">
+                    ›
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="mt-10">
+            <h2 className="text-term-sm text-term-muted">
+              <span aria-hidden="true">$ </span>
+              cat why.txt
+            </h2>
+            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+              Before engineering, Tony spent 6+ years as an Occupational Therapist in neuro rehab
+              and skilled nursing — C/NDT certified, M.S. in Occupational Therapy from Ohio State.
+              Carryover comes directly out of that background: home exercise program handouts are
+              a real, recurring drafting task in OT/PT practice.
+            </p>
+          </section>
+
+          <section className="mt-10">
+            <h2 className="text-term-sm text-term-muted">
+              <span aria-hidden="true">$ </span>
+              ls demo/
+            </h2>
+            <div className="mt-3 flex min-h-[10rem] flex-col items-center justify-center border border-dashed border-term-border p-8 text-center">
+              <p className="text-term-sm text-term-muted">[ demo coming soon ]</p>
+              <p className="mt-1 max-w-prose text-term-xs text-term-muted">
+                A screenshot or GIF of Carryover drafting a handout will go here once there&apos;s a
+                working demo to show.
+              </p>
+            </div>
+          </section>
+
+          <section className="mt-10 border-t border-term-border pt-6">
+            <span
+              aria-disabled="true"
+              className="inline-flex min-h-[44px] cursor-not-allowed items-center border border-term-border px-4 py-2 text-term-base text-term-muted"
+            >
+              [ source — coming soon ]
+            </span>
+            <p className="mt-3 text-term-xs text-term-muted">
+              No public repo yet — this page will link out once one exists. There&apos;s no
+              packaged download either, but you can request access below; approved requests get a
+              direct download link.
+            </p>
+
+            <div className="mt-5">
+              <RequestAccessForm appSlug="carryover" appName="Carryover" />
+            </div>
+          </section>
+        </TerminalWindow>
+      </main>
+    </div>
+  );
+}

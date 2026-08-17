@@ -1,5 +1,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
+export type AppSlug = 'panel' | 'carryover';
+
 export type ConversationTurn = {
   role: 'interviewer' | 'tony';
   text: string;
@@ -43,6 +45,80 @@ export async function fetchUsageSummary(): Promise<UsageSummary> {
     credentials: 'include'
   });
   if (!res.ok) throw new Error(`Failed to fetch usage summary: ${res.status}`);
+  return res.json();
+}
+
+export type AccessRequestStatus = 'pending' | 'approved' | 'denied';
+
+export type AccessRequestStatusResult = {
+  status: AccessRequestStatus;
+  downloadUrl: string | null;
+};
+
+export type AccessRequestAdmin = {
+  id: string;
+  email: string;
+  appSlug: string;
+  status: AccessRequestStatus;
+  downloadUrl: string | null;
+  createdAt: string;
+};
+
+export async function requestAccess(
+  email: string,
+  appSlug: AppSlug
+): Promise<AccessRequestStatusResult> {
+  const res = await fetch(`${API_URL}/access-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, appSlug })
+  });
+  if (!res.ok) throw new Error(`Failed to request access: ${res.status}`);
+  return res.json();
+}
+
+// null means no request exists yet for that email+app (the endpoint 404s) —
+// distinct from a "pending" request, which does exist.
+export async function fetchAccessRequestStatus(
+  email: string,
+  appSlug: AppSlug
+): Promise<AccessRequestStatusResult | null> {
+  const params = new URLSearchParams({ email, appSlug });
+  const res = await fetch(`${API_URL}/access-requests/status?${params}`, { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to fetch access request status: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAccessRequests(): Promise<AccessRequestAdmin[]> {
+  const res = await fetch(`${API_URL}/internal/access-requests`, {
+    cache: 'no-store',
+    credentials: 'include'
+  });
+  if (!res.ok) throw new Error(`Failed to fetch access requests: ${res.status}`);
+  return res.json();
+}
+
+export async function approveAccessRequest(
+  id: string,
+  downloadUrl: string
+): Promise<AccessRequestAdmin> {
+  const res = await fetch(`${API_URL}/internal/access-requests/${id}/approve`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ downloadUrl })
+  });
+  if (!res.ok) throw new Error(`Failed to approve request: ${res.status}`);
+  return res.json();
+}
+
+export async function denyAccessRequest(id: string): Promise<AccessRequestAdmin> {
+  const res = await fetch(`${API_URL}/internal/access-requests/${id}/deny`, {
+    method: 'POST',
+    credentials: 'include'
+  });
+  if (!res.ok) throw new Error(`Failed to deny request: ${res.status}`);
   return res.json();
 }
 
