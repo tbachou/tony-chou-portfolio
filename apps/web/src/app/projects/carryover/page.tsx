@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { BackToProjects } from '@/components/BackToProjects';
 import { RequestAccessForm } from '@/components/RequestAccessForm';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
@@ -57,13 +57,7 @@ export default function CarryoverProjectPage() {
     <div className="min-h-dvh">
       <header className="border-b border-term-border">
         <div className="mx-auto max-w-4xl px-4 py-3 sm:px-0">
-          <Link
-            href="/"
-            className="text-term-sm text-term-muted transition-colors duration-term-instant hover:text-term-ink"
-          >
-            <span aria-hidden="true">$ </span>
-            cd ~/portfolio
-          </Link>
+          <BackToProjects />
         </div>
       </header>
 
@@ -187,6 +181,10 @@ export default function CarryoverProjectPage() {
               <RequestAccessForm appSlug="carryover" appName="Carryover" />
             </div>
           </section>
+
+          <div className="mt-10 border-t border-term-border pt-6">
+            <BackToProjects />
+          </div>
         </TerminalWindow>
       </main>
     </div>

@@ -28,6 +28,17 @@ export function SiteIntroProvider({ children }: { children: React.ReactNode }) {
     setPhase(seen ? 'site' : 'intro');
   }, []);
 
+  // `children` (and any #hash target inside it, e.g. #projects) only exists
+  // in the DOM once phase flips to 'site' - the browser's own hash-scroll-
+  // on-navigation already ran by then and doesn't retry, so a link like
+  // /#projects silently lands at the top instead. Scroll manually once the
+  // real content is actually mounted.
+  useEffect(() => {
+    if (phase !== 'site') return;
+    if (!window.location.hash) return;
+    document.querySelector(window.location.hash)?.scrollIntoView();
+  }, [phase]);
+
   function handleZoomInComplete() {
     window.localStorage.setItem(STORAGE_KEY, '1');
     setPhase('site');
