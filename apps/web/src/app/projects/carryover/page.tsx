@@ -10,7 +10,7 @@ const DOWNLOAD_URL = 'https://github.com/tbachou/carryover/releases/latest/downl
 
 const title = 'Carryover — Project Case Study';
 const description =
-  'Carryover is a drafting aid for OT/PT clinicians building home exercise program handouts, built as a standalone Electron app. Early-stage — walking skeleton in progress, no public release yet.';
+  'Carryover is a drafting aid for OT/PT clinicians building home exercise program handouts, built as a standalone Electron app. Early release (v0.1.0) — a personal tool, still actively evolving.';
 
 export const metadata: Metadata = {
   title,
@@ -73,7 +73,7 @@ export default function CarryoverProjectPage() {
             cat status.txt
           </p>
           <p className="mt-2 text-term-xs uppercase tracking-wide text-term-accent">
-            [ in progress — walking skeleton, no public release yet ]
+            [ v0.1.0 — early release, personal tool ]
           </p>
 
           <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
@@ -160,12 +160,13 @@ export default function CarryoverProjectPage() {
               <span aria-hidden="true">$ </span>
               ls demo/
             </h2>
-            <div className="mt-3 flex min-h-[10rem] flex-col items-center justify-center border border-dashed border-term-border p-8 text-center">
-              <p className="text-term-sm text-term-muted">[ demo coming soon ]</p>
-              <p className="mt-1 max-w-prose text-term-xs text-term-muted">
-                A screenshot or GIF of Carryover drafting a handout will go here once there&apos;s a
-                working demo to show.
-              </p>
+            <div className="mt-3 border border-term-border">
+              {/* eslint-disable-next-line @next/next/no-img-element -- animated GIF, next/image would strip motion */}
+              <img
+                src="/carryover-demo.gif"
+                alt="Carryover drafting a home exercise program: a case profile is filled in, three agents run (exercise selection, safety review, patient instructions), then a draft handout appears with clinician-review flags and exercise cards awaiting sign-off."
+                className="w-full"
+              />
             </div>
           </section>
 
