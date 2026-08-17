@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { BackToProjects } from '@/components/BackToProjects';
-import { RequestAccessForm } from '@/components/RequestAccessForm';
 import { TerminalWindow } from '@/components/TerminalWindow';
+
+const DOWNLOAD_URL = 'https://github.com/tbachou/panel/releases/tag/v0.1.0';
 
 const title = 'Panel — Project Case Study';
 const description =
@@ -125,21 +126,27 @@ export default function PanelProjectPage() {
           </section>
 
           <section className="mt-10 border-t border-term-border pt-6">
-            <span
-              aria-disabled="true"
-              className="inline-flex min-h-[44px] cursor-not-allowed items-center border border-term-border px-4 py-2 text-term-base text-term-muted"
-            >
-              [ source — coming soon ]
-            </span>
-            <p className="mt-3 text-term-xs text-term-muted">
-              No public repo yet — this page will link out once one exists. There&apos;s no
-              packaged download either, but you can request access below; approved requests get a
-              direct download link.
-            </p>
-
-            <div className="mt-5">
-              <RequestAccessForm appSlug="panel" appName="Panel" />
+            <div className="flex flex-wrap gap-3">
+              <span
+                aria-disabled="true"
+                className="inline-flex min-h-[44px] cursor-not-allowed items-center border border-term-border px-4 py-2 text-term-base text-term-muted"
+              >
+                [ source — coming soon ]
+              </span>
+              <a
+                href={DOWNLOAD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent"
+              >
+                [ download v0.1.0 → ]
+              </a>
             </div>
+            <p className="mt-3 max-w-prose text-term-xs text-term-muted">
+              No public repo yet — this page will link out once one exists. The download is an
+              unsigned build, so macOS Gatekeeper will block a normal double-click open —
+              right-click the app and choose &quot;Open&quot; the first time instead.
+            </p>
           </section>
 
           <div className="mt-10 border-t border-term-border pt-6">
