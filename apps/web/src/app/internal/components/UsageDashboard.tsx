@@ -58,13 +58,21 @@ export function UsageDashboard({ email }: UsageDashboardProps) {
           </p>
           <h1 className="mt-1 text-term-xl font-bold text-term-ink terminal-glow">USAGE MONITOR</h1>
         </div>
-        <button
-          type="button"
-          onClick={() => void signOut()}
-          className="border border-term-border px-3 py-1.5 text-term-sm text-term-muted transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent focus-visible:border-term-accent"
-        >
-          [ SIGN OUT ]
-        </button>
+        <div className="flex gap-3">
+          <a
+            href="/internal/access-requests"
+            className="border border-term-border px-3 py-1.5 text-term-sm text-term-muted transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent"
+          >
+            [ access requests ]
+          </a>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="border border-term-border px-3 py-1.5 text-term-sm text-term-muted transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent focus-visible:border-term-accent"
+          >
+            [ SIGN OUT ]
+          </button>
+        </div>
       </div>
 
       {isLoading ? (

@@ -14,6 +14,12 @@ datasource db {
   provider = "postgresql"
 }
 
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
 enum StoryOwnership {
   SOLO
   CONTRIBUTED
@@ -67,6 +73,24 @@ model DailyUsageCounter {
   date       DateTime @id @db.Date
   turnCount  Int      @default(0)
   tokenCount Int      @default(0)
+}
+
+// Beta-access requests for the standalone Electron apps showcased as
+// portfolio project pages (Panel, Carryover). appSlug is a plain String
+// (not an enum FK) so a new app can be added on the web side without a
+// migration here. Approval is manual, done from /internal/access-requests.
+model AccessRequest {
+  id          String              @id @default(cuid())
+  email       String
+  appSlug     String
+  status      AccessRequestStatus @default(PENDING)
+  downloadUrl String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([email, appSlug])
+  @@index([appSlug])
+  @@index([status])
 }
 
 model User {

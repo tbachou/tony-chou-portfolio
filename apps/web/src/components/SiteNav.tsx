@@ -5,6 +5,7 @@ import { useSiteIntro } from './SiteIntroProvider';
 
 const NAV_LINKS = [
   { href: '#about', label: 'about' },
+  { href: '#projects', label: 'projects' },
   { href: '#interview', label: 'interview' },
   { href: '#contact', label: 'contact' }
 ];
