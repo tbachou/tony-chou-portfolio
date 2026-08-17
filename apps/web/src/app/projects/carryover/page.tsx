@@ -2,7 +2,11 @@ import type { Metadata } from 'next';
 import { BackToProjects } from '@/components/BackToProjects';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
-const DOWNLOAD_URL = 'https://github.com/tbachou/carryover/releases/tag/v0.1.0';
+const SOURCE_URL = 'https://github.com/tbachou/carryover';
+// GitHub's "latest release" alias - always resolves to whatever the newest
+// release's asset with this exact name is, so cutting a new release never
+// requires touching this file (see electron-builder.yml's artifactName).
+const DOWNLOAD_URL = 'https://github.com/tbachou/carryover/releases/latest/download/Carryover-arm64.dmg';
 
 const title = 'Carryover — Project Case Study';
 const description =
@@ -167,25 +171,25 @@ export default function CarryoverProjectPage() {
 
           <section className="mt-10 border-t border-term-border pt-6">
             <div className="flex flex-wrap gap-3">
-              <span
-                aria-disabled="true"
-                className="inline-flex min-h-[44px] cursor-not-allowed items-center border border-term-border px-4 py-2 text-term-base text-term-muted"
-              >
-                [ source — coming soon ]
-              </span>
               <a
-                href={DOWNLOAD_URL}
+                href={SOURCE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent"
               >
-                [ download v0.1.0 → ]
+                [ source → ]
+              </a>
+              <a
+                href={DOWNLOAD_URL}
+                className="inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent"
+              >
+                [ download → ]
               </a>
             </div>
             <p className="mt-3 max-w-prose text-term-xs text-term-muted">
-              No public repo yet — this page will link out once one exists. The download is an
-              unsigned build, so macOS Gatekeeper will block a normal double-click open —
-              right-click the app and choose &quot;Open&quot; the first time instead.
+              macOS (Apple Silicon) only, unsigned build — Gatekeeper will block a normal
+              double-click open on first launch; right-click the app and choose &quot;Open&quot;
+              instead.
             </p>
           </section>
 
