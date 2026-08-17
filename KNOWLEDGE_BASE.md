@@ -8,9 +8,9 @@ Source of truth for the interview-simulator portfolio app. Everything below is f
 
 - **Name**: Tony Chou
 - **Current status**: Senior Software Engineer, employed by Tensure Consulting. Since Jul 2026, working an internal Tensure project (diagnosing a HubSpot-to-Ruddr integration and scoping a resourcing dashboard) rather than an external client engagement. Last client engagement (Topstep) ended July 31, 2026.
-- **Headline positioning**: Senior Software Engineer | React, TypeScript, Node.js | AI-Integrated & Real-Time Collaborative Products | Former Occupational Therapist
-- **Career arc**: Former Occupational Therapist (6+ years, neuro rehab + skilled nursing, C/NDT certified, M.S. OT from Ohio State) → career change into software engineering → 6 years production experience, all via long-term embedded consulting engagements through Tensure Consulting.
-- **Differentiator narrative**: OT background shapes an engineering approach of "understand a system deeply before changing it, and design for the people who'll actually use it." This is a deliberate positioning choice, not an afterthought — lean into it in the app rather than treat it as a gap to explain away.
+- **Headline positioning**: Senior Software Engineer | React, TypeScript, Node.js | AI-Integrated & Real-Time Collaborative Products
+- **Career arc**: 6 years production engineering experience via long-term embedded consulting engagements through Tensure Consulting (Mailchimp, Product Forge, Topstep, current internal project). Also holds an M.S. in Occupational Therapy from Ohio State (C/NDT certified) and worked as a licensed OT for ~5 years (2015–2019) before transitioning into engineering in 2020 — real background, not the headline pitch.
+- **Framing rule (updated Aug 17, 2026, per resume-honesty-standard)**: standing instruction is to lead with engineering experience, not the OT/career-change story — leading with it has been costing interviews via degree-screening. Never open a pitch, resume line, or interview answer with the OT background; if it comes up, keep it brief and factual, place it after the engineering credentials, and never frame it as *why* Tony is qualified for engineering work. This reverses the site's earlier "lean into it" framing — that guidance is stale, don't follow it.
 - **Core value proposition**: ownership — diagnosing problems nobody assigned, defending technical tradeoffs, building systems that hold up under real usage.
 
 ## Employment Timeline
