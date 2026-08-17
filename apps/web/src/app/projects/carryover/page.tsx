@@ -187,9 +187,10 @@ export default function CarryoverProjectPage() {
               </a>
             </div>
             <p className="mt-3 max-w-prose text-term-xs text-term-muted">
-              macOS (Apple Silicon) only, unsigned build — Gatekeeper will block a normal
-              double-click open on first launch; right-click the app and choose &quot;Open&quot;
-              instead.
+              macOS (Apple Silicon) only. Ad-hoc signed, not notarized — right-click the app and
+              choose &quot;Open&quot; the first time to get past Gatekeeper. If macOS still calls
+              it damaged, that&apos;s the quarantine flag, not a corrupt download — clear it in
+              Terminal: <code>xattr -d com.apple.quarantine /Applications/Carryover.app</code>.
             </p>
           </section>
 
