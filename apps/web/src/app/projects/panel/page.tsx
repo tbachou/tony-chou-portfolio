@@ -10,7 +10,7 @@ const DOWNLOAD_URL = 'https://github.com/tbachou/panel/releases/latest/download/
 
 const title = 'Panel — Project Case Study';
 const description =
-  'Panel is a local-first, multi-agent code review companion built as a standalone Electron app. Early-stage — walking skeleton in progress, no public release yet.';
+  'Panel is a local-first, multi-agent code review companion built as a standalone Electron app. Early release (v0.1.0) — a personal tool, still actively evolving.';
 
 export const metadata: Metadata = {
   title,
@@ -66,7 +66,7 @@ export default function PanelProjectPage() {
             cat status.txt
           </p>
           <p className="mt-2 text-term-xs uppercase tracking-wide text-term-accent">
-            [ in progress — walking skeleton, no public release yet ]
+            [ v0.1.0 — early release, personal tool ]
           </p>
 
           <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
@@ -120,12 +120,13 @@ export default function PanelProjectPage() {
               <span aria-hidden="true">$ </span>
               ls demo/
             </h2>
-            <div className="mt-3 flex min-h-[10rem] flex-col items-center justify-center border border-dashed border-term-border p-8 text-center">
-              <p className="text-term-sm text-term-muted">[ demo coming soon ]</p>
-              <p className="mt-1 max-w-prose text-term-xs text-term-muted">
-                A screenshot or GIF of Panel reviewing a real diff will go here once there&apos;s a
-                working demo to show.
-              </p>
+            <div className="mt-3 border border-term-border">
+              {/* eslint-disable-next-line @next/next/no-img-element -- animated GIF, next/image would strip motion */}
+              <img
+                src="/panel-demo.gif"
+                alt="Panel reviewing a sample diff: security, correctness, and simplification agents run concurrently, then the orchestrator merges findings into a ranked list."
+                className="w-full"
+              />
             </div>
           </section>
 
