@@ -88,7 +88,7 @@ export function SiteNav() {
                 onClick={reenter}
                 className="text-term-muted transition-colors duration-term-instant hover:text-term-ink"
               >
-                [ zoom out ]
+                [ 3d mode ]
               </button>
             </li>
           </ul>
