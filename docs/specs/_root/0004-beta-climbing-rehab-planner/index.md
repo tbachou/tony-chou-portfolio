@@ -104,8 +104,8 @@ Per call: one retry on 5xx or timeout, then fail the request. 60 second hard tim
 No build approach is recorded for this project (no root AGENTS.md, no scope header), so this plan defaults to Tracer Bullet: a thin working thread through every layer first, then thickening. Assumption noted.
 
 1. [x] Prisma migration adding `BetaDailyUsageCounter` and `BetaIpDailyCount`, satisfies AC-5, AC-6.
-2. Beta module skeleton in apps/api: DTO with validation and caps, hashed IP helper, throttler rule (3 per hour), counter service with the success only increment semantics, and `GET /beta/status`, satisfies AC-5, AC-6, AC-7.
-3. Thin end to end thread: the three skill files (screener, drafter, coach), the pipeline service (Haiku, Sonnet, Haiku, forced tool calls, retry and timeout), and the SSE controller for `POST /beta/plan`. Prove a fixed valid payload streams a real plan, satisfies AC-1, AC-2, AC-7, AC-8.
+2. [x] Beta module skeleton in apps/api: DTO with validation and caps, hashed IP helper, throttler rule (3 per hour), counter service with the success only increment semantics, and `GET /beta/status`, satisfies AC-5, AC-6, AC-7.
+3. [x] Thin end to end thread: the three skill files (screener, drafter, coach), the pipeline service (Haiku, Sonnet, Haiku, forced tool calls, retry and timeout), and the SSE controller for `POST /beta/plan`. Prove a fixed valid payload streams a real plan, satisfies AC-1, AC-2, AC-7, AC-8.
 4. `/beta` route group in apps/web: own layout and design tokens (topo contours, hold colors, grade chips; no terminal theme), disclaimer gate with localStorage, the structured form, live pipeline status chips consuming SSE, streamed plan display as graded stage cards, satisfies AC-1, AC-3, AC-4.
 5. Unhappy path UX on the page: red flag block state, per IP limit message, global cap demo budget message (form stays browsable, pre checked via `GET /beta/status`), friendly error state, satisfies AC-2, AC-5, AC-8.
 6. Remaining page sections (hero, how it works, why I built this, safety FAQ) plus metadata and an Open Graph card in Beta's identity, satisfies AC-10.

@@ -13,7 +13,7 @@ import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import type { Request, Response } from 'express';
 import { ConversationService } from './conversation.service';
 import { ConversationTurnRequestDto } from './dto/conversation-turn-request.dto';
-import { hashIp, resolveClientIp } from './ip-hash.util';
+import { hashIp, resolveClientIp } from '../../common/utils/ip-hash.util';
 import { writeSseEvent } from './sse.util';
 
 @Controller('conversation')

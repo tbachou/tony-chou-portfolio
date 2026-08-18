@@ -13,6 +13,7 @@ import { StoriesModule } from './modules/stories/stories.module';
 import { TopicsModule } from './modules/topics/topics.module';
 import { ConversationModule } from './modules/conversation/conversation.module';
 import { UsageSummaryModule } from './modules/usage-summary/usage-summary.module';
+import { BetaModule } from './modules/beta/beta.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { UsageSummaryModule } from './modules/usage-summary/usage-summary.module
     TopicsModule,
     ConversationModule,
     UsageSummaryModule,
+    BetaModule,
   ],
   controllers: [AppController],
   providers: [
