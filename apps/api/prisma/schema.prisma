@@ -75,6 +75,24 @@ model DailyUsageCounter {
   tokenCount Int      @default(0)
 }
 
+// Beta (the return-to-climbing rehab planner, spec 0004) writes exactly two
+// anonymous counter tables and nothing else: no injury details, goals text,
+// or generated plan content is ever persisted (AC-6). Unrelated to the
+// "beta access" wording on AccessRequest below.
+model BetaDailyUsageCounter {
+  date       DateTime @id @db.Date
+  planCount  Int      @default(0)
+  tokenCount Int      @default(0)
+}
+
+model BetaIpDailyCount {
+  hashedIp String
+  date     DateTime @db.Date
+  count    Int      @default(0)
+
+  @@id([hashedIp, date])
+}
+
 // Beta-access requests for the standalone Electron apps showcased as
 // portfolio project pages (Panel, Carryover). appSlug is a plain String
 // (not an enum FK) so a new app can be added on the web side without a
