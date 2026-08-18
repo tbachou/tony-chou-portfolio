@@ -1,0 +1,507 @@
+/* Beta — return-to-climbing rehab planner (spec 0004).
+   Beta has its OWN identity: warm chalk-and-stone daylight palette, one
+   terracotta accent, hold-colored markers, topo-contour background art.
+   Fixed light mode, deliberately — daylight at the crag has one mode, the
+   same way the terminal theme deliberately has only dark. Scoped under
+   .beta-theme; never uses the term-* tokens. */
+
+/* ------------------------------------------------------------------ */
+/* Escaping the terminal theme: the root layout puts .terminal-theme,  */
+/* fixed CRT overlay divs, and a custom cursor on <body>. Hide them    */
+/* whenever a Beta page is mounted.                                    */
+/* ------------------------------------------------------------------ */
+
+body:has(.beta-theme) .terminal-phosphor-glow,
+body:has(.beta-theme) .terminal-scanlines,
+body:has(.beta-theme) .retro-cursor { display: none; }
+/* The terminal theme hides the native cursor in favor of its phosphor
+   block; restore native semantics here — auto on the page, pointer on
+   interactive elements (auto would beat .beta-btn's own cursor rule). */
+body.retro-cursor-active:has(.beta-theme) { cursor: auto; }
+body.retro-cursor-active:has(.beta-theme) a,
+body.retro-cursor-active:has(.beta-theme) button:not(:disabled),
+body.retro-cursor-active:has(.beta-theme) [role='button'],
+body.retro-cursor-active:has(.beta-theme) summary { cursor: pointer; }
+body:has(.beta-theme) { background: var(--beta-canvas); }
+
+/* Overscroll behind the page should be chalk, not CRT black. */
+html:has(.beta-theme) { background: #faf7f2; }
+
+/* ------------------------------------------------------------------ */
+/* Tokens. Defined on body:has(.beta-theme) as well so the escape rule */
+/* above can resolve var(--beta-canvas) at the body level.             */
+/* Contrast ratios verified — do not change values.                    */
+/* ------------------------------------------------------------------ */
+
+body:has(.beta-theme),
+.beta-theme {
+  --beta-canvas: #faf7f2;
+  --beta-surface: #ffffff;
+  --beta-surface-2: #f1ebe1;
+  --beta-border: #e3dbcd;
+  --beta-border-strong: #8f8471; /* form control borders, 3.7:1 on white */
+  --beta-muted: #6f6757; /* 4.9:1 on canvas */
+  --beta-body: #453e31; /* ~8.5:1 */
+  --beta-ink: #241f16; /* ~14:1 */
+  --beta-accent: #c2410c; /* 4.8:1 on canvas; borders, rings, marks */
+  --beta-accent-deep: #9a3412; /* filled CTAs: white on it 7.3:1 */
+  --beta-accent-pressed: #7c2d12; /* CTA hover / pressed: white on it 9.1:1 */
+  --beta-on-accent: #ffffff;
+  --beta-success: #3f6212;
+  --beta-error: #b91c1c;
+
+  /* Hold colors — decorative stage markers, white text on all five. */
+  --hold-1: #0e7490;
+  --hold-2: #1d4ed8;
+  --hold-3: #7e22ce;
+  --hold-4: #a16207;
+  --hold-5: #c2410c;
+
+  /* Type scale — base 16, ratio ~1.25. */
+  --beta-text-base: 1rem; /* 16 */
+  --beta-text-lg: 1.25rem; /* 20 */
+  --beta-text-xl: 1.5625rem; /* 25 */
+  --beta-text-2xl: 1.9375rem; /* 31 */
+  --beta-text-3xl: 2.4375rem; /* 39 */
+  --beta-text-4xl: 3.0625rem; /* 49 */
+  --beta-leading-body: 1.5;
+  --beta-leading-display: 1.15;
+
+  /* Radius */
+  --beta-radius-control: 8px;
+  --beta-radius-card: 14px;
+  --beta-radius-pill: 999px;
+
+  /* Motion — one ease, three durations. */
+  --beta-dur-fast: 120ms;
+  --beta-dur-base: 180ms;
+  --beta-dur-slow: 260ms;
+  --beta-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+
+.beta-theme {
+  background: var(--beta-canvas);
+  color: var(--beta-body);
+  font-family: var(--font-bricolage), 'Avenir Next', 'Segoe UI', sans-serif;
+  font-size: var(--beta-text-base);
+  line-height: var(--beta-leading-body);
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.beta-theme ::selection {
+  background: var(--beta-accent);
+  color: var(--beta-on-accent);
+}
+
+.beta-theme :focus-visible {
+  outline: 2px solid var(--beta-accent);
+  outline-offset: 2px;
+}
+
+.beta-theme h1,
+.beta-theme h2,
+.beta-theme h3 {
+  color: var(--beta-ink);
+  line-height: var(--beta-leading-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Plain links inherit text color; anchors styled as buttons keep the
+   button's own color (this rule outranks .beta-btn-primary otherwise). */
+.beta-theme a:not(.beta-btn) {
+  color: inherit;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared surfaces and controls                                        */
+/* ------------------------------------------------------------------ */
+
+.beta-card {
+  background: var(--beta-surface);
+  border: 1px solid var(--beta-border);
+  border-radius: var(--beta-radius-card);
+}
+
+/* Edge-accented card variants (cap banner, red-flag and error states).
+   Modifier classes rather than utility overrides so they win against
+   .beta-card's border shorthand regardless of stylesheet order. */
+.beta-card--accent-edge {
+  border-left: 4px solid var(--beta-accent);
+}
+
+.beta-card--error-edge {
+  border-left: 4px solid var(--beta-error);
+}
+
+.beta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--beta-border);
+  border-radius: var(--beta-radius-pill);
+  background: var(--beta-surface);
+  color: var(--beta-body);
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.beta-hold-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--beta-radius-pill);
+  flex: none;
+}
+
+.beta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem; /* 44px touch target */
+  padding: 0.625rem 1.5rem;
+  border-radius: var(--beta-radius-control);
+  font-size: var(--beta-text-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--beta-dur-fast) var(--beta-ease),
+    border-color var(--beta-dur-fast) var(--beta-ease),
+    color var(--beta-dur-fast) var(--beta-ease);
+}
+
+.beta-btn-primary {
+  background: var(--beta-accent-deep);
+  border: 1px solid var(--beta-accent-deep);
+  color: var(--beta-on-accent);
+}
+
+.beta-btn-primary:hover {
+  background: var(--beta-accent-pressed);
+  border-color: var(--beta-accent-pressed);
+}
+
+.beta-btn-primary:disabled {
+  background: var(--beta-border-strong);
+  border-color: var(--beta-border-strong);
+  cursor: not-allowed;
+}
+
+.beta-btn-secondary {
+  background: var(--beta-surface);
+  border: 1px solid var(--beta-border-strong);
+  color: var(--beta-ink);
+}
+
+.beta-btn-secondary:hover {
+  border-color: var(--beta-accent);
+  color: var(--beta-accent-deep);
+}
+
+/* ------------------------------------------------------------------ */
+/* Form controls — native inputs styled as cards/chips                 */
+/* ------------------------------------------------------------------ */
+
+.beta-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.beta-legend {
+  display: block;
+  padding: 0;
+  margin-bottom: 0.25rem;
+  color: var(--beta-ink);
+  font-size: var(--beta-text-lg);
+  font-weight: 700;
+  line-height: var(--beta-leading-display);
+}
+
+.beta-hint {
+  color: var(--beta-muted);
+  font-size: 0.875rem;
+}
+
+.beta-input,
+.beta-textarea {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.875rem;
+  background: var(--beta-surface);
+  border: 1px solid var(--beta-border-strong);
+  border-radius: var(--beta-radius-control);
+  color: var(--beta-ink);
+  font: inherit;
+  transition: border-color var(--beta-dur-fast) var(--beta-ease);
+}
+
+.beta-input:hover,
+.beta-textarea:hover {
+  border-color: var(--beta-accent);
+}
+
+.beta-input::placeholder,
+.beta-textarea::placeholder {
+  color: var(--beta-muted);
+}
+
+.beta-textarea {
+  resize: vertical;
+  min-height: 5.5rem;
+}
+
+/* Choice cards: a <label> wrapping a real radio/checkbox. */
+.beta-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--beta-surface);
+  border: 1px solid var(--beta-border-strong);
+  border-radius: var(--beta-radius-control);
+  cursor: pointer;
+  transition:
+    border-color var(--beta-dur-fast) var(--beta-ease),
+    box-shadow var(--beta-dur-fast) var(--beta-ease);
+}
+
+.beta-choice:hover {
+  border-color: var(--beta-accent);
+}
+
+.beta-choice:has(input:checked) {
+  border-color: var(--beta-accent);
+  box-shadow: inset 0 0 0 1px var(--beta-accent);
+}
+
+.beta-choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.beta-choice input[type='radio'],
+.beta-choice input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  margin: 0.125rem 0 0;
+  background: var(--beta-surface);
+  border: 2px solid var(--beta-border-strong);
+  cursor: inherit;
+  transition:
+    border-color var(--beta-dur-fast) var(--beta-ease),
+    background-color var(--beta-dur-fast) var(--beta-ease);
+}
+
+.beta-choice input[type='radio'] {
+  border-radius: var(--beta-radius-pill);
+}
+
+.beta-choice input[type='checkbox'] {
+  border-radius: 5px;
+}
+
+.beta-choice input[type='radio']:checked {
+  border-color: var(--beta-accent);
+  background: var(--beta-accent);
+  box-shadow: inset 0 0 0 3px var(--beta-surface);
+}
+
+.beta-choice input[type='checkbox']:checked {
+  border-color: var(--beta-accent);
+  background-color: var(--beta-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 0.875rem;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Single-line choice rows (pain behavior, discipline). */
+.beta-choice--center {
+  align-items: center;
+}
+
+.beta-choice--center input[type='radio'],
+.beta-choice--center input[type='checkbox'] {
+  margin-top: 0;
+}
+
+/* Compact chip variant (equipment access). */
+.beta-choice--chip {
+  align-items: center;
+  border-radius: var(--beta-radius-pill);
+  padding: 0.5rem 1rem;
+}
+
+.beta-choice--chip input[type='checkbox'] {
+  margin-top: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pipeline status chips: Screening → Drafting → Coaching (AC-4)       */
+/* ------------------------------------------------------------------ */
+
+.beta-stage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.375rem 1rem;
+  border: 1px solid var(--beta-border);
+  border-radius: var(--beta-radius-pill);
+  background: var(--beta-surface);
+  color: var(--beta-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition:
+    color var(--beta-dur-base) var(--beta-ease),
+    border-color var(--beta-dur-base) var(--beta-ease);
+}
+
+.beta-stage-chip[data-state='active'] {
+  border-color: var(--beta-accent);
+  color: var(--beta-accent-deep);
+}
+
+.beta-stage-chip[data-state='done'] {
+  border-color: var(--beta-border);
+  color: var(--beta-success);
+}
+
+.beta-stage-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--beta-radius-pill);
+  background: var(--beta-border-strong);
+  flex: none;
+}
+
+.beta-stage-chip[data-state='active'] .beta-stage-dot {
+  background: var(--beta-accent);
+  animation: beta-pulse 1.4s var(--beta-ease) infinite;
+}
+
+.beta-stage-chip[data-state='done'] .beta-stage-dot {
+  background: var(--beta-success);
+}
+
+@keyframes beta-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(194, 65, 12, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(194, 65, 12, 0);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Streaming plan display                                              */
+/* ------------------------------------------------------------------ */
+
+.beta-stage-card {
+  background: var(--beta-surface);
+  border: 1px solid var(--beta-border);
+  border-left: 4px solid var(--stage-hold, var(--beta-accent));
+  border-radius: var(--beta-radius-card);
+}
+
+.beta-stage-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  border-radius: var(--beta-radius-pill);
+  background: var(--stage-hold, var(--beta-accent));
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.beta-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--beta-accent);
+  animation: beta-blink 1s steps(2, start) infinite;
+}
+
+@keyframes beta-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* FAQ details/summary                                                 */
+/* ------------------------------------------------------------------ */
+
+.beta-faq {
+  background: var(--beta-surface);
+  border: 1px solid var(--beta-border);
+  border-radius: var(--beta-radius-card);
+}
+
+.beta-faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.75rem;
+  padding: 1rem 1.25rem;
+  color: var(--beta-ink);
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+
+.beta-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.beta-faq summary::after {
+  content: '+';
+  flex: none;
+  color: var(--beta-accent);
+  font-size: var(--beta-text-lg);
+  font-weight: 500;
+  line-height: 1;
+  transition: transform var(--beta-dur-base) var(--beta-ease);
+}
+
+.beta-faq[open] summary::after {
+  transform: rotate(45deg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion kill-switch                                          */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .beta-theme *,
+  .beta-theme *::before,
+  .beta-theme *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

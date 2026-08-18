@@ -11,6 +11,14 @@ type Project = {
 
 const PROJECTS: Project[] = [
   {
+    slug: 'beta',
+    name: 'beta/',
+    pitch:
+      'An AI return-to-climbing rehab planner - three agents with hard safety rails, live in the browser.',
+    status: 'live',
+    href: '/projects/beta'
+  },
+  {
     slug: 'panel',
     name: 'panel/',
     pitch: 'A local-first, multi-agent code review companion for git repos.',
