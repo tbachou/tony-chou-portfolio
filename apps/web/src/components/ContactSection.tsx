@@ -1,7 +1,11 @@
+'use client';
+
 import { contactInfo } from '@/lib/resume-data';
 import { TerminalWindow } from './TerminalWindow';
+import { useSiteIntro } from './SiteIntroProvider';
 
 export function ContactSection() {
+  const { reenter } = useSiteIntro();
   return (
     <section
       id="contact"
@@ -46,6 +50,22 @@ export function ContactSection() {
             <dd className="text-term-ink">{contactInfo.location}</dd>
           </div>
         </dl>
+
+        <h3 className="mt-10 text-term-sm font-normal text-term-muted">
+          <span aria-hidden="true">$ </span>
+          cat colophon.txt
+        </h3>
+        <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+          This site is hand-built — Next.js and Tailwind up front, NestJS behind it, React Three
+          Fiber for the one corner of 3D I couldn&apos;t resist.
+        </p>
+        <button
+          type="button"
+          onClick={reenter}
+          className="mt-3 text-term-sm text-term-ink transition-colors duration-term-instant hover:text-term-accent"
+        >
+          [ view the 3d desk ]
+        </button>
       </TerminalWindow>
     </section>
   );

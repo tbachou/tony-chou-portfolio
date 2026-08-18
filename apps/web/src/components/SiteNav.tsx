@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useResumeModal } from './ResumeModalProvider';
-import { useSiteIntro } from './SiteIntroProvider';
 
 const NAV_LINKS = [
   { href: '#about', label: 'about' },
@@ -40,7 +39,6 @@ function useActiveSection(): string | null {
 
 export function SiteNav() {
   const { open } = useResumeModal();
-  const { reenter } = useSiteIntro();
   const activeId = useActiveSection();
 
   return (
@@ -80,15 +78,6 @@ export function SiteNav() {
                 className="text-term-ink transition-colors duration-term-instant hover:text-term-accent"
               >
                 [ resume ]
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                onClick={reenter}
-                className="text-term-muted transition-colors duration-term-instant hover:text-term-ink"
-              >
-                [ 3d mode ]
               </button>
             </li>
           </ul>

@@ -39,9 +39,37 @@ export default function SiteIntroScene({
   const [phase, setPhase] = useState<ScenePhase>(initialPhase);
   const [screenHovered, setScreenHovered] = useState(false);
   const [bloomTargets, setBloomTargets] = useState<THREE.Object3D[]>([]);
+  const enterButtonRef = useRef<HTMLButtonElement | null>(null);
   const handleBloomTargetsReady = useCallback((targets: THREE.Object3D[]) => {
     setBloomTargets(targets);
   }, []);
+
+  // Entering the site is the same action whether it comes from clicking the
+  // monitor in WebGL, the DOM overlay button, or Escape. Reduced-motion
+  // visitors skip the camera lerp and swap to the 2D site immediately.
+  const enterSite = useCallback(() => {
+    if (phase !== 'idle') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      onZoomInComplete();
+      return;
+    }
+    setPhase('entering');
+  }, [phase, onZoomInComplete]);
+
+  // The canvas is pointer-only, so a keyboard user who lands here would
+  // otherwise be stranded: focus the real DOM exit button as soon as the
+  // scene is interactive, and let Escape do the same thing.
+  useEffect(() => {
+    if (phase === 'idle') enterButtonRef.current?.focus();
+  }, [phase]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') enterSite();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [enterSite]);
 
   return (
     <div className='fixed inset-0 bg-term-canvas'>
@@ -95,9 +123,7 @@ export default function SiteIntroScene({
           <ImportedDesk
             hovered={screenHovered}
             onHoverChange={setScreenHovered}
-            onClick={() => {
-              if (phase === 'idle') setPhase('entering');
-            }}
+            onClick={enterSite}
             onBloomTargetsReady={handleBloomTargetsReady}
           />
           <ContactShadows
@@ -155,6 +181,22 @@ export default function SiteIntroScene({
               ]
             </span>
           </p>
+        </div>
+      ) : null}
+
+      {/* Real DOM escape hatch - the monitor click above only exists inside
+          the WebGL canvas, so this focusable button (auto-focused on mount,
+          Escape does the same) is the keyboard route back to the 2D site. */}
+      {phase === 'idle' ? (
+        <div className='absolute inset-x-0 bottom-4 z-20 flex justify-center'>
+          <button
+            ref={enterButtonRef}
+            type='button'
+            onClick={enterSite}
+            className='border border-term-border bg-term-canvas/80 px-4 py-1.5 text-term-sm text-term-ink outline-none backdrop-blur transition-colors duration-term-instant hover:border-term-accent hover:text-term-accent focus:border-term-accent focus:text-term-accent'
+          >
+            [ enter site → ]
+          </button>
         </div>
       ) : null}
     </div>
