@@ -49,13 +49,19 @@
   --glow-alpha-far: 0.25;
   --glow-blur-near: 4px;
   --glow-blur-far: 12px;
-  /* How the custom cursor composites against whatever it is over
-     (.retro-cursor, below). `difference` is not a neutral default — it is
-     a palette-specific trick that only reads because bright phosphor
-     inverted against a near-black canvas stays bright. Tokenized for the
-     same reason the glow radii above are: the light palette has to
-     answer this question differently. */
+  /* How the custom cursor composites against whatever it is over, and
+     what shape it is (.retro-cursor, below). `difference` is not a
+     neutral default — it is a palette-specific trick that only reads
+     because bright phosphor inverted against a near-black canvas stays
+     bright, and, crucially, because inverting is non-destructive: glyphs
+     under the block invert too and stay legible (8.56:1 against it).
+     Tokenized for the same reason the glow radii above are: the light
+     palette has to answer this question differently — see there for why
+     it trades the solid fill for a hollow ring. */
   --cursor-blend: difference;
+  --cursor-fill: var(--color-accent);
+  --cursor-stroke-width: 0px;
+  --cursor-glow: 0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);
   /* The printed sheet (see the light palette below). A CRT has no paper,
      so the dark canvas carries no background image at all. */
   --sheet-image: none;
@@ -189,12 +195,32 @@
     --glow-alpha-far: 0.14;
     --glow-blur-near: 0.4px;
     --glow-blur-far: 1px;
-    /* Paper has nothing to invert against. Differencing the ink against
-       manila lands on ~rgb(220,186,135) — 1.53:1, an invisible cursor,
-       and 1.58:1 over a green bar. Struck flat instead, the same ink
-       block measures 11.16:1 on the canvas and 9.54:1 on a bar, and
-       reads as a struck block rather than a glowing one. */
+    /* Paper has nothing to invert against, and nothing to darken into
+       either, so the cursor changes SHAPE here rather than just blend
+       mode. Ruled out, with the numbers:
+         difference — ink differenced against manila lands on
+           ~rgb(220,186,135), 1.53:1, an invisible smudge (1.58:1 on a
+           bar). This was the original bug.
+         normal, solid — 11.16:1 on the canvas and 9.54:1 on a bar, so
+           the cursor itself is fine, but an opaque block REPLACES the
+           glyphs it covers (1.00:1) and the word under the pointer
+           becomes unreadable. This was the second bug.
+         multiply — visible (11.91:1 / 10.56:1), but because the light
+           accent is dark ink rather than bright phosphor, multiplying
+           drives the already-dark glyphs and the block toward the same
+           black: body text under it falls to 1.41:1, muted to 1.34:1.
+           Worse than the smudge it would replace.
+       So: hollow. Transparent centre, a 2px ink ring — the hollow block
+       a real terminal draws when the window loses focus, which is the
+       period-correct shape anyway. The ring is the same ink at 11.16:1
+       on the canvas and 9.54:1 on a bar, and the glyphs inside are not
+       composited with at all, so they hold their full 12.66:1 / 10.82:1.
+       Paper does not glow, so the halo goes with the fill (the same call
+       the scanline and bloom alphas above already make). */
     --cursor-blend: normal;
+    --cursor-fill: transparent;
+    --cursor-stroke-width: 2px;
+    --cursor-glow: none;
     --sheet-image: var(--paper-sheet-image);
     --sheet-size: var(--paper-sheet-size);
     --sheet-position: var(--paper-sheet-position);
@@ -226,6 +252,9 @@
   --glow-blur-far: 1px;
   /* See the note in the prefers-color-scheme block above. */
   --cursor-blend: normal;
+  --cursor-fill: transparent;
+  --cursor-stroke-width: 2px;
+  --cursor-glow: none;
   --sheet-image: var(--paper-sheet-image);
   --sheet-size: var(--paper-sheet-size);
   --sheet-position: var(--paper-sheet-position);
@@ -396,15 +425,20 @@
 }
 
 /* Custom mouse cursor — a sharp-edged accent block that trails the
-   pointer. How it composites is palette-dependent and comes from
-   --cursor-blend: on the CRT it inverts against the near-black canvas
-   (a phosphor block, the spotlight-cursor trick); on paper it is struck
-   flat, because differencing ink against manila stock yields a ~1.5:1
-   ghost. Since the native cursor is hidden below, this element is the
-   only pointer the visitor has, so it must clear contrast in every
-   palette. RetroCursor.tsx only adds the `retro-cursor-active` class
-   when JS has confirmed a fine pointer and no reduced-motion
-   preference, so the native cursor is the safe default. */
+   pointer. Both how it composites AND whether it is filled are
+   palette-dependent, because the pointer sits on top of running text and
+   must not eat it: on the CRT it is a solid phosphor block inverting
+   against the near-black canvas (the spotlight-cursor trick — glyphs
+   under it invert too, so they stay readable), and on paper it is a
+   hollow ink ring, because no blend mode over manila stock both shows
+   the cursor and keeps the type under it legible. Both cases are driven
+   from tokens (--cursor-blend / --cursor-fill / --cursor-stroke-width /
+   --cursor-glow) up in the palette; the geometry here is shared. Since
+   the native cursor is hidden below, this element is the only pointer
+   the visitor has, so it must clear contrast in every palette.
+   RetroCursor.tsx only adds the `retro-cursor-active` class when JS has
+   confirmed a fine pointer and no reduced-motion preference, so the
+   native cursor is the safe default. */
 body.retro-cursor-active,
 body.retro-cursor-active a,
 body.retro-cursor-active button,
@@ -416,14 +450,19 @@ body.retro-cursor-active [role='button'] {
   position: fixed;
   top: 0;
   left: 0;
+  /* border-box so the ring the light palette turns on eats into the same
+     12px/24px footprint instead of growing it — the two palettes then
+     hit the same pixels, and the dark block (0px ring) is untouched. */
+  box-sizing: border-box;
   width: 12px;
   height: 12px;
-  background: var(--color-accent);
+  background: var(--cursor-fill);
+  border: var(--cursor-stroke-width) solid var(--color-accent);
   mix-blend-mode: var(--cursor-blend);
   pointer-events: none;
   z-index: 100;
   opacity: 0;
-  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  box-shadow: var(--cursor-glow);
   transition:
     width var(--duration-base) var(--ease-standard),
     height var(--duration-base) var(--ease-standard),
