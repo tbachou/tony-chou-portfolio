@@ -168,8 +168,9 @@ export default function BetaPage() {
                 Before I wrote software, I spent six years as an occupational therapist — I no
                 longer practice, but grading activity to healing tissue was my day job. I am also
                 a climber, which means I have watched a lot of friends come back from tweaked
-                pulleys too fast, or not at all. Beta ties the two careers together: a multi-agent AI pipeline built with the safety posture
-                a clinician would insist on, starting with knowing when to refuse.
+                pulleys too fast, or not at all. Beta ties the two careers together: a
+                multi-agent AI pipeline built with the safety posture a clinician would insist
+                on, starting with knowing when to refuse.
               </p>
               <p>
                 The planner is deliberately stateless. Your answers and your plan are never
