@@ -2,435 +2,423 @@
 
 ## Summary
 
-Beta gains a second safety net: Amazon Bedrock Guardrails, called as a standalone `ApplyGuardrail` check on the two places untrusted text enters and clinical prose leaves. Beta's models do not move. It keeps calling the direct Anthropic API on Sonnet 5, because Sonnet 5 is not available on Bedrock for this account and moving the clinical surface there would downgrade it by half a generation. The guardrail fails open, so an AWS outage degrades Beta to exactly today's audited posture rather than taking it down. It ships behind a three value flag (`off`, `shadow`, `enforce`) and runs in shadow first, because a false positive here means refusing help to an injured climber.
+Beta moves onto Bedrock along with everything else, and gains guardrails without imposing them on every surface. Two guardrails, split along a permissiveness seam: a **baseline** guardrail (prompt attack filtering and PII masking) applied account wide through Bedrock's enforced configuration, because those two things help on every surface and hurt none, plus a **clinical** guardrail (denied topics about medication and diagnosis, contextual grounding of the coach against the drafted plan) applied only to Beta's calls. Enforced and request level guardrails layer as a union with the most restrictive control winning, so Beta gets both and nothing else gets the clinical one.
 
-This child needs an amendment to the umbrella's cross child contract clause 1, which currently forbids any Beta visitor content from leaving Render and Anthropic. Every guardrail option violates that clause, because a guardrail must read the content to judge it. The proposed replacement wording is in "Decisions awaiting ratification" below. That amendment is the real decision here, and it is the engineer's to make.
+Two things must be said plainly rather than buried. First, moving Beta to Bedrock **downgrades the clinical surface from Sonnet 5 to Sonnet 4.6**, because Sonnet 5 returns 403 for this account. The health feature will run a weaker model than it runs today. Second, the clinical guardrail cannot be delivered the way it looks like it should be: `@anthropic-ai/bedrock-sdk` cannot carry a request level `guardrailConfig`, so the clinical half is applied through standalone `ApplyGuardrail` calls from the api instead. That is enforcement by the application, not by Bedrock.
+
+This child needs an amendment to the umbrella's cross child contract clause 1, and the amendment is now much larger than a screening exception: under this architecture all Beta visitor content goes to AWS for generation.
 
 ## Requirements
 
 **User stories**:
+- As the owner, I want every AI surface on Bedrock so that the AWS work is real and consistent, without every surface having to pass a guardrail it does not need.
 - As the owner, I want a second, independent safety net on Beta's clinical surface so that I can advertise the tool without the whole safety story resting on one screener call and my own prompt writing.
 - As an injured climber, I want that net to be invisible when I am asking an ordinary question, so that describing a torn pulley in blunt words never gets me refused.
-- As the owner, I want the net removable by an environment variable so that a bad policy or an AWS outage is a flag flip, not an incident.
 
 **Acceptance criteria** (the contract `/develop` builds to and `/check verify` checks):
 
-- **AC-G1**: with `BETA_GUARDRAIL_MODE` unset or `off`, Beta's behavior is byte for byte today's. No AWS call is made on any path, and every existing beta spec passes unchanged.
-- **AC-G2**: in `shadow`, the visitor sees exactly what they see today: the same copy, the same token by token stream, the same timing within noise. Interventions are recorded as counter increments and structured log lines only, and nothing is withheld or rewritten.
-- **AC-G3**: in `enforce`, an input intervention on the free text goals field blocks before the screener runs. No screener, drafter, or coach call is made, the visitor sees the existing refusal copy, and the reserved global slot is refunded with reason `guardrail`.
-- **AC-G4**: in `enforce`, an output intervention on a coach segment withholds that segment and every segment after it. The visitor sees the new guardrail card, plus the existing "cut off, do not follow a partial plan" warning when earlier segments were already on screen, and the slot is refunded.
-- **AC-G5**: the guardrail never overrides a clinical block. When the screener returns `red_flag` (including its fail closed coercion of an unparseable verdict) and the guardrail also intervened, the visitor sees the red flag card, not a guardrail response.
-- **AC-G6**: fail open holds absolutely. Any `ApplyGuardrail` error, timeout, throttle, credential failure, or missing configuration lets the request proceed exactly as mode `off` would, logs one structured line, and increments `guardrailErrorCount`. Beta never becomes unavailable because AWS is.
-- **AC-G7**: legitimate rehab content is never intervened on. A corpus of at least 30 realistic profiles across the three injury areas, deliberately including blunt injury description, profanity, constant pain wording, and ordinary climbing goals, produces zero input interventions and zero output interventions across a full shadow run before `enforce` is ever enabled.
-- **AC-G8**: a masking only result is not a block. When the sensitive information policy anonymizes text and no filter, denied topic, or word policy returns a blocked action, the request proceeds with the masked text and the visitor is not refused.
-- **AC-G9**: the data boundary holds as amended. Exactly two classes of text leave Render for AWS per plan (the goals free text on input, and each coach segment with its own stage JSON as grounding source on output). No structured enum field crosses. Bedrock model invocation logging and CloudTrail data events for Bedrock runtime are both off, verified by a documented console check, and no Beta text appears in any CloudWatch log line.
-- **AC-G10**: the guardrail id and a numbered version are pinned in Render env. `DRAFT` is rejected at boot. A Terraform policy edit cannot change production behavior without an explicit env change.
-- **AC-G11**: counters follow the module's established pattern. `guardrailFlagCount` (shadow observations), `guardrailBlockCount` (enforced interventions, riding the refund's atomic update), and `guardrailErrorCount` (fail open events, standalone and swallowed) each increment on their own event, and a lost tally write never disturbs the response.
-- **AC-G12**: each `ApplyGuardrail` call is capped at 3 seconds with no retry, and `enforce` adds no more than about half a second to the time the first plan text becomes visible.
+- **AC-G1**: Beta generates through Bedrock behind `AI_PROVIDER_BETA`, streaming included, verified live in the browser. With the flag unset Beta stays on the direct Anthropic API and behavior is byte for byte today's.
+- **AC-G2**: `BedrockAnthropicService.streamMessage` and `.forceToolCall` have unit tests before Beta is pointed at them, covering the request shape (including the `cache_control` block), token streaming, usage field extraction, and timeout and retry option passing. Beta must not be the first thing to exercise those methods in production.
+- **AC-G3**: the baseline guardrail is enforced account wide in us-east-2 and applies to Bedrock calls with no request parameter, proven by a call that trips it.
+- **AC-G4**: enabling enforcement breaks nothing. A documented dry run, before enforcement is switched on, proves that the interview simulator, the feedback classifier, and Beta all still work under the baseline policy, that streaming is unaffected, and that no surface's system prompt trips the prompt attack filter.
+- **AC-G5**: the clinical guardrail applies to Beta only. No clinical denied topic ever evaluates an interview simulator or feedback classifier call.
+- **AC-G6**: with `BETA_GUARDRAIL_MODE` unset or `off`, no clinical `ApplyGuardrail` call is made on any path, and every existing beta spec passes unchanged.
+- **AC-G7**: in `shadow`, the visitor sees exactly what they see today: the same copy, the same token by token stream, the same timing within noise. Interventions are recorded as counter increments and structured log lines only.
+- **AC-G8**: in `enforce`, an input intervention blocks before the screener runs. No screener, drafter, or coach call is made, the visitor sees the existing refusal copy, and the reserved global slot is refunded with reason `guardrail`.
+- **AC-G9**: in `enforce`, an output intervention on a coach segment withholds that segment and every segment after it. The visitor sees the new guardrail card, plus the existing "cut off, do not follow a partial plan" warning when earlier segments were already on screen, and the slot is refunded.
+- **AC-G10**: the clinical guardrail never overrides a clinical block. When the screener returns `red_flag` (including its fail closed coercion of an unparseable verdict) and the guardrail also intervened, the visitor sees the red flag card.
+- **AC-G11**: the clinical `ApplyGuardrail` call fails open. Any error, timeout, throttle, or missing configuration on that call lets the request proceed as mode `off` would, logs one structured line, and increments `guardrailErrorCount`. (This does **not** extend to Bedrock generation itself, which Beta now depends on; see Consequences.)
+- **AC-G12**: a masking only result is not a block. When the sensitive information policy anonymizes text and no filter, denied topic, or word policy returns a blocked action, the request proceeds with the masked text and the visitor is not refused.
+- **AC-G13**: legitimate rehab content is never intervened on. A corpus of at least 30 realistic profiles across the three injury areas, deliberately including blunt injury description, profanity, constant pain wording, and ordinary climbing goals, produces zero interventions across a full shadow run before `enforce` is enabled.
+- **AC-G14**: the data boundary holds as amended, and no Beta content comes to rest on AWS. Bedrock model invocation logging and CloudTrail data events for Bedrock runtime are both off, verified by a documented console check, and no Beta text appears in any CloudWatch log line.
+- **AC-G15**: both guardrails are pinned to numbered versions. `DRAFT` is rejected at boot for the clinical guardrail and is not accepted by the enforcement API for the baseline. A Terraform policy edit cannot change production behavior without an explicit promotion step.
+- **AC-G16**: counters follow the module's established pattern. `guardrailFlagCount` (shadow), `guardrailBlockCount` (enforce, riding the refund's atomic update), and `guardrailErrorCount` (fail open) each increment on their own event, and a lost tally write never disturbs the response.
 
 ## Options considered
 
-Five architectures were weighed, not two. Options 3 and 4 were added late and are the reason this section exists separately from the decision below: both look at first glance like stronger guarantees than the chosen option, and both turn out not to reach Beta at all.
+The prior question, whether Beta should stay on the direct Anthropic API, is **settled by the engineer's intent**: everything moves to Bedrock. What was open is how to apply a guardrail selectively once it does, since blanket application is explicitly not wanted. Four ways were weighed.
 
-### Option 1: standalone `ApplyGuardrail`, Beta stays on the direct Anthropic API (chosen)
+### Option A: per request `guardrailConfig` in application code only
 
-The api calls the Bedrock `ApplyGuardrail` runtime API as a separate check either side of a model call that still goes to Anthropic directly.
+Beta's calls carry a guardrail identifier; other surfaces do not.
 
-**Pros**: the clinically audited model path is untouched, so Beta keeps Sonnet 5; the guardrail is removable by one env var; shadow mode is trivial because the check is already decoupled from generation; the check can be aimed precisely (goals only on input, one segment plus its own stage JSON on output) instead of at whatever the model call happens to contain.
-**Cons**: two extra round trips on a surface that already makes three model calls; the guardrail is something the application chooses to call, so a future refactor that drops the call silently removes the layer; it violates cross child contract clause 1 as written.
+**Pros**: simple, surgical, exactly as selective as wanted, and expressed entirely in one module's code.
+**Cons**: a future code path that forgets the parameter silently loses the layer, with nothing outside the repo to catch it. And, decisively, **it is not expressible on the SDK this repo uses** (see the finding below).
 
-### Option 2: move Beta onto Bedrock with an inline guardrail (runner up)
+### Option B: IAM condition key `bedrock:GuardrailIdentifier`, scoped by model ARN
 
-Beta joins the `AI_PROVIDER` token, its calls become Bedrock `InvokeModel` / `Converse` calls, and a `guardrailConfig` rides along on each one.
+An IAM policy allows inference only when the request carries a named guardrail, with the `Resource` scoped to particular foundation model ARNs so only some surfaces are covered.
 
-**Pros**: one call instead of three, so no added round trips; the guardrail cannot be forgotten on a call that is already carrying it; input and output are evaluated by the same integrated path; it is the shape AWS documentation treats as the default.
-**Cons**: **Sonnet 5 is not available on Bedrock for this account** (verified 2026-08-19: 403 "not available for this account" while the console catalog still lists it), so the drafter, the clinical reasoning core, drops to Sonnet 4.6. Buying a safety layer by downgrading the model doing the clinical reasoning is the wrong trade on this surface. It also gives up the precise aiming of option 1 (the guardrail sees the whole prompt, including Beta's own skill files, which are dense with injury and loading language), and it does not even avoid the new IAM grant: `bedrock:ApplyGuardrail` on the guardrail ARN is required for the inline case too.
+**Pros**: unbypassable at the permission layer, and selective within a single IAM user without needing separate credentials.
+**Cons**: it discriminates by **model**, not by application. It only works if Beta uses a model id no other surface uses, and if Beta and the interview simulator both want Sonnet 4.6 there is nothing to key on. Verified against the AWS reference policies: the condition reads the guardrail identifier **present in the request**, so it also inherits option A's blocker completely. Since the SDK cannot put an identifier in the request, the paired `Deny` on `StringNotEquals` would reject every Beta call outright. Option B does not merely fail to help here, it would break the surface.
 
-### Option 3: account level enforced guardrail configuration
+### Option C: two guardrails split along a permissiveness seam (chosen)
 
-`PutEnforcedGuardrailConfiguration` designates one guardrail version that applies to Bedrock model invocations from the account whether or not the calling code asks for it. Considered seriously and **rejected**. Verified against the AWS API reference and the Guardrails enforcements user guide on 2026-08-19.
+A permissive **baseline** guardrail applied account wide through `PutEnforcedGuardrailConfiguration`, plus a Beta specific **clinical** guardrail applied only to Beta's calls. Enforced and request level guardrails layer as a union with the most restrictive winning, so Beta gets both.
 
-The verified request shape, because the scoping it does and does not offer is the whole argument:
+**Pros**: the insight that makes it work is that "guardrail" is not one thing. Prompt attack filtering and PII redaction are good on every surface in this program and have almost no false positive risk on any of them. Clinical denied topics and contextual grounding are Beta specific and would be actively harmful elsewhere. Splitting along that seam gives an **unbypassable floor everywhere** plus **depth where it matters**, and it needs none of the model id gymnastics option B depends on. The floor half is genuinely unforgettable: enforcement is server side and needs no request parameter, so no code path can drop it.
+**Cons**: two guardrail resources and two mental models. Billing counts text units per guardrail ARN per request, so Beta's calls pay for both. The floor cannot be shadow tested in place, because enforcement has no shadow mode, so proving it safe takes a deliberate dry run. And the clinical half cannot be delivered as a request parameter, so it is applied by the api instead and is therefore not unbypassable.
+
+### Option D: one guardrail account wide
+
+A single guardrail, clinical policy included, enforced across the account.
+
+**Pros**: one resource, one policy, nothing to forget anywhere.
+**Cons**: rejected. The feedback classifier Lambda reads arbitrary visitor text and its documented failure mode is a silent fall back to "unclassified" (child spec AC-C2), so a clinical guardrail firing there would degrade classification invisibly. The interview simulator would eat latency, cost, and a refusal path it has no use for.
+
+## The finding that reshapes option C
+
+**`@anthropic-ai/bedrock-sdk` cannot carry a request level guardrail.** Verified 2026-08-19 against the AWS guardrails documentation and a matching open issue against Anthropic's own Bedrock path (`anthropics/claude-agent-sdk-python` issue 999, opened 2026-05-28, still open, no maintainer response).
+
+The mechanics: on the `InvokeModel` and `InvokeModelWithResponseStream` path, a guardrail is requested through the `X-Amzn-Bedrock-GuardrailIdentifier` and `X-Amzn-Bedrock-GuardrailVersion` headers. When those headers are present, Bedrock additionally requires a top level `amazon-bedrock-guardrailConfig` object in the request body, and expects natural language segments wrapped in `<amazon-bedrock-guardrails-guardContent_...>` marker tags (with `tool_use` and `tool_result` blocks left unwrapped). The Anthropic SDKs emit Anthropic Messages shaped bodies with neither, so Bedrock rejects the call with HTTP 400 "Guardrail was enabled but input is in incorrect format" **before the model is invoked**. It fails closed and loudly, which is the one mercy here.
+
+`guardrailConfig` as a first class parameter belongs to the `Converse` and `ConverseStream` operations, which this repo does not use for chat. `infra/bedrock.tf` and the provider swap child deliberately chose `@anthropic-ai/bedrock-sdk` precisely because `messages.create` and `messages.stream` are shape identical to the direct SDK, which is what made the provider swap a zero consumer change refactor.
+
+Three ways out, and the third is chosen:
+
+1. **Smuggle the header and body fields through the Anthropic SDK.** Undocumented, unsupported, and the sibling SDK's issue shows it is exactly the thing that breaks. It would also need the marker tag wrapping, which means reimplementing Bedrock's tagging format by hand inside a clinical surface. Rejected.
+2. **Move Beta to the raw `Converse` API** via `@aws-sdk/client-bedrock-runtime`. This is where `guardrailConfig`, `guardContent` tagging, and `streamProcessingMode` all work properly. But it means rewriting `forceToolCall` and `streamMessage` against a different message shape, a different tool call shape, and a different streaming event model, for Beta only, which splits the provider abstraction the last child just built. Rejected for this child, recorded in Follow-up as the honest long term answer if request level guardrails become important.
+3. **Apply the clinical guardrail through standalone `ApplyGuardrail` calls** from the api, while Beta's generation goes through Bedrock like everything else. Chosen. The AWS documentation describes `ApplyGuardrail` as explicitly decoupled from model invocation and designed for exactly this, and the SDK issue names it as the workaround. The cost is that the clinical layer is enforced by the api reading a verdict, not by Bedrock refusing to answer, so it carries option A's forgettable property. The baseline half remains unbypassable, which is where the floor belongs.
+
+**Net effect on option C**: the split survives intact and so does its reasoning. The floor is enforced by AWS; the depth is enforced by the application. That asymmetry is a real weakening of what option C promised and is recorded as such.
+
+## Decisions awaiting ratification
+
+**None of these is settled until the engineer ratifies it.**
+
+### D1. Beta moves to Bedrock, and guardrails are split into baseline and clinical
+
+**Chosen**: option C. Beta joins the `AI_PROVIDER` abstraction through the `AI_PROVIDER_BETA` flag the provider swap child reserved for exactly this, generating on Bedrock like every other surface. A permissive baseline guardrail is enforced account wide; a clinical guardrail is applied to Beta's calls only, through `ApplyGuardrail`. **Runner up**: option A, per request configuration only, which is what option C degrades to if account enforcement cannot be made safe.
+
+This supersedes spec 0005 AC-P3's clause that Beta keeps the direct path. That clause was scoped to the provider swap child and explicitly deferred the question here, so this is the intended succession, not a contradiction.
+
+### D2. Which policy goes in which guardrail
+
+**Chosen**: the seam is false positive risk, not subject matter. Anything that is safe on an interview transcript, a feedback message, and a rehab plan alike goes in the baseline. Anything tuned to clinical language stays Beta specific. **Runner up**: putting PII masking in the clinical guardrail too, so Beta's boundary story does not depend on an account wide setting.
+
+### D3. Failure mode: the clinical call fails open
+
+**Chosen**: any failure of the clinical `ApplyGuardrail` call lets the request proceed. **Runner up**: fail closed.
+
+The reasoning has changed since Beta moved to Bedrock and must be restated honestly. Previously fail open was defensible because Beta did not depend on AWS at all, so degrading to today's audited posture cost nothing. **That is no longer true**: Beta now generates on Bedrock, so an AWS outage takes Beta down whatever the guardrail does. What survives of the argument is narrower and still sound: when generation has succeeded and only the guardrail call failed, turning that into a visitor facing error converts a working plan into an outage for a layer that is additive. Layer one (the code blocks, the fail closed screener, conservative drafter rules) is unaffected either way.
+
+### D4. Rollout: shadow first for the clinical guardrail, dry run first for the baseline
+
+**Chosen**: `BETA_GUARDRAIL_MODE` with values `off`, `shadow`, `enforce` for the clinical half, deployed at `shadow`. For the baseline half there is no shadow mode, because enforcement is server side and binary, so its equivalent is a deliberate dry run: exercise the baseline policy against representative prompts from all three surfaces using standalone `ApplyGuardrail` calls, which are free standing and affect nothing, and only then switch enforcement on. **Runner up**: enforce both from the start.
+
+### D5. The data boundary amendment (much larger than before)
+
+Clause 1 currently reads, in part: "Beta planner visitor content (injury details, goals, plans) never leaves Render and the direct Anthropic API." Under this architecture that is not merely narrowed, it is **withdrawn**. All Beta visitor content now goes to AWS for generation, not two slices for screening.
+
+**Proposed replacement wording for clause 1** (the feedback half is unchanged):
+
+> 1. **Data boundary (refined 2026-08-19; amended by the Guardrails child, pending ratification).** Beta planner visitor content is processed on AWS. Beta's three agent calls run on Amazon Bedrock in us-east-2, so the full assembled prompt (the skill files plus the visitor's structured answers and free text goals) and the full generated plan pass through Bedrock for generation. The account enforced baseline guardrail evaluates those calls, and Beta's clinical guardrail additionally sends the goals text and each coach output segment, with the matching drafter stage object as grounding source, to the Bedrock `ApplyGuardrail` API. **The previous promise, that Beta visitor content never leaves Render and the direct Anthropic API, is withdrawn.** What replaces it is narrower and is the whole of the commitment: no Beta visitor content is ever persisted anywhere outside Postgres on Render, and Postgres holds only anonymous counters for Beta, never content. Bedrock model invocation logging stays off, CloudTrail data events for Bedrock runtime stay off, no S3 or DynamoDB holds Beta content, and no CloudWatch log line may contain it. Feedback text remains a separate, consented class: the form labels it "do not include personal or medical details", and it may transit AWS (SNS, Lambda, Bedrock, SES) for classification and delivery, but is never persisted on AWS (no S3, no DynamoDB, no CloudWatch log line containing the text). Postgres on Render remains the only store.
+
+**Runner up**: keep Beta on the direct Anthropic API so the stronger clause survives, and apply the clinical guardrail through `ApplyGuardrail` alone. This is worth naming because it is now the **only** option that preserves both Sonnet 5 and the original boundary promise, and it costs only the consistency of having everything on Bedrock.
+
+## Decision
+
+### The two guardrails
+
+**`portfolio-baseline-guardrail`**, account enforced, deliberately permissive. Every policy in it is chosen because it is beneficial on an interview transcript, a feedback message, and a rehab plan alike.
+
+| Policy | Setting | Why it is safe everywhere |
+|---|---|---|
+| `PROMPT_ATTACK` | HIGH, input | every surface takes untrusted text; none has a legitimate reason to accept instruction injection |
+| Sensitive information | `NAME`, `EMAIL`, `PHONE`, `ADDRESS`, anonymize (never block), input | masking cannot refuse anyone; `AGE` is excluded because it is clinically relevant to a rehab plan |
+| `HATE`, `SEXUAL` | LOW, both directions | no surface has a legitimate use |
+
+Deliberately **not** in the baseline: denied topics of any kind, `VIOLENCE`, `INSULTS`, `MISCONDUCT`, profanity, and contextual grounding. Each of those is either clinical or a false positive risk on at least one surface.
+
+**`portfolio-beta-clinical-guardrail`**, applied by the api to Beta only, through `ApplyGuardrail`.
+
+| Policy | Setting | Reasoning |
+|---|---|---|
+| Denied topics (output only) | `medication_and_dosage`, `diagnosis_as_fact`, `invasive_or_procedural_treatment` | the subtlest part; see the definitions below |
+| `VIOLENCE` | NONE input, LOW output | "it popped", "I tore a pulley" is the product's own vocabulary and the likeliest false positive on this surface |
+| `INSULTS` | NONE input, MEDIUM output | a frustrated climber swearing at their finger must still get help |
+| `MISCONDUCT` | LOW input, MEDIUM output | catches the coach drifting into unsafe instruction |
+| Word filter | managed profanity, output only | same reason as `INSULTS` |
+| Contextual grounding | stage segments only, grounding 0.5, relevance 0.5 | the strongest fit in the whole design |
+
+**Denied topics are output only.** On input, the screener skill file already treats requests for medication advice or diagnosis as `off_topic`. Duplicating that on input would refuse a visitor who merely mentions they took ibuprofen. The coach must never *answer* those things, which is what these catch. Each definition names its exclusions, because the exclusions are what keep the product working:
+
+- `medication_and_dosage`: naming, recommending, or dosing any drug, supplement, injection, or painkiller. Excludes: describing pain levels, exercise dosage in sets, reps, load, or frequency, and advising the visitor to see a professional.
+- `diagnosis_as_fact`: asserting a specific named diagnosis, tear grade, or structural classification as fact about this person, or interpreting imaging results. Excludes: referring to the injury area the visitor selected, and general education about how that kind of injury behaves.
+- `invasive_or_procedural_treatment`: recommending surgery, injections, manipulation, or prescriptive taping and splinting as treatment. Excludes: telling the visitor a professional may consider such options.
+
+Deliberately **not** included: a self harm or crisis denied topic. A visitor in genuine distress writing "the pain is unbearable" is a real edge case, but a guardrail block is the worst available response to it, and the phrase is also ordinary climbing injury language. Left open in Follow-up rather than guessed at.
+
+**Contextual grounding**, the strongest fit, because the coach's job per its skill file is literally "rewrite this JSON, keep every number, add nothing":
+
+- **Source**: the single drafter stage object matching that segment, serialized, not the whole plan. Cheaper and semantically correct.
+- **Query**: a fixed string synthesized from the structured fields only, for example "A staged return to climbing plan for a shoulder_impingement, 6 weeks after onset, for a sport climber at 5.11a." No free text enters the query.
+- **Critical exclusion**: the coach's opening and closing paragraphs are legitimately not grounded in the JSON, since the skill file mandates a fixed warm opening and a closing that adds a referral reminder. Applying grounding to them would fire on every plan. Those segments are sent as plain text with no grounding source, so the grounding policy does not evaluate them. This is why segmentation happens at heading boundaries: the coach skill file requires the opening and closing to carry no heading and every stage to carry a `## Stage n:` heading, so the split is already deterministic.
+
+### Where the calls sit
+
+| Order | Step | Change |
+|---|---|---|
+| 1 | Checked red flag box, hard block in code | unchanged, still first, still costs nothing |
+| 2 | Constant rest pain escalation, hard block in code | unchanged |
+| 3 | `reserveGlobalSlot()` | unchanged |
+| **3a** | **Clinical `ApplyGuardrail` on `input.goals`** | new |
+| 4 | Screener, `forceToolCall` | **now on Bedrock**, baseline guardrail applies server side |
+| 5 | Drafter, `forceToolCall` | **now on Bedrock**, baseline applies |
+| 6 | Coach, `streamMessage` | **now on Bedrock**, baseline applies; segment accumulator added |
+| **6a** | **Clinical `ApplyGuardrail` per coach segment** | new |
+
+The input call is sequential rather than run in parallel with the screener, because PII masking has to be applied before the model sees the text, because a blocked input then saves three model calls, and because it keeps the precedence rule below clean. The cost is one round trip, roughly 100 to 300 milliseconds, on a path already several seconds long.
+
+Input scope stays exactly as scoped before: **only `input.goals`**, never the assembled `buildVisitorProfile` string. The DTO caps `goals` at 200 characters, and every other field is an enum validated by `IsIn` or a grade constrained by regex to 12 characters, so `goals` is the only untrusted free text in the whole request. Sending Beta's own `<visitor_profile>` scaffolding into a prompt attack filter would be asking for a false positive on our own tags.
+
+### Precedence when layers disagree
+
+1. **Screener `red_flag` wins over everything.** Telling someone who described numbness "we cannot process that" instead of "please see a doctor trained in nerve evaluation" is a strictly worse outcome. The guardrail intervention is still counted and logged.
+2. **Clinical input intervention beats `off_topic`.** Both produce the same visible refusal, so only the counter differs. Attribute it to the guardrail, which fired first.
+3. **`off_topic` unchanged** when the guardrail was clean.
+4. On output there is no competing layer, so an intervention is terminal.
+5. **A baseline block arrives differently**: it comes back as a Bedrock error or a blocked completion on the generation call itself, not as a verdict the api asked for. It is handled by the existing upstream error path and surfaces as the friendly error.
+
+### A masking result is not a block
+
+`ApplyGuardrail` returns `action: GUARDRAIL_INTERVENED` when the sensitive information policy merely anonymizes, exactly as when a content filter blocks. A naive `action === 'GUARDRAIL_INTERVENED'` check would refuse every visitor who types a name. Treat the result as a **block** only when a content filter, denied topic, or word policy reports a blocked action, and as a **mask** when the only intervention came from the sensitive information policy. On a mask, pass the guardrail's returned masked text downstream in place of the raw goals.
+
+### Streaming
+
+Unchanged from the previous design, and it survives precisely because the clinical guardrail is a standalone call rather than an inline one. Had it been inline, Bedrock's own `streamProcessingMode` would have governed this and the choice would not have been ours.
+
+- The coach's token callback appends to a buffer. A segment closes when a new `## ` heading arrives at a line start, and the final segment closes when the stream ends.
+- In `shadow`: tokens are emitted immediately as they arrive, exactly as today. When a segment closes, the `ApplyGuardrail` call is fired without being awaited, purely to record a verdict. Nothing is withheld, so shadow is genuinely invisible.
+- In `enforce`: tokens are held in the segment buffer. When a segment closes its verdict is awaited, then the whole segment is emitted as one `plan_delta` if clean, or the stream is terminated if not.
+
+The difference between modes is one `await` at one call site. The honest cost: **in `enforce` the plan appears segment by segment rather than token by token.** That still satisfies spec 0004 AC-4, but it is visible and it is the main thing to watch during the soak.
+
+Rejected alternatives: per token guarding costs one billed call per chunk with a one text unit minimum; buffering the whole output before display kills progressive streaming; guarding after the fact cannot block anything.
+
+### What the visitor sees
+
+Reuse where the meaning matches, add new copy only where it does not.
+
+| Event | What the visitor gets | New copy |
+|---|---|---|
+| Input intervention (`enforce`) | the **existing refusal path**: `error` carrying `REFUSAL_MESSAGE`. Identical in meaning to an `off_topic` verdict, and no web client change needed | no |
+| Output intervention (`enforce`) | a **new** `guardrail_block` SSE event and card. The existing failure copy claims something went wrong on our side, which would be a lie, and its retry button would invite a loop | yes, one constant |
+| Output intervention with text already shown | the new card **plus** the existing "cut off, do not follow a partial plan" warning | no |
+| Screener red flag, guardrail also fired | the existing red flag card | no |
+| Baseline guardrail block on generation | the existing friendly error, through the normal upstream error path | no |
+| Clinical guardrail unavailable | nothing; identical to mode `off` | no |
+
+New constant in `beta.constants.ts`, human written like every other safety string there:
+
+> `GUARDRAIL_OUTPUT_BLOCK_MESSAGE`: "Beta stopped this plan partway through. The wording it was writing did not pass Beta's own safety check, so the rest was not shown. Nothing you entered was stored, and this attempt did not count against your daily limit. Drafting a fresh plan usually works. If it stops again, this tool is not the right fit for your situation, and a physical therapist or sports medicine doctor is."
+
+Deploy skew note: the web client's SSE switch has no `default` branch, so a stale cached client receiving `guardrail_block` ignores it, never sets `terminal`, and falls through to the existing "connection dropped" error, which also shows the partial plan warning. That degradation is safe, and the window is only the gap between the Vercel and Render deploys of one push.
+
+### Observability and counters
+
+Follows the module's established pattern: one column per outcome, additively migrated onto `BetaDailyUsageCounter`, still zero visitor content.
+
+| Column | Counts | Incremented from |
+|---|---|---|
+| `guardrailFlagCount` | shadow observations: an intervention that would have blocked, plus a mask that would have applied | standalone `safeIncrement`, swallowed and logged |
+| `guardrailBlockCount` | enforced clinical interventions, input and output alike | rides `refundGlobalSlot('guardrail')`'s atomic update, like the existing reasons |
+| `guardrailErrorCount` | fail open events on the clinical call | standalone `safeIncrement`, swallowed and logged |
+
+`guardrailErrorCount` earns its column because in a fail open design it is the only durable signal that the layer has silently stopped working, and Render's free tier logs do not persist.
+
+Structured log line per clinical call, carrying no visitor text: `{ guardrail: 'input' | 'output', mode, segment, action, topPolicy, durationMs, outcome }`. `topPolicy` is a policy name such as `denied_topic:medication_and_dosage`, never the matched text.
+
+One new refund reason, `guardrail`, joining `error`, `red_flag`, and `refusal`.
+
+### Code shape
+
+- Beta stops constructor injecting the concrete `AnthropicService` and takes the `AiProvider` token instead, resolved by `AI_PROVIDER_BETA` with fallback to `AI_PROVIDER`. The `BETA_PROVIDER = 'anthropic'` constant in `beta.service.ts` becomes the resolved provider name and keeps feeding the per call log line's `provider` field.
+- A new `BetaGuardrailService` issues `ApplyGuardrailCommand` from `@aws-sdk/client-bedrock-runtime` (already a dependency of the classifier Lambda). It exposes `checkInput(goals)` and `checkSegment(text, stageJson | null, query)`, each returning `{ action: 'none' | 'mask' | 'block', maskedText?, policy? }` and each swallowing its own failures into `action: 'none'` plus the error tally.
+- `beta.service.ts` still contains no provider conditionals. The provider choice lives in the factory, and the guardrail service is mode aware internally.
+
+### Terraform and IAM
+
+New file `infra/guardrails.tf`:
+
+- `aws_bedrock_guardrail` `portfolio-baseline-guardrail` and `portfolio-beta-clinical-guardrail`, plus an `aws_bedrock_guardrail_version` for each. Versions are immutable, which is what makes pinning meaningful.
+- `aws_iam_policy` `portfolio-api-guardrail-apply`: one `bedrock:ApplyGuardrail` statement scoped to the **clinical** guardrail ARN, attached to the existing console created `portfolio-api` user that `infra/bedrock.tf` already reads with `data "aws_iam_user" "api"`. Kept separate from `portfolio-api-bedrock-invoke` so it can be detached alone.
+- The account enforced configuration for the baseline is **not** Terraform managed. The AWS provider appears not to expose the resource yet (provider issue 47400 open as of 2026-08), so it is a documented console or CLI step in `infra/README.md`, and it is the one exception to umbrella AC-1 that this child creates. Record it as an exception rather than pretending otherwise.
+
+Two ARN details that are easy to get wrong:
+
+- The `ApplyGuardrail` resource is `arn:aws:bedrock:us-east-2:<account>:guardrail/<id>` with **no region wildcard**, deliberately unlike the foundation model ARNs in `bedrock.tf` and `feedback.tf`. Those need a wildcard because a `us.` Geo inference profile requires the permission in every destination region. `ApplyGuardrail` is a single region call against a single region resource.
+- The `ApplyGuardrail` statement's resource is the **unversioned** guardrail ARN. The version is a request parameter, not part of the authorized resource, so version pinning is enforced by the boot guard, not by IAM.
+
+The verified account enforcement request shape, since the baseline depends on it:
 
 | Field | Required | Notes |
 |---|---|---|
 | `configId` | no | pattern `[a-z0-9]+` |
 | `guardrailInferenceConfig.guardrailIdentifier` | yes | id or guardrail ARN |
 | `guardrailInferenceConfig.guardrailVersion` | yes | pattern `[1-9][0-9]{0,7}`, so a published numeric version. **`DRAFT` is not accepted** |
-| `guardrailInferenceConfig.modelEnforcement` | no | `includedModels` and `excludedModels`. Absent means all models |
+| `guardrailInferenceConfig.modelEnforcement` | no | `includedModels` and `excludedModels`; absent means all models |
 | `guardrailInferenceConfig.selectiveContentGuarding` | no | `system` and `messages`, each `SELECTIVE` or `COMPREHENSIVE`, both defaulting to `COMPREHENSIVE` |
 
-Companion operations are `ListEnforcedGuardrailsConfiguration` and `DeleteEnforcedGuardrailConfiguration`. It must be set in every region where enforcement is wanted. An organization level equivalent exists through an AWS Organizations `BEDROCK_POLICY`.
+`modelEnforcement` exists but should not be relied on here. The documented pattern for both model lists allows exactly one dot (`[a-z0-9-]{1,63}[.][a-z0-9-]{1,63}` plus optional suffixes), while this account calls `us.` Geo inference profile ids, which carry two. Whether an inference profile id can be named in those lists at all is unverified, and the baseline is meant to apply everywhere anyway, so leave `modelEnforcement` absent.
 
-So the scoping available is **per model**, and there is **no per principal, per role, or per application scoping**. That is the shape that decides this.
+Also explicitly **not** created: Bedrock model invocation logging, and CloudTrail data events for Bedrock runtime. Both would put Beta visitor text at rest on AWS and break the amended clause 1. The AWS guardrails documentation actively recommends CloudTrail data events for reviewing `ApplyGuardrail` calls; this spec declines that diagnostic on purpose and accepts diagnosing permission problems from the api's own error tally instead. State both refusals as comments in the Terraform file.
 
-**Pros**: genuinely stronger than a guardrail the application chooses to call. It cannot be bypassed by a code path that forgets it, and it survives a refactor that drops the call. A guardrail bound to an enforcement configuration also cannot be deleted by default.
+### Two things that must be proven before enforcement is switched on
 
-**Cons**:
-- **It cannot reach Beta.** Enforcement applies to `InvokeModel`, `InvokeModelWithResponseStream`, `Converse`, and `ConverseStream`, that is, invocations that go through Bedrock. Under the chosen architecture Beta's model calls go to Anthropic directly, so the clinical surface this spec exists to protect is precisely the surface it misses.
-- **Its coverage of the other two surfaces is a liability, not a benefit.** It would apply to the feedback classifier Lambda, which reads arbitrary visitor text, where a guardrail tuned for clinical rehab content would produce false positives. The classifier's documented failure mode is a silent fall back to "unclassified" (child spec AC-C2), so that degradation would be quiet rather than loud. It would also apply to the interview simulator, which only discusses work history, adding latency, cost, and a refusal path for no safety benefit.
-- **`modelEnforcement` is a weaker escape hatch than it looks.** It scopes by model, and this account's three surfaces would need separating by principal, not by model. It might exclude the classifier (Haiku) from a Sonnet tuned policy, but it cannot distinguish two applications sharing a model. Worse, the documented pattern for both model lists allows exactly one dot (`[a-z0-9-]{1,63}[.][a-z0-9-]{1,63}` plus optional suffixes), while this account calls `us.` Geo inference profile ids, which carry two. Whether an inference profile id can be named in these lists at all needs verifying before anyone relies on it.
-- **`COMPREHENSIVE` is the default**, so an enforced guardrail evaluates whole prompts including system prompts. Beta's drafter skill file is dense with injury, loading, and pain language, so that is a large false positive surface. Setting `system: SELECTIVE` avoids it, but only by trusting the caller to tag content correctly, which puts the bypass back into application code and gives away the property that made this option attractive.
-- **Enforcement layers rather than replaces.** Organization, account, and request guardrails all apply, the effective control is their union with the most restrictive winning, and billing counts text units per guardrail ARN per request. Stacking it on top of the chosen design multiplies cost rather than replacing it.
-- **Operationally it fights the rest of this program.** The Terraform AWS provider appears not to expose the resource yet (provider issue 47400 open as of 2026-08), so it would be a console or CLI step outside `infra/`, against umbrella AC-1. And an account wide setting is the opposite of the removable design here: rollback becomes an AWS change affecting other surfaces rather than a Render env var flip.
+Both concern the baseline half, and both are cheap to test and expensive to discover in production.
 
-**Verdict: net negative under the recommended architecture.** It covers everything except the target, and its coverage of the rest is a cost. Not carried forward, and not raised as a complement either.
+1. **Does an account enforced guardrail work at all against an Anthropic Messages shaped body?** The finding above shows that a *request level* guardrail on that path fails with HTTP 400 because the body lacks `amazon-bedrock-guardrailConfig`. It is not documented whether server side enforcement injects the guardrail without that requirement or applies the same validation. If it applies the same validation, **switching enforcement on breaks every Bedrock call in the account**, including the interview simulator that is live today. Test it on one throwaway call before touching anything else.
+2. **What does enforcement do to streaming?** `streamProcessingMode` is a request parameter with no equivalent in the enforcement configuration. If enforcement defaults to synchronous processing, the coach's stream and the interview simulator's stream would both buffer before delivery, which would be a visible regression on two surfaces.
 
-### Option 4: IAM enforcement through the `bedrock:GuardrailIdentifier` condition key
-
-An IAM policy that allows `InvokeModel` only when the request carries a named guardrail and version, with an explicit `Deny` for anything else, plus an `ApplyGuardrail` allow on the guardrail ARN.
-
-**Pros**: makes option 2 unforgettable at the permission layer rather than the code layer. Crucially it is scoped **per principal**, since it rides the policy attached to the `portfolio-api` user, so unlike option 3 it would cover Beta without also imposing a clinical policy on the interview simulator and the classifier Lambda. If unbypassable enforcement is wanted, this is the right mechanism, not option 3. Version pinning is expressible directly in the condition (`guardrail/<id>:1`), and the AWS reference policies show the exact `Allow` plus `Deny` pair.
-**Cons**: it is a hardening of option 2, not an alternative to it, so it inherits option 2's Sonnet 5 problem completely. It also has documented holes: a caller can still narrow what gets evaluated using guardrail input tags on the request (the response is always evaluated), and roles carrying this condition break `InvokeAgent` and `RetrieveAndGenerate`, which make internal `InvokeModel` calls without a guardrail. Same conclusion as option 3: it never reaches a direct Anthropic call.
-
-### Option 5: do nothing, leave clause 1 intact
-
-Decline the amendment and keep Beta on a single safety layer.
-
-**Pros**: costs nothing, adds no dependency, and preserves the cleanest sentence in the umbrella ("Beta planner visitor content never leaves Render and the direct Anthropic API"), which is a genuine part of the product's story.
-**Cons**: the whole safety story then rests on one screener call and prompt files written by the same person who wrote the tool, with no independent check on the only free prose a visitor reads. The umbrella already names guardrails a hard prerequisite before advertising Beta broadly.
-
-## Decisions awaiting ratification
-
-Five calls are made here. Each is the recommended position with its runner up. **None is settled until the engineer ratifies it**, and the boundary amendment in particular is a change to the umbrella's law, not a detail.
-
-### D1. Architecture: standalone `ApplyGuardrail`, Beta stays on the direct Anthropic path
-
-**Chosen**: option 1, call the Bedrock `ApplyGuardrail` API directly from the api, as a separate check either side of a model call that still goes to the direct Anthropic API. **Runner up**: option 2, move Beta onto Bedrock and attach the guardrail inline to `InvokeModel`. Options 3 and 4 (account level enforcement, IAM condition key enforcement) were evaluated and rejected as unreachable rather than inferior; see Options considered.
-
-Bedrock does not offer Sonnet 5 to this account (verified 2026-08-19: a 403 reading "not available for this account", while the console catalog still lists it). Bedrock tops out here at Sonnet 4.6, which is what the interview simulator now runs on. Beta's drafter is the clinical reasoning core and runs Sonnet 5 today. The inline option therefore buys guardrail integration by downgrading the clinically audited surface by half a generation, which is the wrong trade on the one surface where model quality is a safety property. The standalone call also leaves the audited model path byte for byte untouched and removable by one env var, which is what makes the shadow rollout below possible at all.
-
-**The strongest counter argument, argued rather than waved away.** The honest weakness of option 1 is that a guardrail the application chooses to call can be dropped by a future refactor, and options 3 and 4 both fix exactly that. That is a real safety property on a clinical surface, and it only becomes available if Beta moves onto Bedrock. It is the best case anyone has made for option 2, and it deserves a straight answer rather than a footnote.
-
-**The recommendation does not change, for four reasons.**
-
-1. The trade is still first layer quality for second layer enforcement, which is backwards. Layer one (the code blocks, the fail closed screener, a Sonnet 5 drafter reasoning conservatively) is the audited, load bearing layer. Making layer two unforgettable by weakening layer one is a worse position than a strong layer one plus a forgettable layer two.
-2. If unbypassability is what is wanted, **option 4 is the right mechanism, not option 3.** The IAM condition key is scoped per principal, so it covers the api's calls without imposing a clinical guardrail policy on the interview simulator or the classifier. Option 3's all or nothing account scope makes it a poor fit regardless of which architecture wins, so it should not be counted as a reason to prefer option 2.
-3. The threat being defended against is one engineer, working alone, deleting a call in a module whose `AGENTS.md` carries an explicit invariants list and whose mocked tests assert the call is made. IAM is a stronger guarantee than a test, but not by enough to pay a model generation for it at this scale.
-4. Unbypassable also means unremovable in a hurry. This spec's whole shape (default off, shadow, enforce, rollback by env var) exists because a false positive here refuses help to an injured person. Enforcement at the permission layer removes the flag flip.
-
-**The condition that would flip this**, stated so it is falsifiable: if Sonnet 5 becomes available on Bedrock for this account, option 2 loses its only real cost, and option 2 plus option 4 becomes the better architecture. That is worth re checking rather than assuming, and it is enrolled in Follow-up.
-
-Until then the mitigation for the forgettable call is local: the invariants below, the tests that assert the call is made, and a line in the api's `AGENTS.md` gotchas.
-
-### D2. Coverage: visitor input plus coach output only
-
-**Chosen**: guard the visitor's free text goals on the way in, and each coach segment on the way out. **Runner up**: guard all four hops (input, screener output, drafter output, coach output).
-
-Those two are where untrusted text enters and where free prose leaves. The screener and drafter both run through `forceToolCall` with a constrained schema: the screener returns one of three enum values, the drafter returns typed stage objects that `parseDraftPlan` then validates in code. A content guardrail over an enum adds cost and latency for nearly nothing. Reading the code sharpened this further: the only untrusted free text in the whole request is `goals`, capped at 200 characters by the DTO, since every other field is either an enum validated by `IsIn` or `preInjuryGrade`, which a regex restricts to `[A-Za-z0-9 .+/-]{1,12}`. So the input guard's payload is tiny and its marginal value rests mainly on the prompt attack filter, a genuinely different detector from the screener's judgement. The output guard is where the real value sits.
-
-### D3. Failure mode: fail open, with an api side counter and an AWS side alarm
-
-**Chosen**: any guardrail failure lets the request proceed as it would today. **Runner up**: fail closed.
-
-This is a second layer. Layer one is shipped and clinically audited: two code enforced hard blocks that run before any model call, a screener that fails closed on an unparseable verdict, deterministic human written red flag copy, and conservative rules in the drafter skill file. Failing open degrades to that audited posture. Failing closed would let an AWS availability event take down a tool whose entire safety story does not depend on AWS, in exchange for a net that is additive rather than load bearing. One correction to the framing: a CloudWatch alarm cannot see a fail open event, because the failure is an exception on Render, not a metric AWS emits. So the alarm covers intervention volume (a spike means abuse or a broken policy) and the durable fail open signal is the `guardrailErrorCount` column in Postgres, since Render's free tier logs are ephemeral.
-
-### D4. Rollout: shadow first, then enforce behind a flag
-
-**Chosen**: `BETA_GUARDRAIL_MODE` with values `off`, `shadow`, `enforce`, deployed at `shadow`, promoted only after a clean corpus run. **Runner up**: enforce from the start.
-
-You cannot tune a policy you have never seen fire, and the cost of a false positive here is refusing help to an injured person. Shadow mode makes the calls, records the verdicts, and changes nothing the visitor sees or receives. Note one consequence that must not be glossed: masking (D5's PII policy) is a behavior change, so it applies only in `enforce`. Shadow records how often masking would have applied, and the substitution path is covered by mocked unit tests rather than by production traffic.
-
-### D5. The data boundary amendment (the real decision)
-
-Umbrella cross child contract clause 1 currently reads, in part: "Beta planner visitor content (injury details, goals, plans) never leaves Render and the direct Anthropic API." A guardrail must read the content to judge it, so **every option in this spec violates that clause as written**. It cannot be satisfied by implementation care; it has to be amended or this child does not get built.
-
-**Proposed replacement wording for clause 1** (the rest of the clause, covering feedback text, is unchanged):
-
-> 1. **Data boundary (refined 2026-08-19; amended by the Guardrails child, pending ratification).** Beta planner visitor content (injury details, goals, plans) is generated only by Render and the direct Anthropic API, and is never persisted anywhere outside Postgres on Render. Two narrow exceptions carry Beta text to AWS for safety screening only, never for generation and never to rest: (a) the visitor's free text goals field, and (b) each segment of the coach's generated prose (which may quote that goals text) together with the matching drafter stage object as its grounding source. Both go to the Bedrock `ApplyGuardrail` API in us-east-2 and nowhere else. Nothing else from a Beta request crosses: the structured enum fields, the hashed IP, and the counters never leave Render. Bedrock model invocation logging stays off, CloudTrail data events for Bedrock runtime stay off, and no Beta text may appear in any CloudWatch log line. Feedback text remains a separate, consented class: the form labels it "do not include personal or medical details", and it may transit AWS (SNS, Lambda, Bedrock, SES) for classification and delivery, but is never persisted on AWS (no S3, no DynamoDB, no CloudWatch log line containing the text). Postgres on Render remains the only store.
-
-**Runner up**: leave clause 1 as written and do not build this child, accepting that Beta's safety story stays a single layer. That is a coherent position, and it is cheaper. The case for amending is that the clause was written to prevent visitor content coming to rest on AWS, and a transient screening read that is never stored honors that intent while the literal wording forbids it.
-
-## Decision
-
-### Where the calls sit in the pipeline
-
-Beta's pipeline has five stages today. The guardrail adds two positions, both after the existing code enforced blocks so that nothing changes about the cheapest and most important safety path.
-
-| Order | Step | Change |
-|---|---|---|
-| 1 | Checked red flag box, hard block in code | unchanged, still runs before anything else and costs nothing |
-| 2 | Constant rest pain escalation, hard block in code | unchanged |
-| 3 | `reserveGlobalSlot()` | unchanged |
-| **3a** | **Input `ApplyGuardrail` on `input.goals`** | **new** |
-| 4 | Screener, `forceToolCall`, fails closed | unchanged |
-| 5 | Drafter, `forceToolCall` | unchanged |
-| 6 | Coach, `streamMessage` | **segment accumulator added around it** |
-| **6a** | **Output `ApplyGuardrail` per coach segment** | **new** |
-
-The input call is sequential, not run in parallel with the screener. Parallel would hide its latency, but it makes PII masking impossible (a mask has to be applied before the model sees the text), it wastes a screener call on every blocked input, and it muddies the precedence rule below. The measured cost of sequencing is one round trip, roughly 100 to 300 milliseconds, on a path whose time to first token is already several seconds of screener plus drafter. If the p95 for that call is measured above about 500 milliseconds in shadow, revisit and go parallel with blocking only.
-
-The guardrail runs after `reserveGlobalSlot()` on purpose, so guardrail spend sits inside the same envelope the screener already sits in. It is bounded by the same in memory throttle (3 requests per hour per IP) and the same daily caps.
-
-### Precedence when the layers disagree
-
-Strict order, evaluated in this sequence:
-
-1. **Screener `red_flag` wins over everything.** If the screener flags a warning sign and the guardrail also intervened, the visitor gets the red flag card and its human written copy. Telling someone who described numbness "we cannot process that" instead of "please see a doctor trained in nerve evaluation" is a strictly worse outcome. The guardrail intervention is still counted and logged.
-2. **Guardrail input intervention beats `off_topic`.** Both produce the same visible refusal, so the only difference is which counter moves. Attribute it to the guardrail, since it fired first.
-3. **`off_topic` unchanged** when the guardrail was clean.
-4. On output there is no competing layer, so a guardrail intervention is terminal.
-
-### A masking result is not a block (AC-G8)
-
-`ApplyGuardrail` returns `action: GUARDRAIL_INTERVENED` when the sensitive information policy merely anonymizes text, exactly as it does when a content filter blocks. A naive `action === 'GUARDRAIL_INTERVENED'` check would therefore refuse every visitor who types a name. The service must inspect the assessments and treat the result as a **block** only when a content filter, denied topic, or word policy reports a blocked action, and as a **mask** when the only intervention came from the sensitive information policy. On a mask, take the guardrail's returned masked text and pass that to the screener and drafter in place of the raw goals.
-
-### The guardrail policy
-
-One guardrail resource, one policy set, applied differently by direction because the standalone API lets the caller choose what to send. The subtlety here is that Beta's whole subject matter is injury, pain, and the body. A naive medical denied topic would break the product on its first request.
-
-**Content filters** (strength per direction):
-
-| Filter | Input | Output | Reasoning |
-|---|---|---|---|
-| `PROMPT_ATTACK` | HIGH | not applicable (input only) | the main reason the input guard exists; a different detector from the screener's `off_topic` judgement |
-| `VIOLENCE` | NONE | LOW | "it popped", "I tore a pulley", "it ripped" is the product's own vocabulary. This is the single most likely false positive on this surface, so it is off on input entirely |
-| `INSULTS` | NONE | MEDIUM | a frustrated climber swearing at their finger or at the tool must still get help |
-| `MISCONDUCT` | LOW | MEDIUM | output side catches the coach drifting into unsafe instruction |
-| `HATE` | LOW | MEDIUM | no legitimate input use |
-| `SEXUAL` | LOW | MEDIUM | no legitimate input use |
-
-**Denied topics: output only.** On input, the screener skill file already treats "requests for diagnosis, medication advice, or treatment of conditions outside the three supported injury areas" as `off_topic`. Adding the same topics on input duplicates that and would refuse a visitor who merely mentions they took ibuprofen. The coach, however, must never *answer* those things, and that is what these catch. Each definition names its exclusions explicitly, because the exclusions are what keep the product working:
-
-- `medication_and_dosage`: naming, recommending, or dosing any drug, supplement, injection, or painkiller. Excludes: describing pain levels, exercise dosage in sets, reps, load, or frequency, and advising the visitor to see a professional.
-- `diagnosis_as_fact`: asserting a specific named diagnosis, tear grade, or structural classification as a fact about this person, or interpreting scan or imaging results. Excludes: referring to the injury area the visitor themselves selected, and general education about how that kind of injury usually behaves.
-- `invasive_or_procedural_treatment`: recommending surgery, injections, manipulation, or prescriptive taping and splinting as treatment. Excludes: telling the visitor a professional may consider such options.
-
-Deliberately **not** included: a self harm or crisis denied topic. A visitor in genuine distress writing "the pain is unbearable" is a real edge case on a health adjacent surface, but a guardrail *block* is the worst available response to it, and the phrase is also ordinary climbing injury language. This is left open and raised in Follow-up rather than guessed at.
-
-**Word filters**: managed profanity list on output only, off on input, for the same reason as `INSULTS`. No custom word list in v1.
-
-**Sensitive information filters**: input only, `ANONYMIZE` (mask), never `BLOCK`, for `NAME`, `EMAIL`, `PHONE`, and `ADDRESS`. Masking is invisible to the visitor and cannot refuse anyone, and it means an accidentally typed name never reaches Anthropic, which is a real if small improvement on the boundary. `AGE` is deliberately excluded because age is clinically relevant to a rehab plan. Watch `NAME` during shadow: route and gym names ("Midnight Lightning") may be detected as names, and if the shadow mask rate on `NAME` is material, drop `NAME` from the list rather than shipping mangled goals. No sensitive information policy on output; the coach cannot emit PII it was never given, and masking prose would mangle it.
-
-**Contextual grounding check**: output, and only on stage segments. This is the strongest fit in the whole policy. The coach's job, per its skill file, is literally "rewrite this JSON, keep every number, add nothing", so the drafter's output is a perfect grounding source and the check catches the exact failure that matters clinically: the coach inventing clinical content that was never drafted.
-
-- **Source**: the single drafter stage object matching that segment, serialized, not the whole plan. Per stage sourcing is both cheaper and semantically correct.
-- **Query**: a fixed string synthesized from the structured fields only, for example "A staged return to climbing plan for a shoulder_impingement, 6 weeks after onset, for a sport climber at 5.11a." No free text goes into the query, so the output guard call carries no visitor free text except whatever the coach itself chose to echo.
-- **Thresholds**: grounding 0.5, relevance 0.5 as a starting point, tuned during shadow. These numbers are a start, not a finding.
-- **Critical exclusion**: the coach's opening and closing paragraphs are legitimately not grounded in the JSON (the skill file mandates a fixed warm opening and a closing that adds a professional referral reminder). Applying grounding to them would fire on every single plan. Those two segments are sent as plain text with no grounding source, so the grounding policy simply does not evaluate them. This is exactly why segmentation is done at heading boundaries: the coach skill file requires the opening and closing to carry no heading, and every stage to carry a `## Stage n:` heading, so the split is already deterministic in the format the coach is contracted to produce.
-
-### How streaming is handled
-
-The coach streams, and it is the only free prose the visitor reads, so this is the load bearing UX decision.
-
-**Segment accumulation, with mode controlling only whether release waits on the verdict.**
-
-- The coach's token callback appends to a buffer. A segment closes when a new `## ` heading arrives at a line start, and the final segment closes when the stream ends.
-- In `shadow`: tokens are emitted to the visitor immediately as they arrive, exactly as today. When a segment closes, the `ApplyGuardrail` call is fired without being awaited, purely to record a verdict. Nothing is ever withheld, so shadow is genuinely invisible (AC-G2).
-- In `enforce`: tokens are held in the segment buffer instead of emitted. When a segment closes, its verdict is awaited, then the whole segment is emitted as one `plan_delta` if clean, or the stream is terminated if not.
-
-The difference between modes is one `await` at one call site, not two implementations. Rejected alternatives and why: guarding per token or per chunk costs one billed call per chunk with a one text unit minimum and adds latency to every token; buffering the entire output and guarding it whole before display kills the progressive stream that AC-4 of spec 0004 requires; guarding after the fact cannot block anything, because the text is already on screen.
-
-The honest cost: **in `enforce` the plan appears segment by segment rather than token by token.** That still satisfies AC-4's "streams in progressively rather than appearing all at once", but it is a visible change and it is the main thing to look at during the shadow soak.
-
-### What the visitor sees
-
-Reuse where the meaning already matches; add new copy only where it does not.
-
-| Event | What the visitor gets | New copy needed |
-|---|---|---|
-| Input intervention (`enforce`) | The **existing refusal path**: the `error` event carrying `REFUSAL_MESSAGE`, rendering today's "That didn't work" card. The meaning is identical to an `off_topic` screener verdict, the copy already fits, and no web client change is needed | no |
-| Output intervention (`enforce`) | A **new** `guardrail_block` SSE event and a new card. The existing failure copy says "Something went wrong on our side", which would be a lie, and its "Try again" button would invite a retry loop | yes, one new constant |
-| Output intervention with text already shown | The new card **plus** the existing "cut off, do not follow a partial plan" warning, unchanged | no |
-| Screener red flag, guardrail also fired | The existing red flag card, unchanged (AC-G5) | no |
-| Guardrail unavailable | Nothing. The visitor's experience is identical to mode `off` | no |
-
-New constant in `beta.constants.ts`, human written like every other safety string in that file (the deterministic copy convention exists precisely so safety critical wording is never model written):
-
-> `GUARDRAIL_OUTPUT_BLOCK_MESSAGE`: "Beta stopped this plan partway through. The wording it was writing did not pass Beta's own safety check, so the rest was not shown. Nothing you entered was stored, and this attempt did not count against your daily limit. Drafting a fresh plan usually works. If it stops again, this tool is not the right fit for your situation, and a physical therapist or sports medicine doctor is."
-
-One deploy skew note: the web client's SSE switch has no `default` branch, so a stale cached client that receives `guardrail_block` ignores it, never sets `terminal`, and falls through to the existing "connection dropped before the plan finished" error, which also shows the partial plan warning. That degradation is safe (it never presents a truncated plan as complete), and the window is only the gap between the Vercel and Render deploys of the same push.
-
-### Observability and counters
-
-Follows the module's established pattern exactly: one column per outcome, incremented on its own event, additively migrated onto `BetaDailyUsageCounter`. Still zero visitor content, so AC-6 of spec 0004 is untouched.
-
-| Column | Counts | Incremented from |
-|---|---|---|
-| `guardrailFlagCount` | Shadow mode observations: an intervention that *would* have blocked, plus a mask that *would* have applied | standalone `safeIncrement`, swallowed and logged, so a lost tally cannot disturb the response |
-| `guardrailBlockCount` | Enforced interventions, input and output alike | rides `refundGlobalSlot('guardrail')`'s atomic update alongside the `planCount` decrement, like the existing `error` / `red_flag` / `refusal` reasons |
-| `guardrailErrorCount` | Fail open events: any error, timeout, or throttle on an `ApplyGuardrail` call | standalone `safeIncrement`, swallowed and logged |
-
-`guardrailErrorCount` earns its place despite the column count: in a fail open design it is the only durable signal that the second layer has silently stopped working, and Render's free tier logs do not persist.
-
-Structured log line per guardrail call, matching the per agent JSON logging convention and carrying no visitor text: `{ guardrail: 'input' | 'output', mode, segment, action, topPolicy, durationMs, outcome }`. `topPolicy` is a policy name such as `denied_topic:medication_and_dosage`, never the matched text.
-
-One new refund reason, `guardrail`, joining `error`, `red_flag`, and `refusal` in `RefundReason` and `REFUND_REASON_COLUMN`.
-
-### Code shape
-
-A new `BetaGuardrailService` in the beta module, injecting an AWS SDK v3 `BedrockRuntimeClient` and issuing `ApplyGuardrailCommand` from `@aws-sdk/client-bedrock-runtime` (the same package the classifier Lambda already uses). It exposes two methods, `checkInput(goals)` and `checkSegment(text, stageJson | null, query)`, each returning a neutral verdict shape (`{ action: 'none' | 'mask' | 'block', maskedText?, policy? }`) and each swallowing its own failures into `action: 'none'` plus the error tally.
-
-This does **not** go through the `AiProvider` seam. A guardrail is not a model call, and Beta deliberately does not hold the `AI_PROVIDER` token. Spec 0005 AC-P3 continues to hold: `beta.service.ts` gains no provider conditionals, still constructor injects the concrete `AnthropicService`, and its `BETA_PROVIDER = 'anthropic'` log field stays correct.
-
-### Terraform and IAM
-
-New file `infra/guardrails.tf`:
-
-- `aws_bedrock_guardrail` named `portfolio-beta-guardrail`, carrying the policy above, plus the two required blocked message strings (never shown to a visitor, since the api renders its own copy, but the API requires them).
-- `aws_bedrock_guardrail_version` for each promoted policy revision. Versions are immutable, which is what makes the env pin below meaningful.
-- `aws_iam_policy` `portfolio-api-guardrail-apply`: a single `bedrock:ApplyGuardrail` statement scoped to the guardrail ARN. Kept as its own policy rather than folded into `portfolio-api-bedrock-invoke`, so it can be detached alone, mirroring the "either credential can be revoked alone" instinct already in `infra/bedrock.tf`.
-- `aws_iam_user_policy_attachment` onto the existing console created `portfolio-api` user, which `infra/bedrock.tf` already reads with `data "aws_iam_user" "api"`.
-
-**The new grant is genuinely new, and it is not avoidable by choosing a different architecture.** `bedrock:ApplyGuardrail` is a distinct data plane action from `bedrock:InvokeModel`, and its resource is the **guardrail** ARN, not a model ARN. The existing `portfolio-api-bedrock-invoke` policy grants only `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on `foundation-model` and `inference-profile` resources, so it covers neither the action nor the resource. Worth stating plainly because it is a natural wrong assumption: the inline architecture (option 2) needs this same grant too. The AWS reference policies for enforcing a guardrail on inference carry an explicit `ApplyGuardrail` allow statement alongside the `InvokeModel` statements, so choosing inline is not a way to skip it.
-
-Two ARN details that are easy to get wrong:
-
-- Resource is `arn:aws:bedrock:us-east-2:<account>:guardrail/<id>` with **no region wildcard**, deliberately unlike the foundation model ARNs in `bedrock.tf` and `feedback.tf`. Those need a wildcard because a `us.` Geo inference profile requires the permission in every destination region. `ApplyGuardrail` is a single region call against a single region resource, so a wildcard there would be over granting. Worth a comment in the file, since the neighbouring files teach the opposite habit.
-- The `ApplyGuardrail` statement's resource is the **unversioned** guardrail ARN (`guardrail/<id>`). The version is a request parameter, not part of the authorized resource. Version pinning is therefore an application concern here, enforced by the boot guard, not by IAM.
-
-Control plane actions (`bedrock:CreateGuardrail`, `UpdateGuardrail`, `CreateGuardrailVersion`) belong to Terraform running under the admin profile, which already holds them. The api user never gets a control plane action.
-- `aws_cloudwatch_metric_alarm` on the guardrail's `InvocationsIntervened` metric (namespace `AWS/Bedrock/Guardrails`, dimensioned by guardrail id and version), threshold more than 5 interventions in 15 minutes, notifying the existing `portfolio-ops-topic`. Confirm at build time that this metric is published for standalone `ApplyGuardrail` calls and not only for inline model invocations. If it is not, drop the alarm and rely on `guardrailErrorCount` and `guardrailBlockCount`, and record that in Follow-up rather than inventing a substitute.
-
-Explicitly **not** created: Bedrock model invocation logging, and CloudTrail data events for Bedrock runtime. Both would put Beta visitor text at rest in AWS and both would break the amended clause 1. Note that the AWS guardrails documentation actively recommends CloudTrail data events as the way to review `ApplyGuardrail` calls and spot `AccessDenied` misconfiguration. This spec declines that diagnostic on purpose, and accepts diagnosing permission problems from the api's own error tally and structured logs instead. State both refusals in the Terraform file as comments so nobody enables them later while debugging.
-
-Also explicitly **not** created: an account level enforced guardrail configuration (`PutEnforcedGuardrailConfiguration`). It cannot reach Beta, and enabling it would silently apply this clinical policy to the interview simulator and the feedback classifier Lambda, where it adds cost and false positives and, in the classifier's case, degrades invisibly into "unclassified". Rejected in Options considered, option 3. If a later change makes anyone reach for it, read that option first.
-
-### Version pinning
-
-`BEDROCK_GUARDRAIL_VERSION` is pinned to a numbered version in Render, never `DRAFT`. Terraform creating a new version does not change production behavior; promoting it is a separate env var flip with the same rollback ergonomics as `BETA_GUARDRAIL_MODE`. The boot guard rejects the literal `DRAFT` and any non numeric value (AC-G10).
+If either fails, the fallback is stated now so it is not invented under pressure: keep the split, and apply **both** guardrails from the api through `ApplyGuardrail`, with the baseline applied to every surface's calls in application code. That loses unbypassability and gains a small amount of latency, and it is still better than one blanket guardrail.
 
 ## Value sourcing
 
-| Action | Value produced or displayed | Source |
+| Action | Value produced | Source |
 |---|---|---|
-| Input check | text sent to AWS | `input.goals` only, already capped at 200 characters by the DTO. Omitted entirely when goals is absent, which skips the call |
-| Input check | masked text used downstream | the `outputs[0].text` field of the `ApplyGuardrail` response, used only in `enforce` |
-| Output check | text sent to AWS | one coach segment, split at `## ` line starts |
-| Output check | grounding source | the matching drafter stage object from the already parsed `DraftPlan`, serialized. Null for the opening and closing segments |
-| Output check | grounding query | synthesized from `injuryArea`, `onsetWeeksAgo`, `discipline`, `preInjuryGrade`, all enum or regex constrained. No free text |
-| Both | guardrail id and version | env `BEDROCK_GUARDRAIL_ID`, `BEDROCK_GUARDRAIL_VERSION` |
-| Both | region and credentials | env `AWS_REGION` plus the `portfolio-api` user keys already in Render for the provider swap |
-| Both | mode | env `BETA_GUARDRAIL_MODE`, resolved once at construction |
-| Block response | visitor copy, input | existing `REFUSAL_MESSAGE` constant |
-| Block response | visitor copy, output | new `GUARDRAIL_OUTPUT_BLOCK_MESSAGE` constant, human written |
-| Counters | which column moves | the resolved mode plus the verdict, per the table above |
+| Beta generation | provider | `AI_PROVIDER_BETA`, falling back to `AI_PROVIDER` |
+| Beta generation | model id | env `BEDROCK_MODEL_ID`, Sonnet 4.6 Geo profile |
+| Clinical input check | text sent | `input.goals` only, capped at 200 characters. Absent goals skips the call |
+| Clinical input check | masked text | `outputs[0].text` of the response, used only in `enforce` |
+| Clinical output check | text sent | one coach segment, split at `## ` line starts |
+| Clinical output check | grounding source | the matching drafter stage object from the parsed `DraftPlan`. Null for opening and closing |
+| Clinical output check | grounding query | synthesized from `injuryArea`, `onsetWeeksAgo`, `discipline`, `preInjuryGrade`, all constrained. No free text |
+| Clinical check | guardrail id and version | env `BEDROCK_CLINICAL_GUARDRAIL_ID`, `BEDROCK_CLINICAL_GUARDRAIL_VERSION` |
+| Baseline check | guardrail id and version | the account enforcement configuration, not a request parameter |
+| Both | region and credentials | env `AWS_REGION` and the `portfolio-api` user keys already in Render |
+| Clinical mode | mode | env `BETA_GUARDRAIL_MODE`, resolved once at construction |
+| Block response, input | visitor copy | existing `REFUSAL_MESSAGE` |
+| Block response, output | visitor copy | new `GUARDRAIL_OUTPUT_BLOCK_MESSAGE` |
 
 ## Key invariants
 
-- Every invariant in the api's "Beta module invariants" gotcha holds unchanged. The two code enforced hard blocks still run before any model call and before any guardrail call. `planCount` is still success only. No visitor content is written or logged.
-- The guardrail is **additive and removable**. Mode `off` is the default and is byte for byte today's behavior.
-- The guardrail can never manufacture a clinical outcome. It can refuse, and it can withhold, but the red flag copy and the referral advice remain human written constants reached only by the existing paths.
-- Fail open is absolute. There is no guardrail failure that makes Beta less available than mode `off`.
-- Only two text classes cross to AWS, and neither comes to rest there.
-- Spec 0005 AC-P3 still holds: Beta stays on the direct Anthropic path with no provider conditionals in `beta.service.ts`.
-
-## Security model and data boundary
-
-Public unauthenticated endpoint, unchanged. No new visitor facing surface, no new stored data beyond three integer columns. Still consumer wellness education, still no PHI, still no HIPAA scope, exactly as spec 0004 named it.
-
-What changes is the boundary, and it changes only if the engineer ratifies the D5 amendment. Under the amended clause: goals text and coach prose transit `ApplyGuardrail` in us-east-2 for a synchronous judgement and are never stored, never logged, and never used for generation. The credential is the existing `portfolio-api` IAM user, gaining exactly one new action scoped to exactly one resource ARN. AWS still holds no database credential and no Anthropic key. The negative half of the boundary (model invocation logging off, Bedrock runtime CloudTrail data events off, no Beta text in any CloudWatch line) is as much a part of the contract as the positive half, and AC-G9 makes it checkable.
+- Every invariant in the api's "Beta module invariants" gotcha holds unchanged. Both code enforced hard blocks still run before any model call and before any guardrail call. `planCount` is still success only. No visitor content is written or logged.
+- The clinical guardrail can never manufacture a clinical outcome. It can refuse and withhold; the red flag copy and referral advice remain human written constants reached only by the existing paths.
+- The clinical guardrail is additive and removable by one env var.
+- No clinical policy ever evaluates a non Beta surface.
+- No Beta content comes to rest on AWS.
+- **Withdrawn**: the previous invariant that Beta stays available when AWS is not. Beta now generates on Bedrock and depends on it.
 
 ## Configuration required
 
-- `BETA_GUARDRAIL_MODE`: `off` (default, and the value on first deploy of the code), `shadow`, or `enforce`.
-- `BEDROCK_GUARDRAIL_ID`: the guardrail id from the Terraform output.
-- `BEDROCK_GUARDRAIL_VERSION`: a numbered version string. `DRAFT` and non numeric values are rejected at boot.
-- Reuses `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` already present in Render for the provider swap child.
-- New constant `GUARDRAIL_CALL_TIMEOUT_MS = 3_000` in `beta.constants.ts`, deliberately far below the model path's `AGENT_CALL_TIMEOUT_MS` of 60 seconds, because this call sits inside the visible stream. No retry: a retry doubles the visible latency for a layer that is allowed to fail.
-- Boot guard mirroring the provider swap's: when mode is not `off`, id and version must be present and valid, or boot fails with a clear message. No live AWS call at boot.
+- `AI_PROVIDER_BETA`: `anthropic` (default) or `bedrock`. Implements the flag the provider swap child reserved.
+- `BETA_GUARDRAIL_MODE`: `off` (default), `shadow`, or `enforce`, governing the clinical guardrail only.
+- `BEDROCK_CLINICAL_GUARDRAIL_ID` and `BEDROCK_CLINICAL_GUARDRAIL_VERSION`: a numbered version; `DRAFT` and non numeric values rejected at boot.
+- Reuses `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `BEDROCK_MODEL_ID`.
+- New constant `GUARDRAIL_CALL_TIMEOUT_MS = 3_000` in `beta.constants.ts`, far below the model path's 60 second `AGENT_CALL_TIMEOUT_MS`, because this call sits inside the visible stream. No retry: retrying doubles visible latency for a layer allowed to fail.
+- Boot guard mirroring the provider swap's: when the clinical mode is not `off`, id and version must be present and valid, or boot fails with a clear message. No live AWS call at boot.
 
 ## Cost and latency
 
-**Billing unit**: Bedrock Guardrails bills per text unit of 1,000 characters, rounded up, with a minimum of one unit per call. Contextual grounding is metered separately and bills the source text as well as the response.
+**Billing**: per text unit of 1,000 characters, rounded up, minimum one unit per call. Contextual grounding is metered separately and bills the source as well as the response. Consumption counts **per guardrail ARN per request**, so Beta's generation calls pay the baseline once each, and Beta's clinical calls pay the clinical guardrail on top.
 
-Per plan, at the shapes above:
+Per completed plan:
 
 | Payload | Calls | Text units |
 |---|---|---|
-| Input (goals, at most 200 characters) | 1 | 1 |
-| Output segments (opening, 4 to 5 stages, closing) | 6 to 7 | about 7 on the standard meter |
-| Grounding (per stage source plus segment, about 500 characters each) | included above | about 10 on the grounding meter |
+| Baseline on three generation calls | 3 | roughly 4 to 6, mostly the drafter's large prompt |
+| Clinical input (goals, at most 200 characters) | 1 | 1 |
+| Clinical output segments (opening, 4 to 5 stages, closing) | 6 to 7 | about 7 on the standard meter |
+| Clinical grounding (per stage source plus segment) | included above | about 10 on the grounding meter |
 
-That is roughly 8 standard text units and 10 grounding text units per completed plan. At Beta's hard cap of 40 plans per day every single day, that is about 10,000 standard and 12,000 grounding text units per month. At published 2026 Bedrock Guardrails rates that lands **under about ten dollars a month in the absolute worst case**, and in cents at a portfolio site's realistic traffic. Confirm the current per unit rate at build time and fold it into the tag filtered budget rather than trusting this estimate.
+Roughly 12 to 14 standard text units and 10 grounding units per plan, up from the 8 and 10 of the previous design, because the baseline now bills on generation too. At the hard cap of 40 plans per day every day, that is about 16,000 standard and 12,000 grounding units per month for Beta. The interview simulator and classifier also start paying the baseline on every call, which is new spend on surfaces that had none. At published 2026 rates the whole program stays in low single digit dollars per month at worst, but the number should be confirmed at build time and folded into the tag filtered budget rather than trusted from here.
 
-Worst case is bounded the same way Beta's model spend already is: the input guard sits inside `reserveGlobalSlot()`, and refused attempts refund the slot, so a determined abuser can drive guardrail calls exactly as far as they can already drive screener calls, which the 3 per hour per IP in memory throttle bounds. The guardrail adds no new abuse surface, only a proportional increment to an existing one.
+Worst case is bounded as before: the clinical input guard sits inside `reserveGlobalSlot()`, refused attempts refund the slot, so an abuser can drive guardrail calls exactly as far as they can already drive screener calls, which the 3 per hour per IP throttle bounds.
 
 **Latency**:
-
-- Input: one sequential round trip, roughly 100 to 300 milliseconds, added to a time to first token already dominated by a screener call plus a full drafter call.
-- Output in `shadow`: zero added latency, because the calls are not awaited.
-- Output in `enforce`: roughly 150 to 300 milliseconds per segment, awaited. Time to first visible text rises by about the input call plus one segment check, so about half a second (AC-G12). The rest of the added time is spread across segment boundaries and is felt as chunkier streaming rather than as waiting.
+- Baseline on generation: unknown until measured, and it is on the critical path of every call on every surface. Measure during the dry run.
+- Clinical input: one sequential round trip, roughly 100 to 300 milliseconds.
+- Clinical output in `shadow`: zero, the calls are not awaited.
+- Clinical output in `enforce`: roughly 150 to 300 milliseconds per segment, awaited. Time to first visible text rises by about half a second; the rest is felt as chunkier streaming.
 
 ## Critical test scenarios
 
-All mocked, no network, per the repo's convention. `BetaGuardrailService` is mocked in `beta.service.spec.ts`; its own spec mocks the `send` method of `@aws-sdk/client-bedrock-runtime`.
+All mocked, no network, per the repo's convention.
 
-- Mode `off`: zero `ApplyGuardrail` calls on every path, and the existing beta specs pass untouched. Verifies **AC-G1**.
-- Shadow: calls are fired but never awaited before an emit, nothing is withheld, tokens arrive in the same order and shape as today, `guardrailFlagCount` increments. Verifies **AC-G2**.
-- Enforce, input block: screener, drafter, and coach mocks are never called, the emitted event is `error` with `REFUSAL_MESSAGE`, and the refund carries reason `guardrail`. Verifies **AC-G3**.
-- Enforce, output block on segment 3: segments 1 and 2 were emitted, segment 3 and everything after are not, a `guardrail_block` event is emitted, and the slot is refunded. Verifies **AC-G4**.
-- Precedence: screener returns `red_flag` and the input guardrail also returned a block. The visitor gets the red flag card. Same test with the screener's fail closed coercion (an unparseable verdict). Verifies **AC-G5**.
-- Fail open, four ways: the client throws, the call times out at 3 seconds, the call is throttled, and the credentials are rejected. In every case the plan completes normally and `guardrailErrorCount` increments once. Verifies **AC-G6**.
-- Mask versus block: a response with `action: GUARDRAIL_INTERVENED` whose only assessment is a sensitive information `ANONYMIZE` proceeds with the masked text, and the screener mock receives the masked string. Verifies **AC-G8**.
-- Payload discipline: assert the exact strings passed to the guardrail client. The input call carries only `goals`, never the assembled visitor profile (sending the profile would also risk the prompt attack filter tripping on Beta's own scaffolding tags). The output call carries one segment, and a grounding source only for `## Stage` segments. Verifies **AC-G9**.
-- Boot guard: mode `shadow` with a missing id, and mode `enforce` with version `DRAFT`, each fail at construction with a clear message. Verifies **AC-G10**.
-- Live corpus run (manual, in shadow, not a unit test): at least 30 realistic profiles across the three injury areas, including blunt injury description, profanity, constant pain wording, and ordinary goals. Zero interventions required before `enforce` is enabled. Verifies **AC-G7**.
+- `BedrockAnthropicService` unit tests, new: request shape including the `cache_control` block, `onToken` delivery, usage field extraction, timeout and retry option passing, for both `streamMessage` and `forceToolCall`. Verifies **AC-G2**.
+- Beta on Bedrock: full plan generated with `AI_PROVIDER_BETA=bedrock`, streamed in the browser; regression suite green with the flag unset. Verifies **AC-G1**.
+- Baseline dry run (manual): representative prompts from all three surfaces passed to the baseline policy through `ApplyGuardrail`, including each surface's full system prompt, with zero interventions required. Verifies **AC-G4**.
+- Clinical mode `off`: zero `ApplyGuardrail` calls on every path, existing beta specs untouched. Verifies **AC-G6**.
+- Shadow: calls fired but never awaited before an emit, nothing withheld, token order and shape unchanged, `guardrailFlagCount` increments. Verifies **AC-G7**.
+- Enforce, input block: screener, drafter, and coach mocks never called; emitted event is `error` with `REFUSAL_MESSAGE`; refund reason `guardrail`. Verifies **AC-G8**.
+- Enforce, output block on segment 3: segments 1 and 2 emitted, 3 and after not, `guardrail_block` emitted, slot refunded. Verifies **AC-G9**.
+- Precedence: screener `red_flag` plus a guardrail block yields the red flag card; repeated for the fail closed coercion. Verifies **AC-G10**.
+- Fail open, four ways: client throws, times out at 3 seconds, is throttled, credentials rejected. Plan completes normally, `guardrailErrorCount` increments once. Verifies **AC-G11**.
+- Mask versus block: `GUARDRAIL_INTERVENED` whose only assessment is a sensitive information `ANONYMIZE` proceeds with masked text, and the screener mock receives the masked string. Verifies **AC-G12**.
+- Payload discipline: assert exact strings passed to the guardrail client. Input carries only `goals`; output carries one segment with a grounding source only for `## Stage` segments. Verifies **AC-G14**.
+- Boot guard: clinical mode `shadow` with a missing id, and `enforce` with version `DRAFT`, each fail at construction. Verifies **AC-G15**.
+- Live corpus run (manual, in shadow): at least 30 realistic profiles including blunt injury description, profanity, constant pain wording, and ordinary goals. Zero interventions before `enforce`. Verifies **AC-G13**.
 
 ## Build plan
 
-Tracer Bullet ordering, the repo's default: a thin thread through every layer first, then thicken the policy. The thread is deliberately arranged so nothing a visitor sees changes until step 8.
+Tracer Bullet ordering. Nothing a visitor sees changes until step 8, and the two riskiest steps (2 and 6) are gated by proof rather than by hope.
 
-1. `BetaGuardrailService` skeleton: client construction, mode resolution, boot guard, timeout constant, and a hard no op at mode `off`. Wired into `beta.service.ts` with the flag unset. Fully mocked spec. Satisfies **AC-G1**, **AC-G6**, **AC-G10**.
-2. `infra/guardrails.tf` with a **minimal** policy: prompt attack HIGH on input, nothing else. First numbered version. `portfolio-api-guardrail-apply` policy and the user attachment. Terraform output for the id. Tony sets the Render env vars. Satisfies **AC-G9**, **AC-G10**.
-3. Prisma migration adding the three tally columns (additive, no backfill), the `guardrail` refund reason, and the standalone increment paths. Satisfies **AC-G11**.
-4. Input path in `shadow`: guard `input.goals` before the screener, record only. Verified live on a dev boot against the real guardrail. Satisfies **AC-G2**, **AC-G6**.
-5. Output path in `shadow`: the segment accumulator around the coach stream, fire and forget per segment, per stage grounding source, tokens still emitted immediately. Satisfies **AC-G2**.
-6. Thicken the policy to the full table above: content filter strengths, three denied topics with their exclusions, output profanity, input PII anonymize, contextual grounding thresholds. New numbered version, promoted by env flip. Satisfies **AC-G7**.
-7. The corpus run and threshold tuning. Zero false positives is the gate on proceeding, not a nice to have. Satisfies **AC-G7**.
-8. Enforce path: precedence rule, input block routed through the existing refusal, output segment withholding, the new `guardrail_block` event and card copy, the mask versus block distinction and the substitution, refund wiring, and the web client change shipped in the same push. Satisfies **AC-G3**, **AC-G4**, **AC-G5**, **AC-G8**, **AC-G11**, **AC-G12**.
-9. CloudWatch alarm on `InvocationsIntervened` to the ops topic, after confirming the metric exists for standalone calls. Satisfies the observability half of **AC-G6**.
-10. Gate and ship: `/predeploy-audit` with the clinical safety auditor, since this is a health adjacent surface and step 8 changes what an injured visitor sees. Deploy at `shadow`. Promote to `enforce` only after the soak, as an env change, not a deploy.
+1. `BedrockAnthropicService` unit tests for `streamMessage` and `forceToolCall`, closing review finding B-5 **before** the clinical surface depends on that class. Satisfies **AC-G2**.
+2. **Gate**: prove the two open questions about account enforcement on a throwaway call, before any other AWS change. Does enforcement work against an Anthropic Messages shaped body, and what does it do to streaming? If either fails, take the stated fallback and revise this plan. Satisfies **AC-G3** groundwork.
+3. Beta onto Bedrock: implement `AI_PROVIDER_BETA`, move Beta from the concrete `AnthropicService` to the token, make the `provider` log field reflect the resolved choice. Verified live with the flag on. Satisfies **AC-G1**.
+4. `BetaGuardrailService` skeleton: client, mode resolution, boot guard, timeout constant, hard no op at mode `off`. Fully mocked spec. Satisfies **AC-G6**, **AC-G11**, **AC-G15**.
+5. `infra/guardrails.tf`: both guardrails with minimal policies, first numbered versions, the `portfolio-api-guardrail-apply` policy and attachment, outputs for the ids. Tony sets the Render env vars. Satisfies **AC-G5**, **AC-G15**.
+6. Baseline dry run across all three surfaces, then enable account enforcement through the console or CLI, documented in `infra/README.md` as the AC-1 exception. Satisfies **AC-G3**, **AC-G4**.
+7. Prisma migration adding the three tally columns, the `guardrail` refund reason, the standalone increment paths. Satisfies **AC-G16**.
+8. Clinical input and output paths in `shadow`: guard `goals` before the screener, add the segment accumulator around the coach stream with per stage grounding sources, fire and forget, tokens still immediate. Satisfies **AC-G7**.
+9. Thicken the clinical policy to the full table, new numbered version, promoted by env flip. Then the corpus run and threshold tuning; zero false positives is the gate on proceeding. Satisfies **AC-G13**.
+10. Enforce path: precedence, input block through the existing refusal, output segment withholding, `guardrail_block` event and card, mask versus block handling and substitution, refund wiring, web client change in the same push. Satisfies **AC-G8**, **AC-G9**, **AC-G10**, **AC-G12**, **AC-G16**.
+11. Gate and ship: `/predeploy-audit` with the clinical safety auditor, since this is a health adjacent surface, step 3 changes which model reasons about injuries, and step 10 changes what an injured visitor sees. Deploy at `shadow`, promote to `enforce` after the soak as an env change.
 
 ## Migration plan
 
-**Strategy**: feature flagged, three phases, no data migration beyond three additive counter columns that default to zero.
+**Strategy**: feature flagged, four phases, no data migration beyond three additive counter columns defaulting to zero.
 
 **Phases**:
-1. Code deployed with `BETA_GUARDRAIL_MODE` unset. Zero behavior change, zero AWS calls, zero cost. The migration lands here.
-2. Flip to `shadow` in Render. Calls are made and recorded, nothing the visitor sees changes. Soak until the corpus run and the observed shadow rates are clean.
-3. Flip to `enforce`. Behavior changes for the first time: blocking, masking, and segment paced streaming all begin together.
+1. Tests and the enforcement gate. No production change.
+2. Beta onto Bedrock behind `AI_PROVIDER_BETA`. **This is the phase that changes the clinical model** from Sonnet 5 to Sonnet 4.6, and it is worth pausing on rather than passing through.
+3. Baseline enforcement on, after the dry run. Affects all three surfaces at once.
+4. Clinical guardrail `off`, then `shadow`, then `enforce`.
 
-**Rollback**: set `BETA_GUARDRAIL_MODE=off` and restart. No code revert, no migration reversal, no AWS change. The counter columns are inert when the flag is off.
+**Rollback**: phase 4 by env var. Phase 3 by deleting the enforcement configuration in the console. Phase 2 by unsetting `AI_PROVIDER_BETA`, which returns Beta to Sonnet 5 on the direct API. Phases are independently reversible, which is the main reason for the ordering.
 
-**Risks**: the phase 3 flip changes three things at once (blocking, masking, stream pacing), so a regression there needs bisecting by inspection rather than by flag. Splitting the flag further was considered and rejected as more configuration surface than a hobby project should carry; the mitigation is that phase 2 has already measured the block rate and the mask rate separately, so only the pacing change is unmeasured at flip time.
+**Risks**: phase 3 is the only one that changes three surfaces simultaneously and the only one not reversible by an env var, which is why the gate in step 2 and the dry run in step 6 both sit in front of it. Phase 4's flip changes blocking, masking, and stream pacing together; the soak measures the first two, so only pacing is unmeasured at flip time.
 
 ## Consequences
 
 **Positive**:
-- Beta gets a second, independent safety layer that does not depend on the prompts the same author wrote, which is the honest weakness of the current single layer design.
-- The contextual grounding check catches the one clinical failure a prompt cannot reliably prevent: the coach inventing content the drafter never drafted.
-- Guardrails, `ApplyGuardrail`, and guardrail versioning are direct AIP-C01 exam surface, exercised in production rather than in a tutorial.
-- Removing it is one env var, so this never becomes load bearing infrastructure by accident.
+- Every AI surface runs on Bedrock, which is the consistency the engineer wants and a stronger claim than a partial migration.
+- An unbypassable floor (prompt attack, PII masking) now covers surfaces that had no guardrail at all, including the feedback classifier reading arbitrary visitor text.
+- The clinical depth lands only where it belongs, so the classifier's silent "unclassified" failure mode is never triggered by a policy meant for rehab prose.
+- Contextual grounding catches the one clinical failure a prompt cannot reliably prevent: the coach inventing content the drafter never drafted.
 
 **Negative and tradeoffs**:
-- The umbrella's cleanest promise ("Beta content never leaves Render and Anthropic") stops being true. That is a real loss in the story, not just in the wording, and it is why D5 is surfaced rather than buried.
-- `enforce` changes the streaming feel from token by token to segment by segment. That is the most likely thing a visitor actually notices, and it is a cost paid for a net that fires rarely.
-- Three more columns on `BetaDailyUsageCounter`, a table spec 0004's own follow-up already flagged as heading toward a generalized redesign.
-- Beta's request path gains an AWS dependency and an AWS SDK client on a surface that had exactly two external dependencies before.
-- A guardrail policy is a tuning artifact, not a build artifact. It needs revisiting whenever the coach's prompt changes, and nothing in the repo will remind anyone of that.
+- **The clinical surface runs a weaker model.** Sonnet 5 returns 403 for this account on Bedrock, so Beta's drafter, the clinical reasoning core, drops to Sonnet 4.6. The health feature will reason about injuries with half a generation less capability than it does today, in exchange for consistency and guardrail coverage. This is the single most consequential line in this spec. **Falsifiable trigger for reversing it**: if Sonnet 5 becomes available on Bedrock for this account, phase 2 should be revisited immediately and the model restored. Until then, the clinical safety auditor should be told explicitly that the model changed.
+- **Beta now depends on AWS to function at all.** The previous posture, where an AWS problem could not touch Beta, is gone. Fail open on the guardrail no longer buys availability, only the narrower guarantee that a guardrail hiccup does not discard a plan that generated fine.
+- **The clinical guardrail is not unbypassable.** The SDK cannot carry a request level guardrail, so the api enforces it by reading a verdict. A future refactor that drops the call silently removes the layer, mitigated only by the module's invariants list and tests.
+- The umbrella's cleanest promise is withdrawn, not narrowed. All Beta visitor content now goes to AWS for generation.
+- `enforce` changes streaming from token by token to segment by segment, the most likely thing a visitor notices, paid for a net that fires rarely.
+- Account enforcement is the one resource this program cannot express in Terraform, so umbrella AC-1 gains a documented exception.
+- Three more columns on `BetaDailyUsageCounter`, a table spec 0004 already flagged as heading toward a generalized redesign.
+- A guardrail policy is a tuning artifact, not a build artifact. It needs revisiting whenever the coach's prompt changes, and nothing in the repo will remind anyone.
 
 **Neutral**:
-- Beta stays on Sonnet 5 and on the direct Anthropic path, so the provider swap child's AC-P3 is unaffected and `AI_PROVIDER_BETA` stays reserved and unimplemented.
-- The api gains `@aws-sdk/client-bedrock-runtime`, which the classifier Lambda already uses, so it is not a new dependency for the repo, only for this workspace.
+- `@aws-sdk/client-bedrock-runtime` becomes an api dependency; it is already used by the classifier Lambda, so it is new to this workspace only.
+- `AI_PROVIDER_BETA` stops being a reserved name and becomes real, as the provider swap child intended.
 
 ## Follow-up
 
-- [ ] **Ratify or reject the D5 amendment to cross child contract clause 1.** Nothing else in this spec can be built until that is settled.
-- [ ] Decide the self harm and crisis question: whether a visitor expressing genuine distress should be detected at all, and if so what the response is. A guardrail block is the wrong answer, so this may belong in the screener with its own human written referral copy rather than here.
-- [ ] Confirm current Bedrock Guardrails per text unit pricing at build time and add it to the tag filtered `genai-infra` budget.
-- [ ] Confirm that `InvocationsIntervened` is published for standalone `ApplyGuardrail` calls. If not, drop the alarm from the build plan and record why.
-- [ ] Re check Sonnet 5's Bedrock availability for this account whenever the architecture is revisited. **This is the trigger that flips D1**: if Sonnet 5 becomes available, option 2 (inline) plus option 4 (the `bedrock:GuardrailIdentifier` IAM condition key on the `portfolio-api` user) becomes the better architecture, because it buys unbypassable enforcement without a model downgrade. Nothing else about this spec would need to change first.
-- [ ] Verify whether `us.` Geo inference profile ids can be named in `modelEnforcement.includedModels` or `excludedModels` at all. The documented pattern allows one dot; those ids carry two. Not needed for this child, since option 3 is rejected, but it would be load bearing for anyone reaching for account level enforcement later.
-- [ ] The provider swap child still names Sonnet 5 as its Bedrock default, which is now stale: the interview simulator is live on `us.anthropic.claude-sonnet-4-6`. That child needs a correction pass, independent of this one.
-- [ ] After shipping, add a line to the api's "Beta module invariants" gotcha recording that the guardrail is additive, fail open, and flag removable, so a later change does not mistake it for a load bearing block.
+- [ ] **Ratify or reject the D5 amendment to cross child contract clause 1.** It is now a withdrawal, not a narrowing. Nothing else here can be built until it is settled.
+- [ ] **Run the step 2 gate before anything else.** If account enforcement cannot work against an Anthropic Messages shaped body, or forces synchronous streaming, option C's floor half is not deliverable as described and this spec needs revising, not patching.
+- [ ] Re check Sonnet 5's Bedrock availability whenever this is revisited. It is the trigger that would restore the clinical model.
+- [ ] Decide the self harm and crisis question: whether a visitor expressing genuine distress should be detected at all, and what the response is. A guardrail block is the wrong answer, so it may belong in the screener with its own human written referral copy.
+- [ ] Consider moving Beta to the raw `Converse` API if request level guardrails ever become important enough to justify splitting the provider abstraction. That is the only path to an inline, unbypassable clinical guardrail.
+- [ ] Confirm current Bedrock Guardrails per text unit pricing at build time and add it to the tag filtered `genai-infra` budget, including the new baseline spend on the interview simulator and classifier.
+- [ ] Confirm that `InvocationsIntervened` is published for standalone `ApplyGuardrail` calls before relying on a CloudWatch alarm; if not, the counters carry it alone.
+- [ ] Verify whether `us.` Geo inference profile ids can be named in `modelEnforcement.includedModels` or `excludedModels`. Not needed while the baseline applies everywhere, but load bearing if anyone ever scopes it.
+- [ ] The provider swap child still names Sonnet 5 as its Bedrock default, which is stale: the interview simulator is live on `us.anthropic.claude-sonnet-4-6`. That child needs a correction pass, independent of this one.
+- [ ] After shipping, add a line to the api's "Beta module invariants" gotcha recording that the clinical guardrail is additive, fail open, and flag removable, so a later change does not mistake it for a load bearing block.
 
 ## Inline rationale
 
-The decisive fact is the Bedrock model catalog, not the guardrail design. Sonnet 5 is unavailable to this account on Bedrock, so the inline guardrail option (move Beta to Bedrock, attach the guardrail to the model call) is not the tidy integration it looks like: it pays for a second safety layer by downgrading the model doing the clinical reasoning. On a surface whose safety story is partly "a good model, given conservative rules, drafting conservatively", that is a bad trade. The standalone `ApplyGuardrail` call costs two extra round trips and buys the layer with the audited path untouched.
+The engineer's intent settles the question the previous draft spent its length on: everything goes to Bedrock, Beta included. What remained was how to apply guardrails without applying them everywhere, and the answer that survives contact with the details is that "guardrail" is not one thing. Prompt attack filtering and PII masking are good on an interview transcript, a feedback message, and a rehab plan alike. Clinical denied topics and grounding against a drafted plan are good on exactly one of those and harmful on another, because the classifier's failure mode is silent. Splitting along that seam is what lets the floor be enforced account wide while the depth stays local.
 
-Reading the code moved two things. First, the input guard is smaller than it looks: the only untrusted free text in a Beta request is a 200 character `goals` field, since every other input is an enum or a regex constrained grade, so the input call is one text unit and its real contribution is the prompt attack filter rather than a general content net. Second, the coach's output format turned out to be the key to the streaming problem. Its skill file already contracts for headingless opening and closing paragraphs and `## Stage n:` headings for every stage, which gives a deterministic segmentation, a per stage grounding source from the drafter's own JSON, and a principled reason to exempt the two segments that are legitimately ungrounded. Without that format contract, contextual grounding would fire on every plan and the whole output policy would collapse into content filters.
+Two details did real work. The coach's output format, which contracts for headingless opening and closing paragraphs and `## Stage n:` headings, gives deterministic segmentation, a per stage grounding source from the drafter's own JSON, and a principled reason to exempt the two segments that are legitimately ungrounded; without it, contextual grounding would fire on every plan. And the DTO, which caps `goals` at 200 characters and constrains every other field to an enum or a regex, means the input guard has exactly one small payload to inspect.
 
-Two stronger looking mechanisms were checked against the AWS API reference and set aside. Account level enforcement and the `bedrock:GuardrailIdentifier` IAM condition key both make a guardrail impossible to skip, which is exactly the weakness of the chosen option, and both only reach invocations that pass through Bedrock. Beta does not, and moving it there is the trade option 2 already failed. Reading the account level API shape settled it further: its only scoping is per model, never per principal or per application, so it would impose a clinical policy on the interview simulator and the classifier Lambda as the price of covering Beta, and the classifier's failure mode is a silent fall back to "unclassified", meaning that damage would not even be visible. The unskippable versions of this control are therefore available for every surface in this program except the one that most needs them. If that ever becomes worth paying for, the mechanism is the IAM condition key, which is per principal, not account level enforcement.
-
-The rest follows from what layer this is. It is the second one, behind a shipped and clinically audited first, so it fails open, it ships in shadow, and its default is off.
+The uncomfortable part is the model. Moving the clinical surface to Bedrock costs half a generation of capability on the agent that reasons about injuries, in exchange for consistency and coverage. That is a defensible trade and it is the engineer's to make, but it should be made with the sentence said out loud rather than discovered later in a diff.
