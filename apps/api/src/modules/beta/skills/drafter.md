@@ -62,3 +62,7 @@ Optionally set `overallCaution` to one sentence the coach should weave in (e.g. 
 - Do not diagnose, name medications, or promise recovery timelines as fact.
 - Do not include any exercise that loads the injured structure maximally in the first two stages.
 - The final stage always frames return to their goals (use the free-text goals if benign) plus a maintenance habit (keeping the key exercise 1-2 times a week).
+
+## Note for maintainers
+
+The `submit_plan` schema is built per request and several checks run on its output, both transcribed from the rules above: the 2-4 exercise and 2-3 criteria counts, the equipment restriction, the mandatory `overallCaution` for constant rest pain, and the crimp prohibitions in the finger_pulley section (`apps/api/src/modules/beta/beta.constants.ts` and `beta.service.ts`, spec 0005 guardrails child). If you change any of those rules, look at the constants in the same change or they go stale silently.

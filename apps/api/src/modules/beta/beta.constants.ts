@@ -100,3 +100,91 @@ export const COACH_MODEL = 'claude-haiku-4-5';
 
 // Per call: 60 second hard timeout, one retry on 5xx or timeout (spec 0004).
 export const AGENT_CALL_TIMEOUT_MS = 60_000;
+
+// ---------------------------------------------------------------------------
+// Spec 0005 guardrails child — layer 1 (constrain the drafter) constants.
+//
+// EVERY constant below is a TRANSCRIPTION of a line that already ships in
+// skills/drafter.md or skills/coach.md. None of them encodes a view about
+// what is clinically valid: an allowlist would need to know everything that
+// is valid (judgement, out of scope), a prohibition list needs only to read
+// the file (transcription, in scope). If a skill file's prohibitions change,
+// these must change with them — nothing in the repo will point at the cause.
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalizes text for substring matching: lowercase, hyphens and underscores
+ * to spaces, whitespace collapsed. Shared by every layer 1 and layer 2 check
+ * so "full-crimp", "Full Crimp" and "full  crimp" all match one pattern.
+ */
+export function normalizeForMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Transcribes drafter.md, finger_pulley section, last bullet:
+ *   "Never program full-crimp training."
+ * Applied to exercise names in EVERY stage of a `finger_pulley` plan.
+ * Deliberately does NOT match "half crimp", which the same section calls
+ * correct in later stages ("gradual half-crimp reintroduction under load").
+ */
+export const FULL_CRIMP_PATTERN = 'full crimp';
+
+/**
+ * Transcribes drafter.md, finger_pulley section, "Early:" bullet:
+ *   "No crimping of any kind."
+ * Applied to exercise names in STAGE 1 ONLY of a `finger_pulley` plan.
+ * The skill file's three phases (early / middle / later) do not map onto
+ * four or five stages without a judgement call, so only the part that
+ * transcribes cleanly — the earliest stage — is enforced (spec: an earlier
+ * draft's "stages 1 or 2" was narrowed for exactly this reason).
+ */
+export const ANY_CRIMP_PATTERN = 'crimp';
+
+/**
+ * Dose field bounds for the drafter's structured `dose` object.
+ *
+ * DELIBERATELY NO UPPER BOUND. These are variance bounds, never clinical
+ * dose limits. The spec derives an upper bound from a calibration run that
+ * observes what the drafter actually produces; that run has NOT been done
+ * (it needs repeated live Anthropic calls against the shared production
+ * daily caps). The spec's own documented fallback for that case is
+ * "positive integers with no upper bound", which keeps the anti-drift
+ * benefit of the structured shape without anyone inventing a ceiling.
+ * Adding a maximum here without the calibration run would convert a guess
+ * into a permanent ceiling on what the product can prescribe.
+ */
+export const DOSE_MIN = 1;
+
+/**
+ * Length cap on the drafter's per-stage `rationale` string. A token budget,
+ * not a constraint on content — `rationale` restricts nothing and encodes no
+ * view about what is valid; it only asks the drafter to state its reasoning
+ * before it prescribes.
+ */
+export const RATIONALE_MAX_LENGTH = 400;
+
+/**
+ * Pre-model prompt-attack check over the only untrusted free text in a Beta
+ * request (`goals`, capped at 200 chars by the DTO). Not a general content
+ * filter: every other field is an enum or a regex-constrained grade. Run
+ * before any model call and before `reserveGlobalSlot()`, like the two
+ * existing code-enforced hard blocks. A hit shows the existing
+ * REFUSAL_MESSAGE — the same copy an `off_topic` screener verdict produces.
+ *
+ * This does not replace the screener's `off_topic` verdict, which stays as
+ * the layer that understands language rather than matching strings.
+ */
+export const INJECTION_BLOCKLIST = [
+  'ignore your instructions',
+  'ignore the above',
+  'disregard your',
+  'you are now',
+  'system prompt',
+  'new instructions',
+  'act as',
+] as const;

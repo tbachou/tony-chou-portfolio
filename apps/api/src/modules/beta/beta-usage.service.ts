@@ -34,7 +34,9 @@ type OutcomeColumn =
   | 'refusalCount'
   | 'throttledCount'
   | 'ipCappedCount'
-  | 'globalCappedCount';
+  | 'globalCappedCount'
+  | 'guardBlockCount'
+  | 'injectionBlockCount';
 
 const REFUND_REASON_COLUMN: Record<RefundReason, OutcomeColumn> = {
   error: 'errorCount',
@@ -147,6 +149,26 @@ export class BetaUsageService {
    */
   recordThrottled(): Promise<void> {
     return this.safeIncrement('throttledCount');
+  }
+
+  /**
+   * Counts one output-guard firing on the coach's text (spec 0005
+   * guardrails child). NOT a refund reason: the visitor still receives a
+   * complete plan rendered from the validated drafter object, so the
+   * request succeeded and planCount increments as normal. Counts in shadow
+   * mode too — measuring the firing rate is the point of shadow.
+   */
+  recordGuardBlock(): Promise<void> {
+    return this.safeIncrement('guardBlockCount');
+  }
+
+  /**
+   * Counts one pre-model injection block on `goals`. Like the two existing
+   * hard blocks it happens before a slot is reserved, so it never reaches
+   * the refund bookkeeping. Never throws.
+   */
+  recordInjectionBlock(): Promise<void> {
+    return this.safeIncrement('injectionBlockCount');
   }
 
   /**

@@ -238,8 +238,8 @@ export default function BetaPage() {
             Built by Tony Chou — former occupational therapist, now a software engineer.
           </p>
           <p className="mt-1.5 text-sm text-[color:var(--beta-muted)]">
-            Beta is an educational demo, not medical advice, diagnosis, or physical therapy.
-            Nothing you type into the planner is stored.
+            Beta is an educational starting point, not medical advice, a diagnosis, or physical
+            therapy. Nothing you type into the planner is stored.
           </p>
         </div>
       </footer>

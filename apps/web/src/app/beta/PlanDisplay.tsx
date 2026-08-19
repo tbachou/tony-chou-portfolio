@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { PLAN_EDUCATIONAL_FRAMING } from '@/lib/beta-copy';
 
 // Renders the coach's streamed markdown progressively (AC-4) with no
 // markdown dependency. The coach's output contract (coach.md skill file):
@@ -135,6 +136,16 @@ export function PlanDisplay({ text, streaming }: { text: string; streaming: bool
 
   return (
     <div className="max-w-[65ch]">
+      {/*
+        Rendered by the page, never taken from the stream, so it is present on
+        the coach path and the guard fallback path alike and cannot be
+        reworded (AC-G14). It sits inside the plan card region rather than in
+        page chrome, so it travels with a screenshot.
+      */}
+      <p className="mb-5 border-l-2 border-[color:var(--beta-border-strong)] pl-4 text-[0.9375rem] text-[color:var(--beta-muted)]">
+        {PLAN_EDUCATIONAL_FRAMING}
+      </p>
+
       {plan.intro.length > 0 && (
         <div className="text-[length:var(--beta-text-lg)] leading-relaxed text-[color:var(--beta-body)]">
           <BlockList blocks={plan.intro} keyPrefix="intro" />

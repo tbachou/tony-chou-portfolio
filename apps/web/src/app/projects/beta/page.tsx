@@ -174,7 +174,7 @@ export default function BetaProjectPage() {
               </a>
             </div>
             <p className="mt-3 max-w-prose text-term-xs text-term-muted">
-              Educational demo, not medical advice — red-flag symptoms are pointed to a
+              An educational starting point, not medical advice — red-flag symptoms are pointed to a
               professional instead of a plan. Rate-limited to keep the demo budget honest; if the
               daily cap is hit, come back tomorrow.
             </p>
