@@ -50,7 +50,14 @@ export function SiteNav() {
           tonychou@portfolio:~
         </a>
         <nav aria-label="Section navigation">
-          <ul className="flex flex-wrap items-center gap-x-5 gap-y-1 text-term-sm">
+          {/* gap-x-4 rather than the gap-x-5 this row used before the theme
+              control joined it. The row has to fit inside the same 896px
+              max-w-4xl the content columns use (widening it would unalign
+              the nav from the TerminalWindow edges below), and with eight
+              items that is seven gaps — dropping each by 4px buys back 28px
+              of the headroom the control spent. Measured: the row needs
+              857px at gap-x-5 and 829px here, against the 896px cap. */}
+          <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-term-sm">
             {NAV_LINKS.map((link) => {
               const isActive = activeId === link.href.slice(1);
               return (
