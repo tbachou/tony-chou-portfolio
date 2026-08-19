@@ -608,8 +608,9 @@
   }
 }
 
-/* Custom mouse cursor — a sharp-edged accent block that trails the
-   pointer. Both how it composites AND whether it is filled are
+/* Custom mouse cursor — a sharp-edged accent block centred on the
+   pointer, tracking it 1:1 (it used to trail; see RetroCursor.tsx for
+   why the easing was removed). Both how it composites AND whether it is filled are
    palette-dependent, because the pointer sits on top of running text and
    must not eat it: on the CRT it is a solid phosphor block inverting
    against the near-black canvas (the spotlight-cursor trick — glyphs
