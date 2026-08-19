@@ -22,6 +22,17 @@ body {
      what causes a flash of the wrong theme. Tokens resolve on :root in
      terminal.css. Beta overrides both with its own fixed palette. */
   background: var(--color-canvas);
+  /* The light palette's printed sheet — green bars and tractor-feed
+     holes. It lives on <html> because the root element's background is
+     propagated to the canvas, so it tiles down the entire scrollable
+     document and scrolls with it (paper, not a screen overlay). <body>
+     repeats it in the first viewport since it paints its own opaque
+     canvas on top. `none` in dark, so the CRT is untouched. Must follow
+     the shorthand above, which resets background-image. */
+  background-image: var(--sheet-image);
+  background-size: var(--sheet-size);
+  background-position: var(--sheet-position);
+  background-repeat: var(--sheet-repeat);
   color: var(--color-body);
   font-family:
     system-ui,
