@@ -165,10 +165,10 @@ export default function BetaPage() {
             <h2 className="text-[length:var(--beta-text-2xl)]">Why I built this</h2>
             <div className="mt-4 max-w-[65ch] space-y-4">
               <p>
-                Before I wrote software, I was an occupational therapist — grading activity to
-                healing tissue was my day job. I am also a climber, which means I have watched a
-                lot of friends come back from tweaked pulleys too fast, or not at all. Beta ties
-                the two careers together: a multi-agent AI pipeline built with the safety posture
+                Before I wrote software, I spent six years as an occupational therapist — I no
+                longer practice, but grading activity to healing tissue was my day job. I am also
+                a climber, which means I have watched a lot of friends come back from tweaked
+                pulleys too fast, or not at all. Beta ties the two careers together: a multi-agent AI pipeline built with the safety posture
                 a clinician would insist on, starting with knowing when to refuse.
               </p>
               <p>
@@ -234,7 +234,7 @@ export default function BetaPage() {
             </Link>
           </div>
           <p className="mt-4 text-sm text-[color:var(--beta-muted)]">
-            Built by Tony Chou — occupational therapist turned software engineer.
+            Built by Tony Chou — former occupational therapist, now a software engineer.
           </p>
           <p className="mt-1.5 text-sm text-[color:var(--beta-muted)]">
             Beta is an educational demo, not medical advice, diagnosis, or physical therapy.
