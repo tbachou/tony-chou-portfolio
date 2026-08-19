@@ -4,7 +4,7 @@
 
 Beta gets an output side safety layer it does not currently have, built in process with no new dependency and no AWS footprint. Beta stays on the direct Anthropic API on Sonnet 5, and the umbrella's data boundary promise survives untouched: Beta visitor content never leaves Render and Anthropic.
 
-The pattern already exists in this repo. `conversation/ownership-guard.ts` evaluates the model's complete output against deterministic rules and, on failure, discards the generated text and substitutes safe copy, re chunking it so it still reads as streamed. Beta has nothing equivalent. Two layers close the gap: first, constrain the drafter's forced tool schema to the content `drafter.md` already names, so the model cannot invent, inflate, or drift past it, and second, a deterministic guard over the coach's output. A third layer, an LLM judge, is recommended against for v1 with reasons.
+The pattern already exists in this repo. `conversation/ownership-guard.ts` evaluates the model's complete output against deterministic rules and, on failure, discards the generated text and substitutes safe copy, re chunking it so it still reads as streamed. Beta has nothing equivalent. Two layers close the gap: first, constrain the drafter to what `drafter.md` explicitly requires and forbids, so the model cannot drift past it, and second, a deterministic guard over the coach's output. A third layer, an LLM judge, is recommended against for v1 with reasons.
 
 Layer 1 is a **fidelity constraint, not a clinical prescription**, and that distinction governs the whole design. It makes no new claim about what the right exercises or doses are. The clinical content already exists in the prompt and already ships; layer 1 only reduces the variance around it. Alongside the two layers, this child also fixes where Beta says its plans are educational rather than clinically binding, by moving that statement from a sentence the model writes to an element the page always renders.
 
@@ -24,9 +24,9 @@ So the clinical surface, the one that tells injured people how to load an injure
 **Acceptance criteria**:
 
 - **AC-G1**: no AWS is involved. Beta stays on the direct Anthropic API on Sonnet 5, and cross child contract clause 1 holds unchanged: Beta visitor content never leaves Render and the direct Anthropic API.
-- **AC-G2**: every entry in the vocabulary table traces to a named line in `drafter.md`, and the table's source comments record which line. Nothing in it originates from a judgement made while writing it.
-- **AC-G3**: the drafter's tool schema is built per request from `injuryArea` and `equipmentAccess`. An exercise the skill file does not name for that injury, or one requiring equipment the visitor does not have, is not representable in the drafter's output. Both constraints transcribe rules `drafter.md` already states.
-- **AC-G4**: full crimp work is not representable for a `finger_pulley` plan. The vocabulary contains no such entry, so the skill file's "never program full-crimp training" becomes a structural fact rather than an instruction.
+- **AC-G2**: layer 1 contains no allowlist of permitted exercises. `exercises[].name` remains a free string, and every constraint in the layer traces by a source comment to an explicit requirement or prohibition in `drafter.md`. Nothing in it originates from a judgement about what is clinically valid.
+- **AC-G3**: the drafter's tool schema is built per request. Each exercise carries a required `equipmentUsed` enum filtered to the visitor's reported `equipmentAccess`, so an exercise declaring gear the visitor does not have is not representable, transcribing "Only prescribe equipment the visitor has" and "Never invent gear". Item counts are 2 to 4 exercises and 2 to 3 advancement criteria, transcribing the numbers the skill file states.
+- **AC-G4**: `parseDraftPlan` rejects a `finger_pulley` plan whose exercise names reference full crimp anywhere, or reference crimping at all in stage 1, transcribing "Never program full-crimp training" and the early phase's "No crimping of any kind". These sit on the drafter's output, not only in layer 2, because the guard fallback renders the drafter's plan verbatim.
 - **AC-G5**: exercise dosing is structured (`sets`, `reps`, optional `holdSeconds`, `frequencyPerWeek`) and rendered into prose by code, so the coach is never in a position to alter a dose number. Its numeric bounds are variance bounds derived from the calibration run's observed range with headroom, documented as such in the constants file, and explicitly not a clinical dose limit.
 - **AC-G5b**: `overallCaution` is a required field when `painBehavior` is `constant_even_at_rest`, enforced by the schema built for that request, transcribing the skill file's "MANDATORY ... never omit it for this pain behavior".
 - **AC-G6**: the coach's output is buffered in full, evaluated by the guard, and only then emitted, re chunked through the existing `splitIntoChunks` so it still arrives as multiple SSE events. A visitor never sees an unguarded token.
@@ -72,9 +72,9 @@ Strengthen the skill files and rely on the models to comply.
 
 **None of these is settled until the engineer ratifies it.**
 
-### D1. Two layers, not three: schema tightening plus a deterministic guard
+### D1. Two layers, not three: constrain the drafter, then guard the coach
 
-**Chosen**: layer 1 (make unsafe plans unrepresentable) and layer 2 (deterministic guard over the coach). **Runner up**: layer 2 alone, leaving the schema as it is, which is less work but leaves the drafter free to prescribe anything the prose rules did not anticipate.
+**Chosen**: layer 1 (hold the drafter to what the prompt explicitly requires and forbids) and layer 2 (deterministic guard over the coach). **Runner up**: layer 2 alone, leaving the drafter untouched, which is less work but leaves the plan object itself unchecked, and the guard fallback renders that object verbatim.
 
 Layer 1 is the higher value of the two and should be built first. Detection catches what you thought of; prevention catches what you did not, because the model is never offered the option.
 
@@ -100,58 +100,59 @@ Reasoning is in the Layer 3 section below.
 
 ## Decision
 
-### Layer 1: constrain the drafter to what the prompt already names
+### Layer 1: constrain the drafter to what the prompt explicitly requires and forbids
 
 **This is a fidelity constraint, not a clinical prescription, and the difference is load bearing.**
 
 The wrong framing would be "these are the correct exercises and dose ceilings for this injury". That is a clinical claim, it needs standing the author does not have, and hardening it into a schema would freeze one person's judgement into a permanent ceiling on what the product can ever prescribe.
 
-The right framing, and the one this layer is built on, is "the model may only use exercises and doses already named in `drafter.md`". That is a constraint against the model inventing, inflating, or drifting past content that already exists and already ships to visitors today. It needs accurate transcription, not clinical judgement.
+The right framing, and the one this layer is built on, is "the model may only do what `drafter.md` already says it may do". That is a constraint against the model drifting past content that already exists and already ships to visitors today. It needs accurate reading, not clinical judgement.
 
 The clinical content is not new. It is in the prompt now, and every plan Beta has ever produced was drawn from it. Layer 1 adds no clinical claim; it reduces the variance around advice that is already being given.
 
-**The operating rule, which must be applied literally when the table is written:**
+**The test that decides what belongs here.** This is the generalising principle, and anyone extending this layer later should apply it before adding anything:
 
-> Derive strictly from `drafter.md`. Where uncertain, **exclude rather than include**. Anything that would require deciding rather than transcribing is out of scope for the table by definition, and must be called out as out of scope rather than quietly resolved.
+> A positive **allowlist** requires knowing everything that is clinically valid. That is judgement, and it is out of scope.
+> A negative constraint on what `drafter.md` **explicitly forbids or explicitly requires** needs only reading the file. That is transcription, and it is in scope.
 
-Exclusion is the conservative direction because a narrower vocabulary fails loudly: the drafter cannot produce a value the schema lacks, which lands on the existing error path. A wider one fails silently, by permitting something nobody transcribed.
+**What that test excludes, headline first.** An enumerated vocabulary of permitted exercises was specified in an earlier draft of this spec and has been **dropped**. `drafter.md`'s injury specific exercise lists are illustrative, not exhaustive (confirmed by the author, 2026-08-19), so enumerating them would close a list that was never meant to be closed. That is a clinical narrowing wearing a fidelity label, and it is exactly what this layer must not be. Asking the author to widen the table with his own additions was considered and rejected for the same reason: it is still a clinical call about what belongs.
 
-**Out of scope by that rule, listed rather than resolved.** Each of these is a decision, so none of them is encoded:
+So `exercises[].name` stays a **free string**. Also out of scope, each because it is a decision rather than a reading:
 
-- Whether the vocabulary is clinically complete or correct. The table mirrors the prompt; it does not audit it.
+- Which exercises are clinically valid for an injury. The drafter's job, and it stays the drafter's job.
 - Absolute safe maxima for any dose. See the bounds note below.
-- Which stage an exercise "should" appear in, beyond the placements `drafter.md` states in words.
-- Whether an exercise suits a particular visitor's presentation. That is the drafter's job and stays the drafter's job.
-- Grade offset arithmetic across V scale, YDS, and French. Not cleanly structurable, so `allowedClimbing` keeps its free text and is covered by layer 2 instead.
+- Which stage an exercise "should" appear in, beyond placements `drafter.md` states in words.
+- Grade offset arithmetic across V scale, YDS, and French. Not cleanly structurable, so `allowedClimbing` keeps its free text and is covered by layer 2.
 
-**What the layer actually does.** The drafter is already a `forceToolCall` whose schema is constructed inside `runDrafter`, where `input` is in scope, so the schema can be built **per request**. That is what turns several prose rules into structural facts.
+**What survives, and it is still five real constraints.** The drafter is already a `forceToolCall` whose schema is constructed inside `runDrafter`, where `input` is in scope, so the schema can be built **per request**. That is what turns several explicit instructions into structural facts.
 
-*Per request vocabulary.* `exercises[].name` becomes an enum rather than a free string, drawn from a table in `beta.constants.ts` keyed by injury area and transcribed from `drafter.md`'s own injury specific sections, with each entry tagged with the equipment it needs. At call time the enum is filtered to the visitor's `injuryArea` and `equipmentAccess`.
+*1. Item counts, in the schema.* The current schema allows `exercises` `minItems: 1` and `advanceWhen` `minItems: 1` with no maximum, while `drafter.md` states 2 to 4 exercises and 2 to 3 advancement criteria. That is an existing contradiction between prompt and schema. Tighten to `minItems: 2, maxItems: 4` and `minItems: 2, maxItems: 3`. Pure transcription of stated numbers.
 
-| Injury area | Entries transcribed from `drafter.md` |
+*2. Equipment, in the schema, per request.* `drafter.md` says "Only prescribe equipment the visitor has" and "Never invent gear". Each exercise gains a required `equipmentUsed` field, an enum drawn from the **existing** `EQUIPMENT_ACCESS` constant and filtered at call time to what the visitor actually reported. The model must declare what gear an exercise needs, and it can only declare gear the visitor has.
+
+This is the mechanism that replaces the dropped allowlist for this dimension, and it is strictly better suited to it: it constrains the **gear**, never the exercise, so it enforces the instruction without expressing any opinion about what a valid exercise is. The enum it uses already ships in `beta.constants.ts` and is the same list the form offers the visitor, so nothing new is being decided.
+
+*3. Conditional caution, in the schema, per request.* When `painBehavior` is `constant_even_at_rest`, `overallCaution` joins the schema's `required` array for that request, transcribing "a MANDATORY `overallCaution` (never omit it for this pain behavior)".
+
+*4. Structured dose shape, in the schema, with variance bounds rather than clinical ceilings.* `dose` stops being a free string and becomes an object with integer fields: `sets`, `reps`, optional `holdSeconds`, and `frequencyPerWeek`.
+
+The **shape** is pure fidelity: integers instead of prose remove "some" and "a few", which `drafter.md` already forbids ("Every number you output must be concrete, not a range like 'some'"), and they let the api render the dose so the coach never handles it as editable text.
+
+The **bounds** are where the operating test bites a second time. `drafter.md` gives examples ("3 sets of 10, every other day", maintenance "1-2 times a week") but states no maximum, so any specific ceiling would be a decision. Therefore: bounds are set from the range the drafter is **observed** to produce during the calibration run, widened with generous headroom. They exist to catch runaway drift (fifty sets, six sessions a day), not to encode a dose recommendation, and the constants file must say so in a comment so no later reader mistakes them for clinical limits. If the calibration run is not done, the correct fallback is positive integers with no upper bound, which still delivers the anti drift benefit of the structured shape.
+
+*5. Explicit prohibitions, in `parseDraftPlan`.* These are negative constraints on the drafter's output, keyed to prohibitions `drafter.md` states in so many words. They live in code rather than the schema because a free string field cannot express them, and they are deliberately few, because a rejection here lands on the hard error path.
+
+| Check | Transcribes |
 |---|---|
-| `finger_pulley` | tendon glides, open hand putty squeeze, rice bucket work, light finger massage, finger extensions against band, open hand isometric on a pick up block, open hand isometric on a hangboard with feet weighted, half crimp isometric under load, wrist and forearm stretch |
-| `elbow_tendinopathy` | eccentric wrist curls, slow tempo wrist curls, reverse wrist curls, forearm massage, forearm stretching, band external rotation, rows, band pull aparts, scapular retraction |
-| `shoulder_impingement` | pendulums, wall slides in pain free range, isometric external rotation at the side, band external rotation, rows, band pull aparts, serratus wall slides, push up plus, thoracic mobility, light overhead press |
+| No exercise name in any stage may reference full crimp, for a `finger_pulley` plan | "Never program full-crimp training" |
+| No exercise name in **stage 1** may reference crimping at all, for a `finger_pulley` plan | the early phase's "No crimping of any kind" |
+| Stage time windows must be non overlapping and increasing | a structural property, not a clinical one |
 
-Two consequences fall straight out, and both are transcriptions rather than judgements. There is **no full crimp entry anywhere**, because `drafter.md` says "Never program full-crimp training". And a visitor whose `equipmentAccess` is `none` is never offered a hangboard or band entry, because `drafter.md` says "Only prescribe equipment the visitor has" and "Never invent gear".
+An earlier draft wrote the crimp stage rule as "stages 1 or 2", which required mapping the skill file's three phases (early, middle, later) onto four or five stages. That mapping is a decision, so under the test it is excluded and the rule is narrowed to the part that transcribes.
 
-*Structured dosing, with variance bounds rather than clinical ceilings.* `dose` stops being a free string and becomes an object with integer fields: `sets`, `reps`, optional `holdSeconds`, and `frequencyPerWeek`.
+*One addition that is not a constraint.* A new capped `rationale` string per stage, placed **first** in the schema's property order so the model produces it before the prescriptions. It is listed separately because it does not fit the test above and does not need to: it restricts nothing and encodes no view about what is valid. It only asks the drafter to state its reasoning, which gives the guard and any future judge something to check against, and asking for reasoning before output tends to improve the output.
 
-The **form** is pure fidelity: integers instead of prose remove "some" and "a few", which `drafter.md` already forbids ("Every number you output must be concrete, not a range like 'some'"), and they let the api render the dose so the coach never handles it as editable text.
-
-The **bounds** are the one place the earlier draft of this spec overstepped, and the operating rule catches it. `drafter.md` gives examples ("3 sets of 10, every other day", maintenance "1-2 times a week") but states no maximum, so any specific ceiling would be a decision, not a transcription. Therefore: bounds are set from the range the drafter is **observed** to produce during the calibration run, widened with generous headroom. They exist to catch runaway drift (a plan asking for fifty sets, or six sessions a day), not to encode a dose recommendation, and the constants file must say so in a comment so no later reader mistakes them for clinical limits. If the calibration run is not done, the correct fallback is positive integers with no upper bound, which still delivers the anti drift benefit of the structured form.
-
-*Counts transcribed from the skill file.* The current schema allows `exercises` `minItems: 1` and `advanceWhen` `minItems: 1` with no maximum, while `drafter.md` says 2 to 4 exercises and 2 to 3 advancement criteria. That is an existing mismatch between prompt and schema. Tighten to `minItems: 2, maxItems: 4` and `minItems: 2, maxItems: 3`. Direct transcription.
-
-*A required rationale per stage.* A new capped `rationale` string, placed **first** in the schema's property order so the model produces it before the prescriptions. It gives the guard and any future judge something to check against, and asking for reasoning before output tends to improve the output.
-
-*Conditionally required caution.* When `painBehavior` is `constant_even_at_rest`, `overallCaution` joins the schema's `required` array for that request, transcribing `drafter.md`'s "a MANDATORY `overallCaution` (never omit it for this pain behavior)".
-
-*Two code level checks in `parseDraftPlan`*, deliberately only two, because a rejection here lands on the hard error path rather than the fallback renderer, so only direct transcriptions belong:
-
-1. The `half crimp isometric under load` entry may not appear in **stage 1**. `drafter.md`'s early phase says "No crimping of any kind", which transcribes cleanly onto the first stage. An earlier draft of this spec wrote "stages 1 or 2", which required mapping the skill file's three phases (early, middle, later) onto four or five stages. That mapping is a decision, so under the operating rule it is excluded and the rule is narrowed to the part that transcribes.
-2. Stage time windows must be non overlapping and increasing. A structural property, not a clinical one.
+**Why these checks must sit on the drafter's output and not only in layer 2.** The guard fallback renders the drafter's plan verbatim when the coach's prose is rejected. If a forbidden prescription reached the plan object, the fallback would faithfully ship it. So the drafter side checks are what make the fallback safe to use at all, and moving them into layer 2 would quietly break that guarantee.
 
 ### Layer 2: the deterministic output guard
 
@@ -164,13 +165,17 @@ The rules use a fact the coach is contracted to provide: its output format is fi
 | **R1** | Contraindicated pain phrasing. Blocklist: "push through the pain", "push through it", "work through the pain", "work through it", "no pain no gain", "ignore the pain", "tough it out", "power through", "pain is nothing to worry about" | The single most dangerous thing a rehab coach can say | The pain traffic light language the skill files mandate: "no more than about 3 out of 10", "settling by the next morning", "some discomfort is normal and expected", "'no pain' is not required". Rule keys on pain **plus** a push or ignore verb, never on the word pain alone |
 | **R2** | Full crimp programming, scoped to `**Do this:**` bullet lines only | The coach adding crimp loading the drafter never prescribed | The legitimate cautionary uses everywhere else: "no crimping of any kind", "full crimp moves are the very last thing to return", and "half crimp", which is explicitly correct in later stages. Scoping to prescription lines is what makes this rule safe; a document wide substring match would fire on the skill file's own safety language |
 | **R3** | Numeric fidelity. Every numeric token inside a stage section must also appear in that stage's drafter object | The coach inflating a dose, inventing "twice daily", or changing a grade or a week count | The `## Stage n:` heading number itself (excluded), and the opening and closing paragraphs (not stage sections). Every other number the coach legitimately writes came from the drafter, so it is present by construction |
-| **R4** | Structural conformance. Exactly one `## Stage n:` heading per drafter stage, in order, each containing all four labels | A dropped, merged, or reordered stage, all forbidden by `coach.md` and all clinically material, since a dropped stage is a jump in load | Nothing. It is a format check against a format the coach is contracted to produce. Lowest false positive risk in the table and among the highest value |
+| **R4** | Structural conformance. Exactly one `## Stage n:` heading per drafter stage, in order, each containing all four labels, and the same number of `**Do this:**` bullets as that stage has exercises | A dropped, merged, or reordered stage or exercise, all forbidden by `coach.md`'s "Do not add, remove, merge, or reorder stages or exercises" and all clinically material, since a dropped stage is a jump in load | Nothing. It is a format and count check against a format the coach is contracted to produce. Lowest false positive risk in the table and among the highest value |
 | **R5** | Medication naming. Blocklist: ibuprofen, naproxen, advil, aleve, tylenol, paracetamol, acetaminophen, cortisone, corticosteroid, voltaren, diclofenac, nsaid, anti inflammatories | `drafter.md`: "Do not diagnose, name medications" | Nothing legitimate. Drug naming is outside the product's contract entirely, so a firing here is correct behavior, not a false positive |
 | **R6** | Diagnosis asserted as fact. Narrow constructions: "you have torn", "you have a grade", "you have ruptured", "is torn", "diagnosed with", "this is definitely a" | The coach turning an educational plan into a clinical claim about this person | The visitor's own selected injury label ("your finger pulley strain", "climber's elbow"), and general education ("pulley strains usually", "this kind of injury often"). The **weakest rule in the table** and the one most likely to need loosening during calibration |
 | **R7** | Promised recovery as fact. Blocklist: "you will be back", "you will be climbing again", "you will fully recover", "guaranteed", "you will be healed" | `drafter.md`: do not "promise recovery timelines as fact"; `coach.md`: "say 'climbers usually find' rather than 'you will'" | The stage time windows themselves, which are explicitly guidance and allowed; "climbers usually find", "most climbers", "typically"; and ordinary uses of "you will feel" or "you will notice" |
 | **R8** | Mandatory caution carried through. When `painBehavior` is `constant_even_at_rest`, the closing section must carry the drafter's `overallCaution` | The coach dropping the one caution the skill file calls mandatory | Rephrasing, which the coach is supposed to do. Checks for the caution's key terms, not an exact string match |
 
 Rules R1, R5, R6 and R7 are blocklists over the whole document. R2 is scoped to prescription lines. R3 and R4 are scoped per stage section. R8 is scoped to the closing.
+
+**Exercise name validation lives here, and follows the same test as layer 1.** With no allowlist upstream, layer 2 is where exercise naming is checked, and its rules must key on what the skill files **explicitly prohibit**, never on a notion of what is clinically appropriate. R2 is the model for that: it exists because `drafter.md` says "Never program full-crimp training", not because someone judged full crimp inadvisable. Any rule added here later must be able to cite the line it transcribes, or it does not belong.
+
+R2's scope is now narrower than it looks, and deliberately so. The drafter side check in layer 1 already rejects a plan that prescribes full crimp, so by the time the coach runs, a full crimp reference in a prescription line means the **coach** introduced it. That is the only thing R2 is left to catch, which is why it can afford to be tightly scoped.
 
 ### Layer 3: an LLM judge, recommended against for v1
 
@@ -257,7 +262,7 @@ One structured log line on a guard firing, carrying the rule name and never the 
 ### Code shape
 
 - `apps/api/src/modules/beta/beta-output-guard.ts`: `evaluateCoachOutput`, the rule constants, and `renderPlanFallback(plan, input)`. Pure functions, no injection, no I/O, directly mirroring `ownership-guard.ts`.
-- `apps/api/src/modules/beta/beta.constants.ts`: the per injury vocabulary table with equipment and load class tags, the dose ceilings, and the injection blocklist.
+- `apps/api/src/modules/beta/beta.constants.ts`: the crimp prohibition patterns, the dose variance bounds, and the injection blocklist, each with a source comment naming the `drafter.md` line it transcribes.
 - `beta.service.ts`: builds the drafter schema per request, renders dose strings, buffers the coach, calls the guard, emits through `splitIntoChunks` imported from the conversation module (as the conversation service already does).
 - No new module, no new provider, no new dependency.
 
@@ -265,9 +270,11 @@ One structured log line on a guard firing, carrying the rule name and never the 
 
 | Action | Value produced | Source |
 |---|---|---|
-| Drafter schema | allowed exercise vocabulary | the constants table, filtered by `input.injuryArea` and `input.equipmentAccess` |
-| Drafter schema | dose ceilings | the constants table, derived from `drafter.md` |
+| Drafter schema | allowed `equipmentUsed` values | the existing `EQUIPMENT_ACCESS` constant, filtered by `input.equipmentAccess` at call time |
+| Drafter schema | item count bounds | transcribed numbers from `drafter.md` (2 to 4 exercises, 2 to 3 criteria) |
+| Drafter schema | dose variance bounds | the calibration run's observed range plus headroom; not a clinical limit |
 | Drafter schema | whether `overallCaution` is required | `input.painBehavior` at call time |
+| `parseDraftPlan` | crimp prohibition patterns | the constants file, transcribed from `drafter.md`; applied only when `input.injuryArea` is `finger_pulley` |
 | Coach input | dose prose | rendered by code from the structured dose object, never by the model |
 | Guard | expected stage count and per stage numbers | the parsed `DraftPlan` object |
 | Guard | whether R8 applies | `input.painBehavior` |
@@ -284,7 +291,8 @@ One structured log line on a guard firing, carrying the rule name and never the 
 - A visitor never sees coach prose that has not been through the guard.
 - The safety critical copy stays human written and deterministic, as `beta.constants.ts` already establishes.
 - Every plan carries its educational framing from an element the page renders, never from a sentence the model chose to write.
-- Layer 1 encodes no clinical claim. Every constraint in it traces to a line in `drafter.md`, and anything requiring a decision is left out and recorded as out of scope.
+- Layer 1 encodes no clinical claim. Every constraint in it traces to an explicit requirement or prohibition in `drafter.md`, and anything requiring a decision is left out and recorded as out of scope. There is no allowlist of permitted exercises, and adding one would breach this invariant.
+- The guard fallback is only safe because the drafter side checks run first. Any rule that protects the plan's content must sit on the drafter's output, never only on the coach's.
 
 ## Configuration required
 
@@ -307,10 +315,10 @@ Two mitigations, neither requiring a weaker guard. The pipeline status chips (Sc
 
 All mocked, no network, colocated `.spec.ts`, per the repo's convention. `beta-output-guard.spec.ts` mirrors the structure of the existing ownership guard tests.
 
-- Layer 1 provenance: every vocabulary entry carries a source comment naming the `drafter.md` line it transcribes, checked by inspection during review. Verifies **AC-G2**.
-- Layer 1 schema construction: the schema built for a `finger_pulley` request contains no full crimp entry; the schema for `equipmentAccess: ['none']` contains no hangboard or band entry; the schema for `painBehavior: 'constant_even_at_rest'` lists `overallCaution` in `required`. Verifies **AC-G3**, **AC-G4**, **AC-G5b**.
+- Layer 1 provenance: `exercises[].name` has no `enum` in the generated schema, and every constraint carries a source comment naming the `drafter.md` line it transcribes, checked by inspection during review. Verifies **AC-G2**.
+- Layer 1 schema construction: the schema for `equipmentAccess: ['none']` offers only `none` in `equipmentUsed`; the schema for `equipmentAccess: ['hangboard']` offers `hangboard` and `none` and nothing else; item counts are 2 to 4 and 2 to 3; the schema for `painBehavior: 'constant_even_at_rest'` lists `overallCaution` in `required`. Verifies **AC-G3**, **AC-G5b**.
 - Dose rendering: a structured dose becomes the expected prose string, and the string handed to the coach matches it exactly. Verifies **AC-G5**.
-- `parseDraftPlan`: rejects a half crimp isometric in stage 1 (not stage 2, which is deliberately unconstrained), and rejects overlapping time windows.
+- `parseDraftPlan`: rejects a `finger_pulley` plan naming a full crimp exercise in any stage; rejects one naming any crimping in stage 1; accepts half crimp in stage 3 (stage 2 is deliberately unconstrained); rejects overlapping time windows. Verifies **AC-G4**.
 - Guard, one test per rule for what it catches, and one per rule for what it must not: the pain traffic light phrasing passes R1; "no crimping of any kind" and "half crimp" pass R2; the stage heading number passes R3; "climbers usually find" passes R7; the visitor's own injury label passes R6. Verifies **AC-G8**.
 - Guard failure path: a coach output tripping R1 results in the rendered fallback being emitted, `planCount` incremented, `guardBlockCount` incremented, and no error event. Verifies **AC-G7**, **AC-G11**.
 - Buffering: the coach's `onToken` never emits, and every `plan_delta` the client receives arrives after the guard ran. Verifies **AC-G6**.
@@ -323,9 +331,9 @@ All mocked, no network, colocated `.spec.ts`, per the repo's convention. `beta-o
 
 Tracer Bullet ordering, prevention before detection. Nothing a visitor sees changes until step 8, except step 9, which is independent of every other step and may ship at any point, including first.
 
-1. Layer 1 constants: transcribe the per injury vocabulary from `drafter.md`, each entry carrying a source comment naming the line it came from and a tag for the equipment it needs, plus the injection blocklist. Apply the operating rule literally, and record anything excluded as a decision rather than resolving it. Pure data plus unit tests. Satisfies **AC-G2**.
-2. **Calibration run for layer 1**, before it is enforced: generate plans against the current loose schema across all three injury areas and every equipment combination. Two outputs. First, check the drafter never wants a vocabulary entry the table lacks; widen the table if it does, by transcribing, not by inventing. Second, record the observed range of `sets`, `reps`, `holdSeconds`, and `frequencyPerWeek`, which is what the dose bounds are then derived from with headroom. A vocabulary that is too tight produces hard errors, so this is the gate.
-3. Layer 1 in place: build the drafter schema per request, structure the dose, render dose prose in code, tighten the item counts, add `rationale`, add the conditional `overallCaution`, add the two `parseDraftPlan` checks. Satisfies **AC-G3**, **AC-G4**, **AC-G5**, **AC-G5b**.
+1. Layer 1 constants: the crimp prohibition patterns and the injection blocklist, each carrying a source comment naming the `drafter.md` line it transcribes. Apply the allowlist test literally, and record anything excluded as a decision rather than resolving it. Pure data plus unit tests. Satisfies **AC-G2**.
+2. **Calibration run for the dose bounds**: generate plans against the current loose schema across all three injury areas and record the observed range of `sets`, `reps`, `holdSeconds`, and `frequencyPerWeek`. The bounds are derived from that range with generous headroom. If this run is skipped, ship positive integers with no upper bound rather than guessing a ceiling.
+3. Layer 1 in place: build the drafter schema per request, add `equipmentUsed`, structure the dose, render dose prose in code, tighten the item counts, add `rationale`, add the conditional `overallCaution`, add the three `parseDraftPlan` checks. Satisfies **AC-G3**, **AC-G4**, **AC-G5**, **AC-G5b**.
 4. `beta-output-guard.ts`: all eight rules plus `renderPlanFallback`, with the catch and non catch tests. No call site yet. Satisfies **AC-G8**.
 5. Migration adding `guardBlockCount` and `injectionBlockCount`, and the injection check at the top of `generatePlan`. Satisfies **AC-G10**, **AC-G11**.
 6. Wire the guard in at mode `shadow`: buffer the coach, evaluate, count, log, but still show the coach's prose. Satisfies **AC-G12**.
@@ -344,13 +352,18 @@ Tracer Bullet ordering, prevention before detection. Nothing a visitor sees chan
 
 **Rollback**: layer 2 by env var. Layer 1 has no flag, so its rollback is a revert; the calibration run in step 2 exists precisely to make that unlikely.
 
-**Risks**: a vocabulary that is too tight makes the drafter fail, and a drafter failure lands on the hard error path rather than the fallback renderer, because the fallback needs a valid plan to render. That is the one place where this design can make things worse rather than better, and it is why layer 1 is calibrated before it ships and why only two code level checks were added to `parseDraftPlan`. Note what kind of risk this is under the fidelity framing: the danger is **transcription error and over tightening**, not clinical error. A mistake here means a visitor gets an error instead of a plan, or gets a plan drawn from a narrower slice of the prompt than the prompt allows. It does not mean a visitor gets clinically worse advice, because layer 1 cannot introduce content the prompt did not already contain.
+**Risks**: a `parseDraftPlan` rejection lands on the hard error path rather than the fallback renderer, because the fallback needs a valid plan to render. That is the one place where this design can make things worse rather than better.
+
+**Dropping the exercise allowlist substantially reduces that risk.** The main way layer 1 could have caused failures on legitimate plans was a vocabulary too narrow to express what the drafter wanted, which would have rejected good plans across every request. With `exercises[].name` left free, that failure mode largely goes away. What remains is three narrow checks, two of which fire only on a `finger_pulley` plan that names crimping where the prompt forbids it, and one that is structural. Each is a direct transcription of an explicit prohibition, so a firing means the drafter did something the prompt told it not to do, which is the correct time to fail.
+
+Note also what kind of risk this is under the fidelity framing: the danger is **transcription error**, not clinical error. A mistake means a visitor gets an error instead of a plan. It cannot mean a visitor gets clinically worse advice, because layer 1 introduces no content the prompt did not already contain.
 
 ## Consequences
 
 **Positive**:
 - The clinical surface gains the output side check it did not have, closing a gap the work history chatbot had already closed.
-- Layer 1 is prevention, not detection. A full crimp prescription for a torn pulley, or a hangboard exercise for someone with no hangboard, stops being unlikely and becomes impossible. It does this without anyone making a clinical claim, because every constraint transcribes a line the prompt already ships.
+- Layer 1 is prevention, not detection. An exercise declaring gear the visitor does not have becomes unrepresentable, and a full crimp prescription for a torn pulley is rejected before it can reach a visitor or the fallback renderer. It does this without anyone making a clinical claim, because every constraint transcribes a line the prompt already ships.
+- Layer 1 constrains the model without narrowing the product. Exercise naming stays open, so the drafter can still express anything `drafter.md` allows it to, including things nobody thought to write down.
 - Every plan now carries its educational framing deterministically, including the guard fallback path, and it does so without adding a single new warning to the surface.
 - The coach can no longer alter a dose number, because it never receives one as editable text.
 - The data boundary promise survives intact, Beta keeps Sonnet 5, and Beta stays up when AWS is down.
@@ -360,8 +373,8 @@ Tracer Bullet ordering, prevention before detection. Nothing a visitor sees chan
 **Negative and tradeoffs**:
 - **Buffering the coach delays the plan.** The visitor waits for the coach's whole generation rather than its first token, on a model call capped at ten times the token budget the existing buffered guard handles. This is the real price of the design.
 - The rules are hand written and catch the phrasings they anticipate. `ownership-guard.ts` admits this about itself in a comment, and the same honesty applies here.
-- Layer 1 couples the schema to `drafter.md`. If the skill file's vocabulary changes and the table does not, the drafter starts failing, and nothing in the repo will point at the cause. This is the cost of the fidelity framing: the table is only as good as its transcription, and it must be maintained in lockstep with the prompt it mirrors.
-- Turning an enum on narrows what the drafter can express to exactly what was transcribed. If `drafter.md`'s injury lists were written as illustrative rather than exhaustive, layer 1 narrows the product, quietly and permanently. See the open question in Follow-up.
+- Layer 1 couples a handful of constants to `drafter.md`. If the skill file's prohibitions change and the constants do not, the checks go stale, and nothing in the repo will point at the cause. This is the standing cost of the fidelity framing: the constraints are only as good as their transcription, and they must be maintained in lockstep with the prompt they mirror.
+- Without an allowlist, layer 1 cannot prevent the drafter naming an exercise nobody anticipated. That is the deliberate trade: preventing it would have required deciding what is clinically valid, which is out of scope, so the residual risk is carried by the skill file and by layer 2 instead.
 - R6, the diagnosis rule, is the weakest and carries the highest false positive risk on a surface where a false positive means an injured person gets a plainer plan than they should have.
 - Two more columns on `BetaDailyUsageCounter`, a table spec 0004 already flagged as heading toward a generalized redesign.
 - The AWS learning goals of the umbrella get nothing from this child. That is the correct outcome for the product and a real cost against the certification track.
@@ -376,8 +389,8 @@ Tracer Bullet ordering, prevention before detection. Nothing a visitor sees chan
 - [ ] Decide the self harm and crisis question: whether a visitor expressing genuine distress should be detected at all, and what the response is. Still a clinical judgement for a human, and it still belongs in the screener with its own human written referral copy, not in a blocklist.
 - [ ] The provider swap child names Sonnet 5 as its Bedrock default, which is stale: Sonnet 5 returns 403 for this account and the interview simulator is live on `us.anthropic.claude-sonnet-4-6`. That child needs a correction pass, independent of this one.
 - [ ] Consider a shadow LLM judge later, purely to find rules layer 2 is missing. Not a runtime gate.
-- [ ] **Answer before step 1: were `drafter.md`'s injury specific exercise lists written as exhaustive or as illustrative?** This is the question layer 1 now rests on, and only the author knows what he meant. If exhaustive, enumerating them is pure transcription and layer 1 is exactly what it claims to be. If illustrative, closing the list is a new constraint that narrows what ships today, and the honest response is either to widen the table with the author's own additions (still transcription, just of intent rather than text) or to keep `name` a free string and rely on layer 2 for that dimension.
-- [ ] Add a note to `drafter.md` and `coach.md` saying that the vocabulary table, the dose bounds, and the guard rules are derived from them, so a future edit to either prompts a look at the constants. `coach.md` also needs its own note that the educational framing moved to the page.
+- [ ] Add a note to `drafter.md` and `coach.md` saying that the crimp prohibitions, the dose bounds, and the guard rules are derived from them, so a future edit to either prompts a look at the constants. `coach.md` also needs its own note that the educational framing moved to the page.
+- [ ] If anyone later proposes adding an exercise allowlist, or any rule that would need a view on what is clinically valid, the answer is recorded here: it is out of scope for this layer. `drafter.md`'s injury lists are illustrative, not exhaustive (author, 2026-08-19), so enumerating them would narrow the product under a fidelity label. Only explicit prohibitions and explicit requirements belong.
 - [ ] If the printable plan summary in spec 0004's Follow-up is ever built, the educational framing element must be part of what prints.
 - [ ] After shipping, add a line to the api's "Beta module invariants" gotcha recording that the coach is buffered and guarded, and that a guard failure substitutes a rendered plan rather than an error.
 
@@ -389,7 +402,11 @@ Layer 1 is where most of the value is, and it exists because of a detail in the 
 
 The second useful detail is that both skill files specify output formats precisely, which lets layer 2's rules be scoped to the region where they apply. That is what makes a full crimp rule safe: run over the whole document it would fire on the skill file's own safety language ("no crimping of any kind"), but scoped to prescription lines it fires only on a prescription.
 
-The reframing that took longest to get right is what layer 1 is. Written as "the correct exercises and doses for this injury" it is a clinical artifact, and hardening a clinical artifact into a schema is a bigger act than it looks: it converts one person's judgement into a ceiling the product can never exceed, and it needs standing to make. Written as "only what `drafter.md` already names" it is a fidelity constraint, and it needs only careful transcription. The second framing is both more honest and more useful, because the clinical content is not new, it ships today, and the actual failure being designed against is the model drifting away from it. The operating rule (derive strictly, exclude when uncertain, and name what is out of scope rather than resolving it) already earned its place while this was written: it caught a dose ceiling that was a judgement dressed as a transcription, and narrowed a stage rule from "stages 1 or 2" to "stage 1", which is the part the prompt actually says.
+The reframing that took longest to get right is what layer 1 is. Written as "the correct exercises and doses for this injury" it is a clinical artifact, and hardening a clinical artifact into a schema is a bigger act than it looks: it converts one person's judgement into a ceiling the product can never exceed, and it needs standing to make. Written as "only what `drafter.md` explicitly requires and forbids" it is a fidelity constraint, and it needs only careful reading.
+
+The sharpest form of that test is the one to keep: **an allowlist needs to know everything that is valid, a prohibition list needs only to read the file.** The first is judgement, the second is transcription. Applying it removed the largest single piece of the original design, the enumerated exercise vocabulary, once the author confirmed those lists were illustrative rather than exhaustive. Enumerating an illustrative list closes it, and closing it would have narrowed what the product can prescribe while calling that fidelity.
+
+What is left is smaller but entirely defensible, and it happens to be safer in a second way too: the dropped allowlist was also the main way this layer could have failed legitimate plans. The same test caught two smaller things earlier, a dose ceiling that was a judgement dressed as a transcription, and a stage rule written as "stages 1 or 2" when the prompt only supports "stage 1".
 
 The positioning change followed the same instinct. The temptation was to add warnings. The audit showed the framing already appears in five places and is good in most of them, and that the single unreliable one is the plan itself, because the only thing saying it there is a sentence the model is asked to write. Moving that sentence from the model to the page, and deleting it from `coach.md` in the same change, makes it reliable without making the surface noisier.
 
