@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnthropicService } from '../anthropic/anthropic.service';
 import { BetaUsageService } from './beta-usage.service';
@@ -140,7 +139,7 @@ export class BetaService {
       // Failed attempts never count against the per-IP or global caps (AC-8):
       // the reserved slot is returned. Log shape only, never raw upstream
       // messages (they could echo request content — audit hardening).
-      this.logger.error(`Beta pipeline failed: ${describeError(error)}`);
+      this.logger.error(`Beta pipeline failed: ${this.describeError(error)}`);
       emit('error', { message: FRIENDLY_ERROR_MESSAGE });
       await this.usage
         .refundGlobalSlot('error')
@@ -319,7 +318,7 @@ export class BetaService {
 
   /**
    * One retry on 5xx or timeout, then fail (spec 0004). Emits one structured
-   * log line per stage: duration, tokens, model, outcome.
+   * log line per stage: duration, tokens, model, provider, outcome.
    */
   private async timedAgentCall<
     T extends { inputTokens: number; outputTokens: number },
@@ -336,10 +335,10 @@ export class BetaService {
       try {
         result = await fn();
       } catch (error) {
-        if (!isRetryableUpstreamError(error) || !canRetry()) throw error;
+        if (!this.isRetryableUpstreamError(error) || !canRetry()) throw error;
         retried = true;
         this.logger.warn(
-          `Beta ${stage} call failed (${describeError(error)}); retrying once`,
+          `Beta ${stage} call failed (${this.describeError(error)}); retrying once`,
         );
         result = await fn();
       }
@@ -347,6 +346,7 @@ export class BetaService {
         JSON.stringify({
           agent: stage,
           model,
+          provider: BETA_PROVIDER,
           durationMs: Date.now() - startedAt,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
@@ -360,38 +360,46 @@ export class BetaService {
         JSON.stringify({
           agent: stage,
           model,
+          provider: BETA_PROVIDER,
           durationMs: Date.now() - startedAt,
           retried,
           outcome: 'error',
-          error: describeError(error),
+          error: this.describeError(error),
         }),
       );
       throw error;
     }
   }
+
+  /**
+   * Log-safe error shape: upstream (SDK) errors log name + HTTP status only
+   * (their messages can echo request content); our own thrown errors carry
+   * static, content-free messages and keep them. Delegates classification to
+   * the injected provider (spec 0005 AC-P4) instead of an SDK `instanceof`
+   * check, so this module never imports `@anthropic-ai/sdk` types.
+   */
+  private describeError(error: unknown): string {
+    const classification = this.anthropic.classifyUpstreamError(error);
+    if (classification) {
+      return `${classification.name} status=${classification.status ?? 'none'}`;
+    }
+    if (error instanceof Error) return `${error.name}: ${error.message}`;
+    return 'unknown error';
+  }
+
+  /** Retry only on 5xx / overloaded / connection failures and timeouts — never 4xx. */
+  private isRetryableUpstreamError(error: unknown): boolean {
+    return this.anthropic.classifyUpstreamError(error)?.retryable ?? false;
+  }
 }
 
 /**
- * Log-safe error shape: SDK errors log name + HTTP status only (their
- * messages can echo request content); our own thrown errors carry static,
- * content-free messages and keep them.
+ * Beta stays on the direct Anthropic path regardless of `AI_PROVIDER`
+ * (spec 0005 provider-swap child, AC-P3): it constructor-injects the
+ * concrete `AnthropicService`, not the `AI_PROVIDER` token, until the
+ * Guardrails child exists. The log field reflects that fixed choice.
  */
-function describeError(error: unknown): string {
-  if (error instanceof Anthropic.APIError) {
-    return `${error.name} status=${error.status ?? 'none'}`;
-  }
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  return 'unknown error';
-}
-
-/** Retry only on 5xx / overloaded / connection failures and timeouts — never 4xx. */
-function isRetryableUpstreamError(error: unknown): boolean {
-  if (error instanceof Anthropic.APIConnectionError) return true;
-  if (error instanceof Anthropic.APIError) {
-    return typeof error.status === 'number' && error.status >= 500;
-  }
-  return false;
-}
+const BETA_PROVIDER = 'anthropic';
 
 /**
  * The visitor's structured answers as a data block. Free text rides inside

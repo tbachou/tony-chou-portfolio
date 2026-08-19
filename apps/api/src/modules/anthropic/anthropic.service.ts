@@ -1,48 +1,30 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
+import {
+  DEFAULT_ANTHROPIC_MODEL,
+  type AiProvider,
+  type ForceToolCallParams,
+  type ForceToolCallResult,
+  type StreamMessageParams,
+  type StreamMessageResult,
+  type UpstreamErrorClassification,
+} from './ai-provider.interface';
 
-export type StreamMessageParams = {
-  system: string;
-  userMessage: string;
-  maxTokens: number;
-  onToken: (text: string) => void;
-  /** Overrides ANTHROPIC_MODEL for this call (Beta pins per-agent models). */
-  model?: string;
-  /** Per-request timeout in ms; SDK default when omitted. */
-  timeoutMs?: number;
-  /** SDK retry count; SDK default (2) when omitted. Beta passes 0 and retries itself. */
-  maxRetries?: number;
-};
-
-export type StreamMessageResult = {
-  text: string;
-  inputTokens: number;
-  outputTokens: number;
-};
-
-export type ForceToolCallParams = {
-  model: string;
-  system: string;
-  userMessage: string;
-  maxTokens: number;
-  toolName: string;
-  toolDescription: string;
-  inputSchema: Record<string, unknown>;
-  timeoutMs: number;
-  maxRetries?: number;
-};
-
-export type ForceToolCallResult = {
-  /** The tool_use block's input, validated by the caller against its schema. */
-  input: unknown;
-  inputTokens: number;
-  outputTokens: number;
+// Re-exported for existing call sites (`import type { StreamMessageParams } from
+// './anthropic.service'`); the canonical definitions now live in
+// ai-provider.interface.ts so both providers share one shape.
+export type {
+  StreamMessageParams,
+  StreamMessageResult,
+  ForceToolCallParams,
+  ForceToolCallResult,
 };
 
 @Injectable()
-export class AnthropicService {
+export class AnthropicService implements AiProvider {
   private client: Anthropic | null = null;
-  private readonly model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5';
+  private readonly model =
+    process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL;
 
   private getClient(): Anthropic {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -143,5 +125,20 @@ export class AnthropicService {
       inputTokens: message.usage.input_tokens,
       outputTokens: message.usage.output_tokens,
     };
+  }
+
+  /** Maps the direct SDK's own error types into the neutral shape. */
+  classifyUpstreamError(error: unknown): UpstreamErrorClassification | null {
+    if (error instanceof Anthropic.APIConnectionError) {
+      return { name: error.name, retryable: true };
+    }
+    if (error instanceof Anthropic.APIError) {
+      return {
+        name: error.name,
+        status: error.status,
+        retryable: typeof error.status === 'number' && error.status >= 500,
+      };
+    }
+    return null;
   }
 }
