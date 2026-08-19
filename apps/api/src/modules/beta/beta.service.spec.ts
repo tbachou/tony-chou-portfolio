@@ -779,6 +779,255 @@ describe('BetaService.generatePlan', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Layer 2 at its call site (AC-G6, AC-G7, AC-G11, AC-G12).
+  // -------------------------------------------------------------------------
+
+  describe('the output guard', () => {
+    const originalMode = process.env.BETA_OUTPUT_GUARD_MODE;
+    afterEach(() => {
+      if (originalMode === undefined) delete process.env.BETA_OUTPUT_GUARD_MODE;
+      else process.env.BETA_OUTPUT_GUARD_MODE = originalMode;
+    });
+
+    /** A conformant coach document for the drafterOk fixture. */
+    function conformantCoachText(closing = 'Climbers usually find patience pays here.'): string {
+      const blocks = ['Sorry to hear about the finger. Here is a steady way back.'];
+      for (let i = 1; i <= 4; i += 1) {
+        blocks.push(
+          [
+            `## Stage ${i}: Stage ${i}`,
+            '',
+            `**When:** Weeks ${i * 2 - 1}-${i * 2}`,
+            '',
+            '**Climbing:** Easy vertical jugs, two grades below max',
+            '',
+            '**Do this:**',
+            '- Tendon glides — 3 sets of 10, 7 times a week',
+            '- Open-hand rice bucket work — 2 sets of 15, 3 times a week',
+            '',
+            '**Move on when:**',
+            '- Pain-free daily activities',
+            '- No added morning stiffness',
+          ].join('\n'),
+        );
+      }
+      blocks.push(closing);
+      return blocks.join('\n\n');
+    }
+
+    /** streamMessage stub that resolves with one complete document. */
+    function bufferedCoach(text: string) {
+      return (params: StreamMessageParams) => {
+        // The provider still calls onToken as it streams; in buffered mode
+        // the service's handler must swallow every one of them.
+        for (const piece of text.split(' ')) params.onToken(`${piece} `);
+        return Promise.resolve({ text, inputTokens: 50, outputTokens: 150 });
+      };
+    }
+
+    function planText(events: EmittedEvent[]): string {
+      return events
+        .filter(([name]) => name === 'plan_delta')
+        .map(([, data]) => (data as { text: string }).text)
+        .join('');
+    }
+
+    async function run(
+      mode: string | undefined,
+      coachText: string,
+      overrides: Partial<BetaPlanRequestDto> = {},
+    ) {
+      if (mode === undefined) delete process.env.BETA_OUTPUT_GUARD_MODE;
+      else process.env.BETA_OUTPUT_GUARD_MODE = mode;
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(bufferedCoach(coachText));
+      await h.service.generatePlan({
+        input: makeInput(overrides),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+      return h;
+    }
+
+    describe('mode off (default): byte for byte today\'s behavior (AC-G12)', () => {
+      it('never runs the guard and streams the coach live, even on output that would trip a rule', async () => {
+        delete process.env.BETA_OUTPUT_GUARD_MODE;
+        const h = makeHarness();
+        h.anthropic.forceToolCall
+          .mockResolvedValueOnce(screenerClear)
+          .mockResolvedValueOnce(drafterOk);
+        h.anthropic.streamMessage.mockImplementation(
+          coachStream(['just ', 'push through the pain']),
+        );
+
+        await h.service.generatePlan({
+          input: makeInput(),
+          hashedIp: 'hashed-ip',
+          emit: h.emit,
+        });
+
+        // Exactly the provider's own chunks, unaltered and un-rechunked.
+        expect(h.events).toEqual([
+          ['status', { stage: 'screening' }],
+          ['status', { stage: 'drafting' }],
+          ['status', { stage: 'coaching' }],
+          ['plan_delta', { text: 'just ' }],
+          ['plan_delta', { text: 'push through the pain' }],
+          ['done', {}],
+        ]);
+        expect(h.usage.recordGuardBlock).not.toHaveBeenCalled();
+      });
+
+      it('treats an unrecognized mode value as off', async () => {
+        const h = await run('nonsense', conformantCoachText());
+        expect(h.usage.recordGuardBlock).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('buffering (AC-G6)', () => {
+      it('emits nothing while the coach streams; every plan_delta lands after the guard ran', async () => {
+        process.env.BETA_OUTPUT_GUARD_MODE = 'shadow';
+        const h = makeHarness();
+        h.anthropic.forceToolCall
+          .mockResolvedValueOnce(screenerClear)
+          .mockResolvedValueOnce(drafterOk);
+
+        const eventCountsDuringStream: number[] = [];
+        h.anthropic.streamMessage.mockImplementation(
+          (params: StreamMessageParams) => {
+            for (const piece of ['alpha ', 'beta ', 'gamma']) {
+              params.onToken(piece);
+              eventCountsDuringStream.push(
+                h.events.filter(([name]) => name === 'plan_delta').length,
+              );
+            }
+            return Promise.resolve({
+              text: conformantCoachText(),
+              inputTokens: 50,
+              outputTokens: 150,
+            });
+          },
+        );
+
+        await h.service.generatePlan({
+          input: makeInput(),
+          hashedIp: 'hashed-ip',
+          emit: h.emit,
+        });
+
+        // Not one plan_delta existed while the model was still streaming.
+        expect(eventCountsDuringStream).toEqual([0, 0, 0]);
+        expect(planText(h.events).length).toBeGreaterThan(0);
+      });
+
+      it('re-chunks the shown text into multiple plan_delta events', async () => {
+        const h = await run('shadow', conformantCoachText());
+        const deltas = h.events.filter(([name]) => name === 'plan_delta');
+        expect(deltas.length).toBeGreaterThan(10);
+        expect(planText(h.events)).toBe(conformantCoachText());
+      });
+    });
+
+    describe('mode shadow: evaluate, count and log, but still show the prose', () => {
+      it('passes a clean document through untouched and counts nothing', async () => {
+        const h = await run('shadow', conformantCoachText());
+        expect(planText(h.events)).toBe(conformantCoachText());
+        expect(h.usage.recordGuardBlock).not.toHaveBeenCalled();
+        expect(h.events[h.events.length - 1]).toEqual(['done', {}]);
+      });
+
+      it('counts a firing but still shows the coach\'s prose', async () => {
+        const tripping = conformantCoachText(
+          'Some days you just have to push through the pain.',
+        );
+        const h = await run('shadow', tripping);
+
+        expect(h.usage.recordGuardBlock).toHaveBeenCalledTimes(1);
+        expect(planText(h.events)).toBe(tripping);
+        expect(h.events.some(([name]) => name === 'error')).toBe(false);
+        expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('mode enforce: the fallback renderer is live (AC-G7)', () => {
+      it('substitutes a complete rendered plan, increments planCount, and emits no error', async () => {
+        const tripping = conformantCoachText(
+          'Some days you just have to push through the pain.',
+        );
+        const h = await run('enforce', tripping);
+        const shown = planText(h.events);
+
+        // The coach's prose is gone.
+        expect(shown).not.toContain('push through the pain');
+        expect(shown).not.toContain('Sorry to hear about the finger');
+
+        // A COMPLETE plan arrived: every stage, every label, every dose.
+        expect(shown.match(/^## Stage \d+:/gm)).toHaveLength(4);
+        for (const label of [
+          '**When:**',
+          '**Climbing:**',
+          '**Do this:**',
+          '**Move on when:**',
+        ]) {
+          expect(shown.split(label)).toHaveLength(5);
+        }
+        expect(shown).toContain('- Tendon glides — 3 sets of 10, 7 times a week');
+        expect(shown).toContain('Weeks 7-8');
+
+        // No error card, and the request counted as the success it was.
+        expect(h.events.some(([name]) => name === 'error')).toBe(false);
+        expect(h.events[h.events.length - 1]).toEqual(['done', {}]);
+        expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
+        expect(h.usage.successIncrementOps).toHaveBeenCalledWith(
+          'hashed-ip',
+          515,
+        );
+        expect(h.usage.refundGlobalSlot).not.toHaveBeenCalled();
+        expect(h.usage.recordGuardBlock).toHaveBeenCalledTimes(1);
+      });
+
+      it('substitutes silently: no visitor-facing message announces it', async () => {
+        const h = await run(
+          'enforce',
+          conformantCoachText('Take ibuprofen for the first few days.'),
+        );
+        const shown = planText(h.events);
+        expect(shown).not.toMatch(/guard|blocked|filtered|rejected/i);
+        expect(h.events.filter(([name]) => name === 'red_flag')).toHaveLength(0);
+      });
+
+      it('leaves a clean document alone', async () => {
+        const h = await run('enforce', conformantCoachText());
+        expect(planText(h.events)).toBe(conformantCoachText());
+        expect(h.usage.recordGuardBlock).not.toHaveBeenCalled();
+      });
+
+      it('never lets a failed counter write disturb the plan', async () => {
+        process.env.BETA_OUTPUT_GUARD_MODE = 'enforce';
+        const h = makeHarness();
+        h.usage.recordGuardBlock.mockResolvedValue(undefined);
+        h.anthropic.forceToolCall
+          .mockResolvedValueOnce(screenerClear)
+          .mockResolvedValueOnce(drafterOk);
+        h.anthropic.streamMessage.mockImplementation(
+          bufferedCoach(conformantCoachText('You will be back by spring.')),
+        );
+
+        await h.service.generatePlan({
+          input: makeInput(),
+          hashedIp: 'hashed-ip',
+          emit: h.emit,
+        });
+
+        expect(h.events[h.events.length - 1]).toEqual(['done', {}]);
+      });
+    });
+  });
+
   describe('upstream retry policy', () => {
     it('retries exactly once on a 500 APIError, then succeeds end to end', async () => {
       const h = makeHarness();
