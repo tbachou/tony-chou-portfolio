@@ -15,7 +15,7 @@ Child specs, in build order:
 2. [0005-feedback-intake.md](0005-feedback-intake.md): the anonymous feedback form (Beta and portfolio surfaces), api endpoint, Postgres table, and the SNS publish hook.
 3. [0005-classifier-flow.md](0005-classifier-flow.md): SNS to Lambda to Bedrock to SES. Classifies each feedback message and emails the owner.
 4. [0005-provider-swap.md](0005-provider-swap.md): the AI_PROVIDER flag that can serve the interview simulator through Bedrock instead of the direct Anthropic API.
-5. [0005-beta-guardrails.md](0005-beta-guardrails.md): moves Beta onto Bedrock and splits guardrails in two, a permissive baseline enforced account wide plus a Beta only clinical guardrail. Supports the decision to put every surface on Bedrock without making every surface pass a clinical guardrail, and proposes a withdrawal of cross child contract clause 1.
+5. [0005-beta-guardrails.md](0005-beta-guardrails.md): in process safety layers on the Beta planner, a per request drafter schema that makes unsafe plans unrepresentable plus a deterministic guard over the coach's output. Supports the decision that Beta's guardrail is built in code rather than bought from Bedrock, so Beta stays on the direct Anthropic API and clause 1 below holds unchanged. Adds no AWS footprint, deliberately.
 
 Planned future children, added when their build is reached (listed in Follow-up): a Bedrock Knowledge Base RAG source for the interview agent.
 
@@ -24,7 +24,6 @@ Planned future children, added when their build is reached (listed in Follow-up)
 Every child must honor these. They are the umbrella's law, and a child may tighten but never loosen them.
 
 1. **Data boundary (refined 2026-08-19).** Beta planner visitor content (injury details, goals, plans) never leaves Render and the direct Anthropic API. Feedback text is a separate, consented class: the form labels it "do not include personal or medical details", and it may transit AWS (SNS, Lambda, Bedrock, SES) for classification and delivery, but is never persisted on AWS (no S3, no DynamoDB, no CloudWatch log line containing the text). Postgres on Render remains the only store.
-   > **Withdrawal proposed, not applied.** The Guardrails child ([0005-beta-guardrails.md](0005-beta-guardrails.md), decision D5) proposes replacement wording that **withdraws** this clause's central promise rather than narrowing it: under that child Beta moves onto Bedrock, so all Beta visitor content goes to AWS for generation, not merely two slices for screening. What replaces the promise is that no Beta content is ever persisted outside Postgres on Render. The clause above is still the law until the engineer ratifies the change. The proposed replacement lives in the child spec; it is deliberately not applied here.
 2. **Credentials are one directional.** The api holds AWS credentials scoped to publishing one SNS topic. AWS never holds database credentials or Anthropic keys for the Render side. Tony creates all IAM users, roles, and keys in the console himself; keys enter Render through its env UI, never through code, state, or chat.
 3. **Region**: us-east-2. Claude models reach Bedrock there through cross region inference profiles (ids prefixed `us.`) when not directly hosted.
 4. **Tagging**: every Terraform managed resource carries `project = "genai-track"` through provider `default_tags`. After first spend, Tony activates the tag for cost allocation and creates the tag filtered budget (see Follow-up).
@@ -77,7 +76,6 @@ Tracer Bullet ordering (the repo's default approach): stand the thinnest end to 
 
 ## Follow-up
 
-- [ ] **Ratify or reject the withdrawal of cross child contract clause 1 proposed by [0005-beta-guardrails.md](0005-beta-guardrails.md) (decision D5 in that child).** Clause 1 is unchanged and still governs until then. Moving Beta onto Bedrock sends all its visitor content to AWS for generation, which the clause forbids outright, so the Guardrails child cannot be built until this is settled. The proposed replacement wording is in the child, not applied here.
 - [ ] Write the Knowledge Base RAG child spec when its build is reached.
 - [ ] Install the three community skills shortlisted for this program (`hashicorp/agent-skills@terraform-style-guide`, `aws/agent-toolkit-for-aws@aws-iam`, `aws/agent-toolkit-for-aws@aws-serverless`) pending Tony's approval, then reference them in root AGENTS.md and the new `infra/AGENTS.md`.
 - [ ] After first AWS spend: activate the `project` cost allocation tag and create the tag filtered `genai-infra` budget.
