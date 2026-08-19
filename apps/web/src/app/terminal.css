@@ -62,6 +62,27 @@
   --cursor-fill: var(--color-accent);
   --cursor-stroke-width: 0px;
   --cursor-glow: 0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  /* Cursor geometry. Unlike the four tokens above these are NOT
+     palette-specific — both palettes hit the same pixels on purpose (see
+     the box-sizing note on .retro-cursor) — so they are declared once
+     here and never re-answered in the light selectors.
+     They are tokens rather than literals so there is one place to change
+     if the size ever needs to respond to something. Nothing varies them
+     today, and that is a limitation, not an oversight: THERE IS NO WAY
+     to detect that a visitor enlarged their pointer or gave it a
+     high-contrast outline in their OS. No media query exposes it —
+     `pointer: fine/coarse` reports the input device's accuracy, not the
+     cursor's size; `prefers-contrast` and `forced-colors` report a
+     display-legibility preference, not a pointer one — and no JS API
+     exposes it either, deliberately, because cursor size is a
+     fingerprinting vector. A `1cur` unit and a `cursor-size` property
+     were proposed for exactly this (w3c/csswg-drafts#12048, April 2025)
+     and have not shipped anywhere. Until they do, the honest response to
+     a visitor who has tuned their pointer is to stop replacing it — see
+     the gating in RetroCursor.tsx, which now yields on the adjacent
+     signals that ARE detectable. */
+  --cursor-size: 12px;
+  --cursor-size-hover: 24px;
   /* The printed sheet (see the light palette below). A CRT has no paper,
      so the dark canvas carries no background image at all. */
   --sheet-image: none;
@@ -636,11 +657,11 @@ body.retro-cursor-active [role='button'] {
   top: 0;
   left: 0;
   /* border-box so the ring the light palette turns on eats into the same
-     12px/24px footprint instead of growing it — the two palettes then
+     --cursor-size footprint instead of growing it — the two palettes then
      hit the same pixels, and the dark block (0px ring) is untouched. */
   box-sizing: border-box;
-  width: 12px;
-  height: 12px;
+  width: var(--cursor-size);
+  height: var(--cursor-size);
   background: var(--cursor-fill);
   border: var(--cursor-stroke-width) solid var(--color-accent);
   mix-blend-mode: var(--cursor-blend);
@@ -659,8 +680,8 @@ body.retro-cursor-active .retro-cursor {
 }
 
 .retro-cursor[data-hover='true'] {
-  width: 24px;
-  height: 24px;
+  width: var(--cursor-size-hover);
+  height: var(--cursor-size-hover);
 }
 
 .retro-cursor[data-hidden='true'] {
