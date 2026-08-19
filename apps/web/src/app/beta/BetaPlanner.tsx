@@ -403,9 +403,11 @@ export function BetaPlanner() {
         >
           <fieldset disabled={formDisabled} className="beta-fieldset space-y-10">
             {/* Injury area */}
-            <fieldset className="beta-fieldset">
+            <fieldset className="beta-fieldset" aria-describedby="beta-injury-hint">
               <legend className="beta-legend">Where does it hurt?</legend>
-              <p className="beta-hint mb-4">Beta covers the three most common climbing injuries.</p>
+              <p id="beta-injury-hint" className="beta-hint mb-4">
+                Beta covers the three most common climbing injuries.
+              </p>
               <div className="grid gap-3 md:grid-cols-3">
                 {INJURY_OPTIONS.map((option) => (
                   <label key={option.value} className="beta-choice">
@@ -437,7 +439,9 @@ export function BetaPlanner() {
               <label htmlFor="beta-onset" className="beta-legend">
                 When did it start? <span className="sr-only">(in weeks)</span>
               </label>
-              <p className="beta-hint mb-4">Your best guess is fine.</p>
+              <p id="beta-onset-hint" className="beta-hint mb-4">
+                Your best guess is fine.
+              </p>
               <div className="flex items-center gap-3">
                 <input
                   id="beta-onset"
@@ -448,6 +452,7 @@ export function BetaPlanner() {
                   max={520}
                   step={1}
                   required
+                  aria-describedby="beta-onset-hint"
                   value={onsetWeeks}
                   onChange={(e) => setOnsetWeeks(e.target.value)}
                   placeholder="6"
@@ -457,9 +462,11 @@ export function BetaPlanner() {
             </div>
 
             {/* Symptoms */}
-            <fieldset className="beta-fieldset">
+            <fieldset className="beta-fieldset" aria-describedby="beta-symptoms-hint">
               <legend className="beta-legend">What are you noticing?</legend>
-              <p className="beta-hint mb-4">Check everything that applies.</p>
+              <p id="beta-symptoms-hint" className="beta-hint mb-4">
+                Check everything that applies.
+              </p>
               <div className="grid gap-3 md:grid-cols-2">
                 {SYMPTOMS.map((symptom) => {
                   const isRedFlag = RED_FLAG_SYMPTOMS.includes(symptom);
@@ -489,9 +496,11 @@ export function BetaPlanner() {
             </fieldset>
 
             {/* Pain behavior */}
-            <fieldset className="beta-fieldset">
+            <fieldset className="beta-fieldset" aria-describedby="beta-pain-hint">
               <legend className="beta-legend">How does the pain behave?</legend>
-              <p className="beta-hint mb-4">Pick the pattern that fits best.</p>
+              <p id="beta-pain-hint" className="beta-hint mb-4">
+                Pick the pattern that fits best.
+              </p>
               <div className="grid gap-3 md:grid-cols-2">
                 {PAIN_BEHAVIORS.map((behavior) => (
                   <label key={behavior} className="beta-choice beta-choice--center">
@@ -517,12 +526,15 @@ export function BetaPlanner() {
                 <label htmlFor="beta-grade" className="beta-legend">
                   Your grade before the injury
                 </label>
-                <p className="beta-hint mb-4">Any system works — the plan scales from it.</p>
+                <p id="beta-grade-hint" className="beta-hint mb-4">
+                  Any system works — the plan scales from it.
+                </p>
                 <input
                   id="beta-grade"
                   className="beta-input max-w-[14rem]"
                   type="text"
                   required
+                  aria-describedby="beta-grade-hint"
                   maxLength={12}
                   pattern="[A-Za-z0-9 .+\/\-]+"
                   title="A plain climbing grade like V5, 5.11a, or 6b+"
@@ -531,9 +543,11 @@ export function BetaPlanner() {
                   placeholder="V5 or 5.11a or 6b+"
                 />
               </div>
-              <fieldset className="beta-fieldset">
+              <fieldset className="beta-fieldset" aria-describedby="beta-discipline-hint">
                 <legend className="beta-legend">Main discipline</legend>
-                <p className="beta-hint mb-4">Where do you mostly climb?</p>
+                <p id="beta-discipline-hint" className="beta-hint mb-4">
+                  Where do you mostly climb?
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   {DISCIPLINES.map((d) => (
                     <label key={d} className="beta-choice beta-choice--center">
@@ -560,7 +574,7 @@ export function BetaPlanner() {
                 What are you working toward?{' '}
                 <span className="font-normal text-[color:var(--beta-muted)]">(optional)</span>
               </label>
-              <p className="beta-hint mb-4">
+              <p id="beta-goals-hint" className="beta-hint mb-4">
                 A project, a trip, or just climbing without thinking about it.
               </p>
               <textarea
@@ -568,11 +582,14 @@ export function BetaPlanner() {
                 className="beta-textarea max-w-[40rem]"
                 maxLength={200}
                 rows={3}
+                aria-describedby="beta-goals-hint beta-goals-counter"
                 value={goals}
                 onChange={(e) => setGoals(e.target.value)}
                 placeholder="Back to steep bouldering by autumn…"
               />
-              <p className="beta-hint mt-1.5">{goals.length}/200</p>
+              <p id="beta-goals-counter" className="beta-hint mt-1.5">
+                {goals.length}/200
+              </p>
             </div>
 
             {/* Training context */}
@@ -582,7 +599,9 @@ export function BetaPlanner() {
                   Sessions per week{' '}
                   <span className="font-normal text-[color:var(--beta-muted)]">(optional)</span>
                 </label>
-                <p className="beta-hint mb-4">How often you can train right now.</p>
+                <p id="beta-sessions-hint" className="beta-hint mb-4">
+                  How often you can train right now.
+                </p>
                 <input
                   id="beta-sessions"
                   className="beta-input max-w-[7rem]"
@@ -591,17 +610,20 @@ export function BetaPlanner() {
                   min={0}
                   max={14}
                   step={1}
+                  aria-describedby="beta-sessions-hint"
                   value={sessionsPerWeek}
                   onChange={(e) => setSessionsPerWeek(e.target.value)}
                   placeholder="3"
                 />
               </div>
-              <fieldset className="beta-fieldset">
+              <fieldset className="beta-fieldset" aria-describedby="beta-equipment-hint">
                 <legend className="beta-legend">
                   Equipment access{' '}
                   <span className="font-normal text-[color:var(--beta-muted)]">(optional)</span>
                 </legend>
-                <p className="beta-hint mb-4">Check what you can get to.</p>
+                <p id="beta-equipment-hint" className="beta-hint mb-4">
+                  Check what you can get to.
+                </p>
                 <div className="flex flex-wrap gap-2.5">
                   {EQUIPMENT_ACCESS.map((item) => (
                     <label key={item} className="beta-choice beta-choice--chip">
