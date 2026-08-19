@@ -56,9 +56,46 @@ export class BetaUsageService {
   }
 
   /**
-   * Success-only increments (spec 0004 key invariant): both counter rows in
-   * one $transaction, run by the pipeline only after the coach finishes —
-   * never on red flags, refusals, or failures (AC-6, AC-8).
+   * Atomically reserves one global plan slot BEFORE any model call, so
+   * concurrent requests cannot race past the 40/day cap (the cap check and
+   * the increment used to be seconds apart — audit finding). The WHERE
+   * clause makes Postgres serialize competitors on the row lock: the
+   * request that takes the last slot wins, the rest see count 0.
+   * Returns true when a slot was reserved.
+   */
+  async reserveGlobalSlot(): Promise<boolean> {
+    const date = utcDateOnly(new Date());
+    await this.prisma.betaDailyUsageCounter.upsert({
+      where: { date },
+      create: { date },
+      update: {},
+    });
+    const { count } = await this.prisma.betaDailyUsageCounter.updateMany({
+      where: { date, planCount: { lt: BETA_GLOBAL_DAILY_CAP } },
+      data: { planCount: { increment: 1 } },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Returns a reserved slot on any non-success outcome (red flag, refusal,
+   * failure), preserving the spec's success-only counter semantics: after
+   * the refund, planCount reflects completed plans only (AC-8). A crash
+   * between reserve and refund leaks one slot until midnight UTC —
+   * accepted; it errs toward spending less.
+   */
+  async refundGlobalSlot(): Promise<void> {
+    const date = utcDateOnly(new Date());
+    await this.prisma.betaDailyUsageCounter.updateMany({
+      where: { date, planCount: { gt: 0 } },
+      data: { planCount: { decrement: 1 } },
+    });
+  }
+
+  /**
+   * Success-only bookkeeping, run only after the coach finishes: the global
+   * slot is already reserved, so the global row gains tokens only; the
+   * per-IP row counts one more successful plan (AC-6, AC-8).
    */
   successIncrementOps(
     hashedIp: string,
@@ -69,10 +106,7 @@ export class BetaUsageService {
       this.prisma.betaDailyUsageCounter.upsert({
         where: { date },
         create: { date, planCount: 1, tokenCount: tokenDelta },
-        update: {
-          planCount: { increment: 1 },
-          tokenCount: { increment: tokenDelta },
-        },
+        update: { tokenCount: { increment: tokenDelta } },
       }),
       this.prisma.betaIpDailyCount.upsert({
         where: { hashedIp_date: { hashedIp, date } },

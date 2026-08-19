@@ -8,6 +8,8 @@ import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
 import {
   AGENT_CALL_TIMEOUT_MS,
   COACH_MODEL,
+  CONSTANT_REST_PAIN_MESSAGE,
+  DEMO_BUDGET_MESSAGE,
   DRAFTER_MODEL,
   FRIENDLY_ERROR_MESSAGE,
   RED_FLAG_CATEGORIES,
@@ -59,6 +61,43 @@ export class BetaService {
   }): Promise<void> {
     const { input, hashedIp, emit } = params;
 
+    // Code-enforced red-flag gate (clinical audit MUST-FIX): a checked
+    // red-flag box blocks deterministically, before any model call — free
+    // text can never talk a model out of it, and it costs zero API spend.
+    const checkedRedFlag = RED_FLAG_CATEGORIES.find((category) =>
+      input.symptoms.includes(category),
+    );
+    if (checkedRedFlag) {
+      emit('status', { stage: 'screening' });
+      emit('red_flag', {
+        category: checkedRedFlag,
+        message: RED_FLAG_MESSAGES[checkedRedFlag],
+      });
+      return;
+    }
+
+    // Constant pain at rest escalates in code once it stops looking like
+    // acute irritation: 3+ weeks after onset, or combined with swelling or
+    // weakness (clinical audit MUST-FIX).
+    if (
+      input.painBehavior === 'constant_even_at_rest' &&
+      (input.onsetWeeksAgo >= 3 ||
+        input.symptoms.includes('mild_swelling') ||
+        input.symptoms.includes('weakness_or_early_fatigue'))
+    ) {
+      emit('status', { stage: 'screening' });
+      emit('red_flag', { category: null, message: CONSTANT_REST_PAIN_MESSAGE });
+      return;
+    }
+
+    // Reserve a global budget slot atomically BEFORE any model call, so
+    // concurrent requests cannot race past the daily cap (security audit
+    // finding). Refunded on every non-success path below.
+    if (!(await this.usage.reserveGlobalSlot())) {
+      emit('error', { message: DEMO_BUDGET_MESSAGE });
+      return;
+    }
+
     try {
       emit('status', { stage: 'screening' });
       const screening = await this.runScreener(input);
@@ -69,11 +108,13 @@ export class BetaService {
           ? RED_FLAG_MESSAGES[screening.category]
           : RED_FLAG_FALLBACK_MESSAGE;
         emit('red_flag', { category: screening.category ?? null, message });
+        await this.usage.refundGlobalSlot();
         return;
       }
       if (screening.verdict === 'off_topic') {
         // Injection or off-topic free text: polite refusal, not model output (AC-7).
         emit('error', { message: REFUSAL_MESSAGE });
+        await this.usage.refundGlobalSlot();
         return;
       }
 
@@ -91,11 +132,14 @@ export class BetaService {
       );
       emit('done', {});
     } catch (error) {
-      // Failed attempts never count against the per-IP or global caps (AC-8).
-      this.logger.error(
-        `Beta pipeline failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      // Failed attempts never count against the per-IP or global caps (AC-8):
+      // the reserved slot is returned. Log shape only, never raw upstream
+      // messages (they could echo request content — audit hardening).
+      this.logger.error(`Beta pipeline failed: ${describeError(error)}`);
       emit('error', { message: FRIENDLY_ERROR_MESSAGE });
+      await this.usage
+        .refundGlobalSlot()
+        .catch(() => this.logger.warn('Beta slot refund failed'));
     }
   }
 
@@ -290,7 +334,7 @@ export class BetaService {
         if (!isRetryableUpstreamError(error) || !canRetry()) throw error;
         retried = true;
         this.logger.warn(
-          `Beta ${stage} call failed (${error instanceof Error ? error.message : 'unknown'}); retrying once`,
+          `Beta ${stage} call failed (${describeError(error)}); retrying once`,
         );
         result = await fn();
       }
@@ -314,12 +358,25 @@ export class BetaService {
           durationMs: Date.now() - startedAt,
           retried,
           outcome: 'error',
-          error: error instanceof Error ? error.message : String(error),
+          error: describeError(error),
         }),
       );
       throw error;
     }
   }
+}
+
+/**
+ * Log-safe error shape: SDK errors log name + HTTP status only (their
+ * messages can echo request content); our own thrown errors carry static,
+ * content-free messages and keep them.
+ */
+function describeError(error: unknown): string {
+  if (error instanceof Anthropic.APIError) {
+    return `${error.name} status=${error.status ?? 'none'}`;
+  }
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return 'unknown error';
 }
 
 /** Retry only on 5xx / overloaded / connection failures and timeouts — never 4xx. */
