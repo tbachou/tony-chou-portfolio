@@ -22,7 +22,7 @@ Source of truth for the interview-simulator portfolio app. Everything below is f
 | Topstep | Senior Software Engineer | Sep 2025 – Jul 2026 | Tensure Consulting |
 | Tensure Consulting (Internal Project) | Senior Software Engineer | Jul 2026 – Present | Direct, not a client engagement |
 | Fugue AI | Co-Founder & Engineering Lead | 2022 – 2024 (part-time, alongside consulting) | N/A |
-| Pre-engineering: Occupational Therapist roles (Carepointe Companions, Premier Health Partners, UC Health) | 2015 – 2019 | — |
+| Pre-engineering: Occupational Therapist roles (Carepointe Companions, Premier Health Partners, UC Health) | 2014 – 2019 | — |
 | Pre-engineering: Taiwanese Navy, mechanical department | 2005 – 2006 (mandatory service) | — |
 
 ## Verified Story Bank (by ownership confidence)
