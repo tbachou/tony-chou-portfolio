@@ -107,6 +107,15 @@ body:has(.beta-theme),
   outline-offset: 2px;
 }
 
+/* Containers that script moves focus into (the form after the disclaimer
+   gate, the results region on submit, the red-flag and failure cards).
+   Programmatic focus does not trigger :focus-visible, so these need their
+   own ring — focus must stay visible wherever it is put. */
+.beta-theme .beta-focus-target:focus {
+  outline: 2px solid var(--beta-accent);
+  outline-offset: 3px;
+}
+
 .beta-theme h1,
 .beta-theme h2,
 .beta-theme h3 {

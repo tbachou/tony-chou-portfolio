@@ -134,6 +134,8 @@ export function BetaPlanner() {
 
   const runIdRef = useRef(0);
   const resultRef = useRef<HTMLDivElement>(null);
+  const redFlagRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -156,6 +158,19 @@ export function BetaPlanner() {
       cancelled = true;
     };
   }, []);
+
+  // A terminal safety state must never be screen-only: the card carries the
+  // actionable half (which professional to see; that the plan is truncated),
+  // while the sr-only line only summarises. Focus is the reliable delivery
+  // path — a live region inserted into the DOM already populated is announced
+  // inconsistently — so the roles below are the backstop, not the mechanism.
+  useEffect(() => {
+    if (phase === 'red_flag') redFlagRef.current?.focus();
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase === 'error' && errorMessage) errorRef.current?.focus();
+  }, [phase, errorMessage]);
 
   function acknowledge() {
     setAcknowledged(true);
@@ -300,6 +315,8 @@ export function BetaPlanner() {
   const formDisabled = phase === 'running';
   const submitBlocked = formDisabled || capNotice !== null;
   const showPipeline = phase !== 'idle';
+  // A failure with plan text already on screen means the stream died mid-plan.
+  const planCutOff = phase === 'error' && planText.length > 0;
 
   return (
     <div>
@@ -612,7 +629,12 @@ export function BetaPlanner() {
         )}
 
         {redFlagMessage && (
-          <div className="beta-card beta-card--error-edge mt-6 p-6 sm:p-8">
+          <div
+            ref={redFlagRef}
+            tabIndex={-1}
+            role="status"
+            className="beta-card beta-card--error-edge beta-focus-target mt-6 p-6 sm:p-8"
+          >
             <h3 className="text-[length:var(--beta-text-xl)]">Let’s pause here</h3>
             <p className="mt-3 max-w-[65ch]">{redFlagMessage}</p>
             <div className="mt-5 max-w-[65ch] rounded-lg bg-[color:var(--beta-surface-2)] p-4">
@@ -639,12 +661,21 @@ export function BetaPlanner() {
         )}
 
         {phase === 'error' && errorMessage && (
-          <div className="beta-card beta-card--error-edge mt-6 p-6 sm:p-8">
+          <div
+            ref={errorRef}
+            tabIndex={-1}
+            // Assertive only when a partial plan is already on screen: the
+            // interruption lands on someone reading a protocol that is missing
+            // its later stages and safety notes. Everywhere else the failure is
+            // inert (nothing unsafe to un-read), so polite is the right volume.
+            role={planCutOff ? 'alert' : 'status'}
+            className="beta-card beta-card--error-edge beta-focus-target mt-6 p-6 sm:p-8"
+          >
             <h3 className="text-[length:var(--beta-text-xl)]">
               {errorKind === 'limit' ? 'You’ve hit the demo’s limit' : 'That didn’t work'}
             </h3>
             <p className="mt-3 max-w-[65ch]">{errorMessage}</p>
-            {planText && (
+            {planCutOff && (
               <p className="mt-3 max-w-[65ch] font-medium text-[color:var(--beta-error)]">
                 The plan above was cut off before it finished — its later stages and safety
                 notes are missing. Please don’t follow a partial plan; draft a fresh one instead.
