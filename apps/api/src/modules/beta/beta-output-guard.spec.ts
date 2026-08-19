@@ -1,4 +1,13 @@
-import { renderDose, toCoachPlan, type DraftPlan } from './beta-output-guard';
+import {
+  evaluateCoachOutput,
+  renderDose,
+  renderPlanFallback,
+  resolveGuardMode,
+  splitCoachSections,
+  toCoachPlan,
+  type DraftPlan,
+  type GuardInput,
+} from './beta-output-guard';
 
 function makeStage(n: number) {
   return {
@@ -65,5 +74,600 @@ describe('toCoachPlan: what the coach is actually handed', () => {
         .overallCaution,
     ).toBe('Rest pain deserves a look.');
     expect(toCoachPlan(makePlan())).not.toHaveProperty('overallCaution');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Layer 2 (AC-G8). Every rule gets a test for what it must catch AND a test
+// for the legitimate rehab language the spec names as its false-positive
+// risk. The second half is the one that matters: on this surface a false
+// positive means an injured person gets a plainer plan than they should have.
+// ---------------------------------------------------------------------------
+
+/**
+ * A realistic finger-pulley plan. Written out by hand rather than generated,
+ * so these tests do not inherit any assumption the implementation makes.
+ */
+const PULLEY_PLAN: DraftPlan = {
+  stages: [
+    {
+      rationale: 'Fresh and irritable, so calm it before loading it.',
+      title: 'Calm it down',
+      timeWindow: 'Weeks 1-2',
+      exercises: [
+        {
+          name: 'Tendon glides',
+          equipmentUsed: 'none',
+          dose: { sets: 3, reps: 10, frequencyPerWeek: 7 },
+        },
+        {
+          name: 'Open-hand putty squeezes',
+          equipmentUsed: 'none',
+          dose: { sets: 2, reps: 15, frequencyPerWeek: 3 },
+        },
+      ],
+      allowedClimbing: 'No climbing yet, and no crimping of any kind.',
+      advanceWhen: [
+        'Daily tasks are pain-free',
+        'No added morning stiffness for a week',
+      ],
+    },
+    {
+      rationale: 'Start protected loading once it has settled.',
+      title: 'Wake it up',
+      timeWindow: 'Weeks 3-5',
+      exercises: [
+        {
+          name: 'Open-hand pick-up block holds',
+          equipmentUsed: 'none',
+          dose: { sets: 4, reps: 5, holdSeconds: 7, frequencyPerWeek: 3 },
+        },
+        {
+          name: 'Finger extensions against a rubber band',
+          equipmentUsed: 'resistance_bands',
+          dose: { sets: 3, reps: 20, frequencyPerWeek: 3 },
+        },
+      ],
+      allowedClimbing:
+        'Big open-hand holds on vertical terrain, several grades below your max.',
+      advanceWhen: [
+        'Pain during activity no more than about 3 out of 10',
+        'Settling by the next morning',
+      ],
+    },
+    {
+      rationale: 'Reintroduce the half crimp under control.',
+      title: 'Rebuild the base',
+      timeWindow: 'Weeks 6-8',
+      exercises: [
+        {
+          name: 'Half-crimp isometric holds',
+          equipmentUsed: 'hangboard',
+          dose: { sets: 5, reps: 1, holdSeconds: 8, frequencyPerWeek: 2 },
+        },
+        {
+          name: 'Slow-lowering wrist curls',
+          equipmentUsed: 'weights',
+          dose: { sets: 3, reps: 12, frequencyPerWeek: 2 },
+        },
+      ],
+      allowedClimbing: 'Smaller holds on vertical terrain, still no dynos.',
+      advanceWhen: [
+        'A full session with no flare-up',
+        'Full pain-free range in the finger',
+      ],
+    },
+    {
+      rationale: 'Return to normal climbing on your own terms.',
+      title: 'Back to the wall',
+      timeWindow: 'Weeks 9-12',
+      exercises: [
+        {
+          name: 'Half-crimp holds at bodyweight',
+          equipmentUsed: 'hangboard',
+          dose: { sets: 5, reps: 1, holdSeconds: 10, frequencyPerWeek: 2 },
+        },
+        {
+          name: 'Maintenance finger extensions',
+          equipmentUsed: 'resistance_bands',
+          dose: { sets: 2, reps: 20, frequencyPerWeek: 2 },
+        },
+      ],
+      allowedClimbing: 'Cautious return to normal bouldering on open grips.',
+      advanceWhen: [
+        'Half crimp is comfortable under load',
+        'Two normal sessions in a row with no reaction',
+      ],
+    },
+  ],
+};
+
+const PULLEY_INPUT: GuardInput = {
+  injuryArea: 'finger_pulley',
+  painBehavior: 'none_at_rest_hurts_under_load',
+};
+
+const DEFAULT_OPENING =
+  'Sounds like a frustrating few weeks off the wall. Here is a steady way back.';
+const DEFAULT_CLOSING =
+  'Climbers usually find this kind of injury responds well to patience. If anything gets worse instead of better, a physical therapist or sports medicine doctor is the right next step.';
+
+/**
+ * Builds a document in coach.md's contracted format from a plan. Written
+ * independently of renderPlanFallback so the guard is not merely being
+ * tested against its own renderer.
+ */
+function coachOutput(
+  plan: DraftPlan,
+  overrides: {
+    opening?: string;
+    closing?: string;
+    /** Rewrites one stage's section lines after they are built. */
+    mutateStage?: (lines: string[], index: number) => string[];
+  } = {},
+): string {
+  const blocks: string[] = [overrides.opening ?? DEFAULT_OPENING];
+  const coachPlan = toCoachPlan(plan);
+
+  coachPlan.stages.forEach((stage, index) => {
+    let lines = [
+      `## Stage ${index + 1}: ${stage.title}`,
+      '',
+      `**When:** ${stage.timeWindow}`,
+      '',
+      `**Climbing:** ${stage.allowedClimbing}`,
+      '',
+      '**Do this:**',
+      ...stage.exercises.map((e) => `- ${e.name} — ${e.dose}`),
+      '',
+      '**Move on when:**',
+      ...stage.advanceWhen.map((c) => `- ${c}`),
+    ];
+    if (overrides.mutateStage) lines = overrides.mutateStage(lines, index);
+    blocks.push(lines.join('\n'));
+  });
+
+  blocks.push(overrides.closing ?? DEFAULT_CLOSING);
+  return blocks.join('\n\n');
+}
+
+function evaluate(text: string, input: GuardInput = PULLEY_INPUT) {
+  return evaluateCoachOutput(text, PULLEY_PLAN, input);
+}
+
+describe('splitCoachSections', () => {
+  it('separates opening, one section per stage, and the trailing closing', () => {
+    const sections = splitCoachSections(coachOutput(PULLEY_PLAN));
+    expect(sections.stages).toHaveLength(4);
+    expect(sections.stages.map((s) => s.number)).toEqual([1, 2, 3, 4]);
+    expect(sections.opening.join(' ')).toContain('frustrating few weeks');
+    expect(sections.closing.join(' ')).toContain('Climbers usually find');
+    // The closing must not be left inside the last stage, or R3 would scan it.
+    expect(sections.stages[3].lines.join('\n')).not.toContain(
+      'Climbers usually find',
+    );
+  });
+});
+
+describe('the guard passes a conformant coach output', () => {
+  it('accepts a well-formed plan end to end', () => {
+    expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
+  });
+});
+
+describe('R1 contraindicated pain phrasing', () => {
+  it.each([
+    'Some days you just have to push through the pain.',
+    'It will ache at first — work through it.',
+    'No pain no gain applies here.',
+    'Ignore the pain in the first week.',
+    'Tough it out for the first fortnight.',
+    'Pain is nothing to worry about at this stage.',
+  ])('CATCHES %j', (sentence) => {
+    const result = evaluate(coachOutput(PULLEY_PLAN, { closing: sentence }));
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R1/);
+  });
+
+  it('does NOT catch the pain traffic-light language the skill files mandate', () => {
+    // These are drafter.md's own words. A rule that fired on them would
+    // reject exactly the plans that followed the prompt correctly.
+    const closing = [
+      'Let pain set the pace: no more than about 3 out of 10 during activity,',
+      'settling by the next morning. Some discomfort is normal and expected —',
+      "'no pain' is not required for tendon work.",
+    ].join(' ');
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('does NOT catch the traffic-light criteria inside a stage section', () => {
+    // Stage 2's advanceWhen carries "no more than about 3 out of 10" and
+    // "Settling by the next morning" verbatim from the drafter.
+    expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
+  });
+});
+
+describe('R2 full-crimp programming, scoped to prescription lines', () => {
+  it('CATCHES full crimp introduced into a **Do this:** bullet', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 3
+            ? lines.map((line) =>
+                line.startsWith('- Half-crimp holds')
+                  ? '- Full-crimp hangs — 5 sets of 1, holding 10 seconds, twice a week'
+                  : line,
+              )
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R2/);
+  });
+
+  it('does NOT catch "no crimping of any kind" in a Climbing line', () => {
+    // Stage 1's allowedClimbing carries the skill file's own safety language.
+    // A document-wide substring match would fire on it; the scope is what
+    // makes this rule safe.
+    expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
+  });
+
+  it('does NOT catch "half crimp", which is correct in later stages', () => {
+    // Stages 3 and 4 prescribe half-crimp holds in **Do this:** bullets.
+    expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
+  });
+
+  it('does NOT catch "full crimp moves are the very last thing to return"', () => {
+    const closing =
+      'Full crimp moves are the very last thing to return, so stay patient with them.';
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe('R3 numeric fidelity', () => {
+  it('CATCHES an inflated dose', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 0
+            ? lines.map((line) =>
+                line.replace('3 sets of 10', '3 sets of 30'),
+              )
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R3/);
+  });
+
+  it('CATCHES a changed week count', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 1
+            ? lines.map((line) =>
+                line.replace('**When:** Weeks 3-5', '**When:** Weeks 3-6'),
+              )
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R3/);
+  });
+
+  it('is a set-membership check, so a number used elsewhere in the same stage masks a change', () => {
+    // Honest limitation, documented rather than hidden: stage 2 already
+    // contains 4 (four sets of pick-up block holds), so "Weeks 3-4" reads as
+    // a legitimate number and passes. R3 catches invented numbers, not every
+    // reshuffle of numbers the stage already had. Positional checking is not
+    // what the spec defines this rule as.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 1
+            ? lines.map((line) =>
+                line.replace('**When:** Weeks 3-5', '**When:** Weeks 3-4'),
+              )
+            : lines,
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('does NOT catch the stage heading number itself', () => {
+    // "## Stage 4:" is the only place 4 appears in that section — its time
+    // window is Weeks 9-12 — so the exclusion is what keeps this passing.
+    expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
+  });
+
+  it('does NOT scan the opening or closing paragraphs', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        opening: 'You said this started about 4 weeks ago.',
+        closing: 'Most climbers are back on the wall within 3 to 6 months.',
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('does NOT catch a frequency the coach spells out in digits', () => {
+    // Code renders frequencyPerWeek 2 as "twice a week"; a coach writing
+    // "2 times a week" must still pass, because 2 is the drafter's number.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 2
+            ? lines.map((line) => line.replace('twice a week', '2 times a week'))
+            : lines,
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+});
+
+describe('R4 structural conformance', () => {
+  it('CATCHES a dropped stage', () => {
+    const full = coachOutput(PULLEY_PLAN);
+    const withoutLast = full.slice(0, full.indexOf('## Stage 4:'));
+    const result = evaluate(withoutLast);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R4 stage count/);
+  });
+
+  it('CATCHES a reordered stage', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN).replace('## Stage 2:', '## Stage 3:'),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R4 stage order/);
+  });
+
+  it('CATCHES a missing label', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 1
+            ? lines.filter((line) => !line.startsWith('**Climbing:**'))
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R4 missing/);
+  });
+
+  it('CATCHES an added exercise bullet', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 0
+            ? lines.flatMap((line) =>
+                line.startsWith('- Tendon glides')
+                  ? [line, '- Extra mystery exercise — 3 sets of 10, 3 times a week']
+                  : [line],
+              )
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R4 exercise count/);
+  });
+
+  it('CATCHES a dropped exercise bullet', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 0
+            ? lines.filter((line) => !line.startsWith('- Open-hand putty'))
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R4 exercise count/);
+  });
+
+  it('does NOT catch a conformant document (the whole non-catch set)', () => {
+    expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
+  });
+});
+
+describe('R5 medication naming', () => {
+  it.each([
+    'Take ibuprofen for the first few days.',
+    'A short course of anti-inflammatories can help.',
+    'Ask about a cortisone injection.',
+    'NSAIDs are fine here.',
+  ])('CATCHES %j', (closing) => {
+    const result = evaluate(coachOutput(PULLEY_PLAN, { closing }));
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R5/);
+  });
+
+  it('does NOT catch ordinary talk of inflammation', () => {
+    const closing =
+      'As the inflammation settles down, the stiffness usually eases with it.';
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe('R6 diagnosis asserted as fact', () => {
+  it.each([
+    'From what you describe, you have torn the pulley.',
+    'You have a grade II injury here.',
+    'It sounds like you have ruptured it.',
+    'The pulley is torn, so take it slowly.',
+    'People diagnosed with this do well.',
+    'This is definitely a pulley problem.',
+  ])('CATCHES %j', (closing) => {
+    const result = evaluate(coachOutput(PULLEY_PLAN, { closing }));
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R6/);
+  });
+
+  it("does NOT catch the visitor's own injury label", () => {
+    const closing =
+      "Your finger pulley strain and a climber's elbow have a lot in common: both reward patience.";
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('does NOT catch general education about the injury type', () => {
+    const closing =
+      'Pulley strains usually settle with graded loading, and this kind of injury often feels worse before it feels better.';
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe('R7 recovery promised as fact', () => {
+  it.each([
+    'You will be back on your projects by spring.',
+    'You will be climbing again in eight weeks.',
+    'You will fully recover from this.',
+    'A full return is guaranteed if you follow the plan.',
+    'By the end of this you will be healed.',
+  ])('CATCHES %j', (closing) => {
+    const result = evaluate(coachOutput(PULLEY_PLAN, { closing }));
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R7/);
+  });
+
+  it('does NOT catch the hedged language coach.md asks for', () => {
+    const closing =
+      'Climbers usually find this settles; most climbers typically notice the change first on easy ground. You will feel it warm up, and you will notice the stiffness fade.';
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('does NOT catch the stage time windows, which are explicitly guidance', () => {
+    expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
+  });
+});
+
+describe('R8 mandatory caution carried into the closing', () => {
+  const caution =
+    'Pain that stays constant at rest and does not improve within a couple of weeks deserves a professional assessment.';
+  const planWithCaution: DraftPlan = {
+    ...PULLEY_PLAN,
+    overallCaution: caution,
+  };
+  const restPainInput: GuardInput = {
+    injuryArea: 'finger_pulley',
+    painBehavior: 'constant_even_at_rest',
+  };
+
+  function evaluateRestPain(closing: string) {
+    return evaluateCoachOutput(
+      coachOutput(planWithCaution, { closing }),
+      planWithCaution,
+      restPainInput,
+    );
+  }
+
+  it('CATCHES a closing that drops the caution entirely', () => {
+    const result = evaluateRestPain(
+      'Keep going steadily. You are doing the right things.',
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R8/);
+  });
+
+  it('does NOT catch a rephrasing, which the coach is supposed to do', () => {
+    const result = evaluateRestPain(
+      'Because your pain is constant even at rest, keep an eye on it: if it does not improve over the next couple of weeks, a professional assessment is worth getting.',
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('does NOT catch a verbatim carry-through', () => {
+    expect(evaluateRestPain(caution)).toEqual({ ok: true });
+  });
+
+  it('does not apply at all for other pain behaviors', () => {
+    const result = evaluateCoachOutput(
+      coachOutput(planWithCaution, { closing: 'Nice work so far.' }),
+      planWithCaution,
+      PULLEY_INPUT,
+    );
+    expect(result).toEqual({ ok: true });
+  });
+});
+
+describe('renderPlanFallback', () => {
+  it('produces a complete plan in the format the page already parses', () => {
+    const text = renderPlanFallback(PULLEY_PLAN);
+    expect(text.match(/^## Stage \d+:/gm)).toHaveLength(4);
+    for (const label of [
+      '**When:**',
+      '**Climbing:**',
+      '**Do this:**',
+      '**Move on when:**',
+    ]) {
+      expect(text.split(label)).toHaveLength(5); // one per stage
+    }
+    // The doses are the drafter's, rendered by code.
+    expect(text).toContain('- Tendon glides — 3 sets of 10, 7 times a week');
+    // No stage is dropped, so no partial-plan state is possible here.
+    expect(text).toContain('Back to the wall');
+  });
+
+  it('carries the drafted overallCaution into its closing', () => {
+    const text = renderPlanFallback({
+      ...PULLEY_PLAN,
+      overallCaution: 'Rest pain that lingers deserves a professional look.',
+    });
+    expect(text).toContain('Rest pain that lingers deserves a professional look.');
+  });
+
+  it('is itself clean under the guard, on both pain behaviors', () => {
+    // The fallback must never trip the rules it exists to satisfy.
+    expect(
+      evaluateCoachOutput(
+        renderPlanFallback(PULLEY_PLAN),
+        PULLEY_PLAN,
+        PULLEY_INPUT,
+      ),
+    ).toEqual({ ok: true });
+
+    const withCaution: DraftPlan = {
+      ...PULLEY_PLAN,
+      overallCaution:
+        'Pain that stays constant at rest and does not improve within a couple of weeks deserves a professional assessment.',
+    };
+    expect(
+      evaluateCoachOutput(renderPlanFallback(withCaution), withCaution, {
+        injuryArea: 'finger_pulley',
+        painBehavior: 'constant_even_at_rest',
+      }),
+    ).toEqual({ ok: true });
+  });
+});
+
+describe('resolveGuardMode', () => {
+  const original = process.env.BETA_OUTPUT_GUARD_MODE;
+  afterEach(() => {
+    if (original === undefined) delete process.env.BETA_OUTPUT_GUARD_MODE;
+    else process.env.BETA_OUTPUT_GUARD_MODE = original;
+  });
+
+  it.each([
+    [undefined, 'off'],
+    ['', 'off'],
+    ['off', 'off'],
+    ['nonsense', 'off'],
+    ['shadow', 'shadow'],
+    ['enforce', 'enforce'],
+  ])('resolves %j to %j', (value, expected) => {
+    if (value === undefined) delete process.env.BETA_OUTPUT_GUARD_MODE;
+    else process.env.BETA_OUTPUT_GUARD_MODE = value;
+    expect(resolveGuardMode()).toBe(expected);
   });
 });
