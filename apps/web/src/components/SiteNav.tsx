@@ -68,14 +68,19 @@ export function SiteNav() {
                     className={
                       // The active item carries no text-colour utility on
                       // purpose: `.terminal-select[aria-current]` in
-                      // terminal.css owns BOTH channels for it, painting the
-                      // --select-bg block and the --select-fg type together.
+                      // terminal.css owns BOTH channels for it, off the
+                      // --select-current-bg/-fg pair. That pair is where the
+                      // per-palette difference lives — a filled block on the
+                      // light printout (where ink vs muted is only 1.77:1 and
+                      // could not be seen), plain brighter ink on the CRT
+                      // (where the same pair is 2.86:1 and always read fine).
                       // Adding `text-term-ink` here would be a dead class the
-                      // stylesheet immediately outranks, and worse, it would
-                      // imply the fill is optional. It is not — active is the
-                      // filled block in both palettes, because the old
-                      // ink-vs-muted distinction is only 1.77:1 on the
-                      // printout and could not be seen.
+                      // stylesheet outranks, and putting the light/dark split
+                      // in this component instead of the palette blocks would
+                      // move an art-direction decision out of design.md's
+                      // token layer. `aria-current` is set independently of
+                      // all of it, so dark losing the fill never costs the
+                      // announced state.
                       isActive ? 'terminal-select' : 'terminal-select text-term-muted'
                     }
                   >
