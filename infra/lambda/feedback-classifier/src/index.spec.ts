@@ -15,6 +15,17 @@ jest.mock('@aws-sdk/client-sesv2', () => ({
   SendEmailCommand: jest.fn().mockImplementation((input: unknown) => ({ input })),
 }));
 
+/** The shape Converse returns for the forced report_classification tool call. */
+function toolUseResponse(input: unknown) {
+  return {
+    output: {
+      message: {
+        content: [{ toolUse: { name: 'report_classification', toolUseId: 'tu_1', input } }],
+      },
+    },
+  };
+}
+
 function buildEvent(overrides: Partial<Record<string, unknown>> = {}): SNSEvent {
   const payload = {
     id: 'cuid_abc',
@@ -64,13 +75,9 @@ describe('handler', () => {
   });
 
   it('sends a classified email on the happy path and never logs message text', async () => {
-    mockBedrockSend.mockResolvedValueOnce({
-      output: {
-        message: {
-          content: [{ text: JSON.stringify({ label: 'feature', summary: 'wants dark mode' }) }],
-        },
-      },
-    });
+    mockBedrockSend.mockResolvedValueOnce(
+      toolUseResponse({ label: 'feature', summary: 'wants dark mode' }),
+    );
     mockSesSend.mockResolvedValueOnce({});
 
     const { handler } = await import('./index');
@@ -106,9 +113,9 @@ describe('handler', () => {
     expect(logged).toMatchObject({ label: 'unclassified', outcome: 'sent' });
   });
 
-  it('still sends the email, marked unclassified, when Bedrock returns unparseable JSON', async () => {
+  it('still sends the email, marked unclassified, when Bedrock returns no toolUse block', async () => {
     mockBedrockSend.mockResolvedValueOnce({
-      output: { message: { content: [{ text: 'not json at all' }] } },
+      output: { message: { content: [{ text: 'not a tool call at all' }] } },
     });
     mockSesSend.mockResolvedValueOnce({});
 
@@ -135,9 +142,7 @@ describe('handler', () => {
   });
 
   it('propagates an SES failure so the invocation errors (AC-C3)', async () => {
-    mockBedrockSend.mockResolvedValueOnce({
-      output: { message: { content: [{ text: JSON.stringify({ label: 'bug', summary: 's' }) }] } },
-    });
+    mockBedrockSend.mockResolvedValueOnce(toolUseResponse({ label: 'bug', summary: 's' }));
     mockSesSend.mockRejectedValueOnce(new Error('MessageRejected'));
 
     const { handler } = await import('./index');
