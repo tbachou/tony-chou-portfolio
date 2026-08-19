@@ -33,8 +33,14 @@ jobs:
       - name: Typecheck web
         run: npx tsc --noEmit -p apps/web/tsconfig.json
 
+      - name: Typecheck feedback classifier Lambda
+        run: npx tsc --noEmit -p infra/lambda/feedback-classifier/tsconfig.json
+
       - name: Lint
         run: npm run lint
 
       - name: Beta safety regression tests
         run: npm test --workspace=apps/api -- --ci
+
+      - name: Feedback classifier Lambda tests
+        run: npm test --workspace=infra/lambda/feedback-classifier -- --ci
