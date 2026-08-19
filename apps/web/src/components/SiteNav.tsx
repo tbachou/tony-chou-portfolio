@@ -66,9 +66,14 @@ export function SiteNav() {
                     href={link.href}
                     aria-current={isActive ? 'true' : undefined}
                     className={
+                      // Only the resting colour differs. Hover is
+                      // `terminal-select` for every item in the row (see
+                      // terminal.css): the active item used to have no hover
+                      // rule at all, and the inactive one had a muted -> ink
+                      // swap that is 1.77:1 on paper and so read as nothing.
                       isActive
-                        ? 'text-term-ink transition-colors duration-term-instant'
-                        : 'text-term-muted transition-colors duration-term-instant hover:text-term-ink'
+                        ? 'terminal-select text-term-ink'
+                        : 'terminal-select text-term-muted'
                     }
                   >
                     [ {link.label} ]
@@ -83,7 +88,7 @@ export function SiteNav() {
               <button
                 type="button"
                 onClick={open}
-                className="text-term-ink transition-colors duration-term-instant hover:text-term-accent"
+                className="terminal-select text-term-ink"
               >
                 [ resume ]
               </button>
