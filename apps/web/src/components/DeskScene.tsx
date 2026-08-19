@@ -96,7 +96,13 @@ export default function DeskScene({
         </header>
       ) : null}
 
+      {/* Hidden from assistive tech: the scene is pointer-only WebGL with no
+          accessible name, and everything it offers already exists as real
+          DOM below — the "[ click the monitor to boot ]" caption and the
+          focusable [ enter site → ] button, both siblings of this canvas
+          rather than children, so they stay exposed. */}
       <Canvas
+        aria-hidden='true'
         shadows='soft'
         camera={{ position: ESTABLISHING_POSITION.toArray(), fov: 42 }}
       >
