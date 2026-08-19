@@ -1,6 +1,7 @@
 'use client';
 
 import { contactInfo } from '@/lib/resume-data';
+import { FeedbackForm } from './FeedbackForm';
 import { TerminalWindow } from './TerminalWindow';
 import { useDeskScene } from './DeskSceneProvider';
 
@@ -66,6 +67,15 @@ export function ContactSection() {
         >
           [ view the 3d desk ]
         </button>
+
+        <h3 className="mt-10 text-term-sm font-normal text-term-muted">
+          <span aria-hidden="true">$ </span>
+          cat feedback.txt
+        </h3>
+        <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+          Spot a bug or have a feature idea? Send it anonymously below.
+        </p>
+        <FeedbackForm source="portfolio" variant="terminal" className="mt-4 max-w-prose" />
       </TerminalWindow>
     </section>
   );
