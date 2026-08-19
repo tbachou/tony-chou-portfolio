@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { BackToProjects } from '@/components/BackToProjects';
+import { SkipLink } from '@/components/SkipLink';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
 const SOURCE_URL = 'https://github.com/tbachou/panel';
@@ -53,16 +54,7 @@ const AGENTS = [
 export default function PanelProjectPage() {
   return (
     <div className="min-h-dvh">
-      {/* The #main-content id below already existed with nothing pointing at
-          it. Landmarks and headings already satisfy 2.4.1, so this is a
-          convenience rather than a fix: invisible until focused, and first
-          in the tab order. */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:border focus:border-term-accent focus:bg-term-canvas focus:px-3 focus:py-2 focus:text-term-sm focus:text-term-accent"
-      >
-        [ skip to main content ]
-      </a>
+      <SkipLink label="[ skip to main content ]" />
 
       <header className="border-b border-term-border">
         <div className="mx-auto max-w-4xl px-4 py-3 sm:px-0">
