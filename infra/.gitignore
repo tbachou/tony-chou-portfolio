@@ -24,3 +24,8 @@ override.tf.json
 # CLI config that may carry credentials/tokens.
 .terraformrc
 terraform.rc
+
+# Lambda handler build output — the packaging workflow (npm run build)
+# regenerates this before every apply; never committed.
+lambda/**/dist/
+lambda/**/node_modules/
