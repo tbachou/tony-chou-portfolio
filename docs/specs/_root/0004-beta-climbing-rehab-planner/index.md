@@ -137,3 +137,20 @@ No build approach is recorded for this project (no root AGENTS.md, no scope head
 - [ ] No docs/scope exists; if scope tracking is wanted, enroll Beta as a feature row linking this spec.
 - [ ] v1.1 candidates deliberately cut from launch: printable plan summary, one constrained "adjust" pass, wrist and knee coverage, personal climbing photo in the why section.
 - [ ] Engineer's note at acceptance: per feature counter tables (`DailyUsageCounter` for the interview, now `BetaDailyUsageCounter` and `BetaIpDailyCount`) will get hard to maintain if more AI features land. If a third feature needs counters, revisit with a generalized design (one counter table keyed by feature name and date) and migrate the existing rows into it.
+
+## Addendum (2026-08-19): outcome and abuse counters
+
+Observability phase 1 widens `BetaDailyUsageCounter` with six anonymous tally columns (migration `20260819133916_beta_outcome_and_abuse_counters`, purely additive). The table count and AC-6 are unchanged: still exactly two anonymous counter tables, still zero visitor content (no injury details, goals text, or plan content — only integer counts per UTC day).
+
+**Semantics** — `planCount` remains success-only per AC-8; the new columns count blocked/failed outcomes and rate-limit rejections:
+
+| Column | Counts | Incremented from |
+|---|---|---|
+| `errorCount` | Pipeline failures the visitor saw the friendly error for (upstream 5xx/timeout after retry, malformed drafter output) | `refundGlobalSlot('error')` — the same atomic update that returns the reserved slot |
+| `redFlagCount` | Visitors told to see a professional, on every path: code-enforced pre-model blocks (checked red-flag symptom, constant rest-pain escalation) via `recordRedFlagBlock()`, plus screener `red_flag` verdicts and fail-closed unparseable verdicts via `refundGlobalSlot('red_flag')` | `BetaService.generatePlan` blocks; refund call sites |
+| `refusalCount` | Off-topic / injection inputs given the polite refusal (AC-7) | `refundGlobalSlot('refusal')` |
+| `throttledCount` | In-memory throttle (3/hour on plan, plus the status route's limits) rejections — otherwise invisible, since that guard resets on deploy | `BetaThrottlerGuard.throwThrottlingException`, fire-and-forget |
+| `ipCappedCount` | 429s at the persisted 6/day per-IP cap | `assertAvailable()` before the throw |
+| `globalCappedCount` | 503s at the persisted 40/day global cap, plus the rare reserve-time race where the cap fills between check and reserve | `assertAvailable()` before the throw; `reserveGlobalSlot()` on a failed reserve |
+
+Tally writes never mask the response they annotate: they swallow-and-log failures (error name only, per the logging convention), and refund-reason increments ride the same `updateMany` as the slot decrement so outcome counts cannot drift from refunds.
