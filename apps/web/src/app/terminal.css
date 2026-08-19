@@ -591,6 +591,15 @@
   .terminal-theme *::before,
   .terminal-theme *::after {
     animation-duration: 0.01ms !important;
+    /* Clamping the duration alone is not a stop — an infinite animation
+       just restarts, 100000 times a second, which is flicker rather than
+       stillness and is the opposite of what the preference asks for.
+       .terminal-cursor is killed outright below, but it is not the only
+       looping animation under this theme: Tailwind's own `animate-pulse`
+       (the streaming caret) is `infinite` and reaches nothing else here.
+       Capping iterations catches every one of them by construction, the
+       way .beta-theme's clamp already does. */
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
   .terminal-cursor {
