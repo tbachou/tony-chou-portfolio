@@ -12,7 +12,7 @@ const bricolage = Bricolage_Grotesque({
 
 const title = 'Beta — Return-to-Climbing Rehab Planner';
 const description =
-  'An educational AI planner that drafts a staged return-to-climbing progression for the three most common climbing injuries — with hard safety rails, and nothing you type ever stored.';
+  'An educational AI planner that drafts a staged return-to-climbing progression for the three most common climbing injuries — with hard safety rails, and nothing you type into the planner ever stored.';
 
 export const metadata: Metadata = {
   title,
