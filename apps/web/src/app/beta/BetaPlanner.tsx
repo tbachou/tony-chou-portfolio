@@ -340,7 +340,9 @@ export function BetaPlanner() {
                 </li>
               ))}
             </ul>
-            <p className="beta-hint">Nothing you type is stored — the form clears when you leave.</p>
+            <p className="beta-hint">
+              Nothing you type into the planner is stored — the form clears when you leave.
+            </p>
           </div>
           <button type="button" onClick={acknowledge} className="beta-btn beta-btn-primary mt-6">
             I understand — draft me a plan
@@ -570,8 +572,8 @@ export function BetaPlanner() {
                 {formDisabled ? 'Drafting…' : 'Draft my plan'}
               </button>
               <p className="beta-hint mt-3 max-w-[65ch]">
-                Nothing you type is stored. The first request can take a few extra seconds while
-                the demo server wakes up.
+                Nothing you type into the planner is stored. The first request can take a few
+                extra seconds while the demo server wakes up.
               </p>
             </div>
           </fieldset>
