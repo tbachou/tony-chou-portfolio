@@ -1,0 +1,40 @@
+# The verification loop that runs without anyone watching (Cherny step-2
+# guardrail): typecheck, lint, and the Beta safety regression tests on every
+# push. Deploys (Vercel/Render) trigger independently of this — a red run
+# here is the alarm, not the gate, until a PR flow exists.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # prisma.config.ts resolves env("DATABASE_URL") at load time; `prisma
+      # generate` (postinstall) never connects, it just needs the var set.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck API
+        run: npx tsc --noEmit -p apps/api/tsconfig.json
+
+      - name: Typecheck web
+        run: npx tsc --noEmit -p apps/web/tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Beta safety regression tests
+        run: npm test --workspace=apps/api -- --ci
