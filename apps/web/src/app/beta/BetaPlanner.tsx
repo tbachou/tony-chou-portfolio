@@ -136,6 +136,11 @@ export function BetaPlanner() {
   const resultRef = useRef<HTMLDivElement>(null);
   const redFlagRef = useRef<HTMLDivElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  // Only true when the visitor just dismissed the gate or reset the result —
+  // never when the gate is skipped from localStorage on load, which must not
+  // steal focus from wherever the visitor actually is on the page.
+  const focusFormRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -172,7 +177,18 @@ export function BetaPlanner() {
     if (phase === 'error' && errorMessage) errorRef.current?.focus();
   }, [phase, errorMessage]);
 
+  // Dismissing the gate swaps it for the form. Without this the button
+  // appears to do nothing to anyone not watching the screen: focus falls to
+  // <body> and nothing is announced.
+  useEffect(() => {
+    if (acknowledged && focusFormRef.current) {
+      focusFormRef.current = false;
+      formRef.current?.focus();
+    }
+  }, [acknowledged]);
+
   function acknowledge() {
+    focusFormRef.current = true;
     setAcknowledged(true);
     try {
       localStorage.setItem(ACK_STORAGE_KEY, 'true');
@@ -194,6 +210,9 @@ export function BetaPlanner() {
     setErrorMessage(null);
     setErrorKind(null);
     setAnnouncement('');
+    // "Start over" unmounts the card its own button lives in, so move focus
+    // back to the form before that happens rather than letting it drop.
+    formRef.current?.focus();
   }
 
   function scrollToResult() {
@@ -226,7 +245,15 @@ export function BetaPlanner() {
     if (sessionsPerWeek !== '') payload.sessionsPerWeek = Number(sessionsPerWeek);
     if (equipment.length > 0) payload.equipmentAccess = equipment;
 
+    // Move focus before the render that disables the fieldset, otherwise the
+    // focused submit button is disabled out from under the visitor and focus
+    // drops to <body>. Disabling the button on its own would do the same, so
+    // excluding it from the fieldset would not have fixed this — and the
+    // viewport is about to scroll here anyway, which keeps focus and view
+    // together. scrollToResult() owns the scrolling (it honours
+    // prefers-reduced-motion), so focus must not scroll on its own.
     const runId = ++runIdRef.current;
+    resultRef.current?.focus({ preventScroll: true });
     setPhase('running');
     setStage(null);
     setPlanText('');
@@ -366,7 +393,14 @@ export function BetaPlanner() {
           </button>
         </div>
       ) : (
-        <form id="beta-form" onSubmit={handleSubmit} className="beta-card p-6 sm:p-8">
+        <form
+          id="beta-form"
+          ref={formRef}
+          tabIndex={-1}
+          aria-label="Draft your plan"
+          onSubmit={handleSubmit}
+          className="beta-card beta-focus-target p-6 sm:p-8"
+        >
           <fieldset disabled={formDisabled} className="beta-fieldset space-y-10">
             {/* Injury area */}
             <fieldset className="beta-fieldset">
@@ -598,7 +632,13 @@ export function BetaPlanner() {
       )}
 
       {/* Results: pipeline status, streamed plan, and the unhappy states. */}
-      <div ref={resultRef} className="scroll-mt-24">
+      <div
+        ref={resultRef}
+        tabIndex={-1}
+        role="region"
+        aria-label="Plan results"
+        className="beta-focus-target scroll-mt-24"
+      >
         {showPipeline && (
           <div className="mt-8">
             <h3 className="sr-only">Plan generation progress</h3>
