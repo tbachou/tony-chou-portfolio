@@ -52,8 +52,12 @@ export async function sendFeedbackEmail(
       Destination: { ToAddresses: [ownerEmail] },
       Content: {
         Simple: {
-          Subject: { Data: buildSubject(payload, classification) },
-          Body: { Text: { Data: buildBody(payload, classification) } },
+          // Charset is required on both: SES falls back to 7-bit ASCII when
+          // it is unspecified, which mangles non-ASCII feedback (accents,
+          // em dashes, emoji) before it reaches the owner. AC-C1 requires
+          // the email to carry the full message.
+          Subject: { Data: buildSubject(payload, classification), Charset: 'UTF-8' },
+          Body: { Text: { Data: buildBody(payload, classification), Charset: 'UTF-8' } },
         },
       },
     }),
