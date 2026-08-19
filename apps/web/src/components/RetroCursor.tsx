@@ -40,7 +40,6 @@ export function RetroCursor() {
     if (!cursor) return;
 
     const mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const pos = { ...mouse };
     let frameId: number;
 
     function handleMove(event: MouseEvent) {
@@ -67,10 +66,17 @@ export function RetroCursor() {
     }
 
     function loop() {
-      // Lags slightly behind the real pointer — a CRT-terminal trail, not a 1:1 follow.
-      pos.x += (mouse.x - pos.x) / 6;
-      pos.y += (mouse.y - pos.y) / 6;
-      cursor!.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) translate(-50%, -50%)`;
+      // Tracks the real pointer 1:1. This used to ease toward it at (target
+      // - pos) / 6, roughly 100ms of lag, as a CRT trail. That is not a WCAG
+      // failure — no success criterion covers the mouse cursor — but since
+      // the native cursor is hidden while this is on, the lagging block was
+      // the only pointer feedback there was, and aiming at a ~20px nav
+      // target through it is materially harder with a tremor or reduced
+      // fine motor control. design.md already noted the lag weakened the
+      // hover affordance, so removing it is a general improvement too.
+      // Still rAF-driven rather than written from the mousemove handler, so
+      // a high-rate pointer cannot force more than one write per frame.
+      cursor!.style.transform = `translate3d(${mouse.x}px, ${mouse.y}px, 0) translate(-50%, -50%)`;
       frameId = requestAnimationFrame(loop);
     }
 
