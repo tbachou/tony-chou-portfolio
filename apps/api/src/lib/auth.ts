@@ -34,6 +34,8 @@ export const auth = betterAuth({
     // real public client, so client-supplied leftmost entries are never
     // reached. Without this, multi-entry chains resolve to null and every
     // visitor shares one login rate-limit bucket (the production WARN).
+    // This trust-topology fact also lives in apps/api/src/main.ts (the
+    // `trust proxy` setting) — change both together.
     ipAddress: {
       trustedProxies: [
         '127.0.0.1',

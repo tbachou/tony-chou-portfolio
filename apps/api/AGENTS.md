@@ -27,8 +27,8 @@ cd apps/api && npx prisma generate          # regenerate client after schema edi
 ## Gotchas
 
 - **Dev and prod share the same Prisma Postgres database.** Local pipeline runs consume production daily caps and counters. Check `BetaDailyUsageCounter` before assuming abuse.
-- **Rate-limit identity**: use `rateLimitIdentity()` (common/utils/ip-hash.util.ts) for any new per-IP feature — it collapses IPv6 to /64. `trust proxy = 1` assumes exactly Render's single proxy hop; adding a CDN in front breaks it (bump to 2).
-- **Beta module invariants (spec 0004, audited)**: checked red-flag symptoms block in code before any model call; the global cap is an atomic reserve/refund (`reserveGlobalSlot`); counters increment on success only; no visitor content is ever written or logged. Do not weaken these.
+- **Rate-limit identity**: use `rateLimitIdentity()` (common/utils/ip-hash.util.ts) for any new per-IP feature — it collapses IPv6 to /64. `trust proxy = 1` assumes exactly Render's single proxy hop; adding a CDN in front breaks it (bump to 2). The same proxy-topology fact also lives in apps/api/src/lib/auth.ts as better-auth's `advanced.ipAddress.trustedProxies` — a CDN change must update BOTH (bump trust proxy to 2 AND add the CDN's egress ranges to trustedProxies) or better-auth silently collapses visitors into one rate bucket.
+- **Beta module invariants (spec 0004, audited)**: checked red-flag symptoms block in code before any model call; the global cap is an atomic reserve/refund (`reserveGlobalSlot`); planCount increments on success only; the outcome/abuse tally columns (errorCount, redFlagCount, refusalCount, throttledCount, ipCappedCount, globalCappedCount) increment on their respective non-success events; no visitor content is ever written or logged. Do not weaken these.
 - The in-memory throttle resets on every deploy; the persisted daily caps are the real limits.
 - better-auth is ESM-only: Node 20 crashes at boot (ERR_REQUIRE_ESM); Jest needs the `jest.mock('@thallesp/nestjs-better-auth', ...)` stub (see app.controller.spec.ts).
 
