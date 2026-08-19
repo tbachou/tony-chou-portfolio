@@ -23,10 +23,11 @@ const LABEL: Record<ThemePreference, string> = {
 /**
  * Glyphs for the three states, as inline SVG rather than emoji or an icon
  * font: emoji would drop a colour picture into a monochrome monospace nav,
- * and these are stroked/filled with `currentColor` so they inherit the
- * button's `text-term-muted` → `text-term-ink` hover exactly the way the
- * bracket text next to them does. No colour is named here; the palette
- * still owns every value.
+ * and these are stroked/filled with `currentColor` so they re-ink with the
+ * button exactly the way the bracket text next to them does — including
+ * flipping to the paper colour when `terminal-select` inverts the whole
+ * item on hover. No colour is named here; the palette still owns every
+ * value.
  *
  * `system` gets its own glyph on purpose. The preference is three-state —
  * auto is a real, persisted choice distinct from an explicit light or dark
@@ -154,7 +155,7 @@ export function ThemeToggle() {
           : 'Color theme preference'
       }
       title={`Theme: ${LABEL[preference]} — click for ${nextLabel}`}
-      className="text-term-muted transition-colors duration-term-instant hover:text-term-ink"
+      className="terminal-select text-term-muted"
     >
       <span aria-hidden="true">[ </span>
       {mounted ? (
