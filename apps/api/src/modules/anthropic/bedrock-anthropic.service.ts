@@ -1,7 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import { Injectable } from '@nestjs/common';
+import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import {
-  DEFAULT_ANTHROPIC_MODEL,
+  DEFAULT_BEDROCK_MODEL_ID,
   type AiProvider,
   type ForceToolCallParams,
   type ForceToolCallResult,
@@ -10,29 +11,22 @@ import {
   type UpstreamErrorClassification,
 } from './ai-provider.interface';
 
-// Re-exported for existing call sites (`import type { StreamMessageParams } from
-// './anthropic.service'`); the canonical definitions now live in
-// ai-provider.interface.ts so both providers share one shape.
-export type {
-  StreamMessageParams,
-  StreamMessageResult,
-  ForceToolCallParams,
-  ForceToolCallResult,
-};
-
+/**
+ * Bedrock implementation of `AiProvider` (spec 0005 provider-swap child):
+ * same Claude models, reached through `@anthropic-ai/bedrock-sdk` instead of
+ * the direct API. `messages.stream`/`messages.create` are shape-identical to
+ * the direct SDK, so the method bodies mirror `AnthropicService`'s.
+ */
 @Injectable()
-export class AnthropicService implements AiProvider {
-  private client: Anthropic | null = null;
+export class BedrockAnthropicService implements AiProvider {
+  private client: AnthropicBedrock | null = null;
   private readonly model =
-    process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL;
+    process.env.BEDROCK_MODEL_ID ?? DEFAULT_BEDROCK_MODEL_ID;
 
-  private getClient(): Anthropic {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new InternalServerErrorException(
-        'ANTHROPIC_API_KEY is not configured',
-      );
-    }
-    this.client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  private getClient(): AnthropicBedrock {
+    this.client ??= new AnthropicBedrock({
+      awsRegion: process.env.AWS_REGION,
+    });
     return this.client;
   }
 
@@ -76,10 +70,6 @@ export class AnthropicService implements AiProvider {
     };
   }
 
-  /**
-   * Non-streaming call that forces a single tool invocation so the output
-   * parses reliably (Beta's screener and drafter agents, spec 0004).
-   */
   async forceToolCall(
     params: ForceToolCallParams,
   ): Promise<ForceToolCallResult> {
@@ -127,12 +117,12 @@ export class AnthropicService implements AiProvider {
     };
   }
 
-  /** Maps the direct SDK's own error types into the neutral shape. */
+  /** Maps the Bedrock SDK's own error types into the neutral shape. */
   classifyUpstreamError(error: unknown): UpstreamErrorClassification | null {
-    if (error instanceof Anthropic.APIConnectionError) {
+    if (error instanceof AnthropicBedrock.APIConnectionError) {
       return { name: error.name, retryable: true };
     }
-    if (error instanceof Anthropic.APIError) {
+    if (error instanceof AnthropicBedrock.APIError) {
       return {
         name: error.name,
         status: error.status,
@@ -140,5 +130,22 @@ export class AnthropicService implements AiProvider {
       };
     }
     return null;
+  }
+}
+
+/**
+ * Boot guard (spec 0005): with AI_PROVIDER=bedrock, fail fast and synchronously
+ * if the AWS credentials this SDK needs are not present. No live AWS call is
+ * made here — Render has no instance-role credential source, so env vars are
+ * the entire credential story.
+ */
+export function assertBedrockCredentialsConfigured(): void {
+  const missing = ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'].filter(
+    (key) => !process.env[key]?.trim(),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `AI_PROVIDER=bedrock requires ${missing.join(', ')} to be set`,
+    );
   }
 }

@@ -1,5 +1,4 @@
 import { Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { BetaService } from './beta.service';
 import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
 import {
@@ -18,6 +17,7 @@ import type {
   AnthropicService,
   StreamMessageParams,
 } from '../anthropic/anthropic.service';
+import type { UpstreamErrorClassification } from '../anthropic/ai-provider.interface';
 import type { BetaUsageService } from './beta-usage.service';
 
 // The agent prompts are markdown files read from disk relative to
@@ -87,22 +87,38 @@ function coachStream(chunks: string[] = ['alpha', 'beta']) {
 }
 
 /**
- * The real APIError constructor demands a fetch Headers instance, so build
- * one prototypically instead: instanceof Anthropic.APIError holds (and
- * instanceof APIConnectionError does not), which is exactly what
- * isRetryableUpstreamError type-checks against.
+ * A fake upstream failure, migrated off `Anthropic.APIError` (spec 0005
+ * AC-P4): just a tagged plain object. The harness's `classifyUpstreamError`
+ * mock recognizes the tag and reports the same { name, status, retryable }
+ * shape the real `AnthropicService.classifyUpstreamError` would derive from
+ * a real SDK error at this status.
  */
-function fakeApiError(status: number): InstanceType<typeof Anthropic.APIError> {
-  const error = Object.create(Anthropic.APIError.prototype) as {
-    status: number;
-  };
-  error.status = status;
-  return error as unknown as InstanceType<typeof Anthropic.APIError>;
+type FakeUpstreamError = { __fakeUpstream: true; status: number };
+function fakeApiError(status: number): FakeUpstreamError {
+  return { __fakeUpstream: true, status };
+}
+
+function classifyFakeUpstreamError(
+  error: unknown,
+): UpstreamErrorClassification | null {
+  if (
+    error &&
+    typeof error === 'object' &&
+    (error as Partial<FakeUpstreamError>).__fakeUpstream === true
+  ) {
+    const { status } = error as FakeUpstreamError;
+    return { name: 'APIError', status, retryable: status >= 500 };
+  }
+  return null;
 }
 
 function makeHarness() {
   const prisma = { $transaction: jest.fn().mockResolvedValue([]) };
-  const anthropic = { forceToolCall: jest.fn(), streamMessage: jest.fn() };
+  const anthropic = {
+    forceToolCall: jest.fn(),
+    streamMessage: jest.fn(),
+    classifyUpstreamError: jest.fn(classifyFakeUpstreamError),
+  };
   const usage = {
     reserveGlobalSlot: jest.fn().mockResolvedValue(true),
     refundGlobalSlot: jest.fn().mockResolvedValue(undefined),
