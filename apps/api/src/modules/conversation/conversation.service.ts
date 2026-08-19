@@ -1,7 +1,11 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { AnthropicService } from '../anthropic/anthropic.service';
+import {
+  AI_PROVIDER,
+  resolveConfiguredProvider,
+  type AiProvider,
+} from '../anthropic/ai-provider.interface';
 import { ConversationRole } from '../../generated/prisma/enums';
 import { Prisma } from '../../generated/prisma/client';
 import type { StoryModel, TopicModel } from '../../generated/prisma/models';
@@ -38,7 +42,7 @@ export class ConversationService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly anthropic: AnthropicService,
+    @Inject(AI_PROVIDER) private readonly anthropic: AiProvider,
     private readonly dailyUsage: DailyUsageService,
   ) {}
 
@@ -215,6 +219,7 @@ export class ConversationService {
       ]);
 
       emit('turn_end', { conversationId, turnIndex, isFinal });
+      this.logProviderCall('ok');
     } catch (error) {
       // Release the reserved slot so a retry of the same call can re-claim it.
       await this.prisma.conversationTurn
@@ -223,7 +228,18 @@ export class ConversationService {
       emit('turn_error', {
         message: error instanceof Error ? error.message : 'Unknown error',
       });
+      this.logProviderCall('error');
     }
+  }
+
+  /**
+   * Minimal per-call structured log line for the interview path (spec 0005
+   * provider-swap child, AC-P5): { provider, model, outcome }. Not full
+   * parity with Beta's per-agent logging — that stays out of scope here.
+   */
+  private logProviderCall(outcome: 'ok' | 'error'): void {
+    const { provider, model } = resolveConfiguredProvider();
+    this.logger.log(JSON.stringify({ provider, model, outcome }));
   }
 }
 
