@@ -42,7 +42,7 @@ const AGENTS = [
 
 const GUARDRAILS = [
   'Red-flag symptoms — a sudden pop with swelling, numbness or tingling, inability to bear weight or use the hand, night pain — stop the pipeline cold. The visitor is pointed to the right kind of professional, and no plan is generated. This is a hard block, not a disclaimer.',
-  'Nothing a visitor types is ever stored. No injury details, goals, or generated plans touch the database — the only writes are two anonymous counter tables.',
+  'Nothing a visitor types into the planner is stored. No injury details, goals, or generated plans touch the database — the only writes are two anonymous counter tables. The feedback form is the one exception: that message is stored, run through an automated classifier on AWS, and emailed to Tony.',
   'Cost is capped at every layer: 3 requests per hour per IP (in memory), 6 plans per day per IP (persisted), and 40 plans per day globally. Worst-case daily AI spend is bounded no matter the traffic.',
   'Free-text fields are length-capped and treated as data, not instructions — off-topic or prompt-injection input gets a polite refusal, not arbitrary model output.'
 ];
