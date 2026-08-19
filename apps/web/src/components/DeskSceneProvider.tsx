@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type RefObject } from 'react';
 import dynamic from 'next/dynamic';
 
 const DeskScene = dynamic(() => import('./DeskScene'), { ssr: false });
@@ -8,12 +8,20 @@ const DeskScene = dynamic(() => import('./DeskScene'), { ssr: false });
 type Phase = 'desk' | 'site';
 
 const DeskSceneContext = createContext<{
+  /** Enter the 3D scene. */
+  reenter: () => void;
   /**
-   * Enter the 3D scene. Pass the control that triggered it — leaving the
-   * scene hands focus back to it, so a keyboard or screen-reader visitor
-   * resumes where they left off instead of at the top of the document.
+   * Attach to the control that opens the scene. Leaving hands focus back to
+   * whatever this points at, so a keyboard or screen-reader visitor resumes
+   * where they left off instead of at the top of the document.
+   *
+   * It has to be a ref rather than an element captured at click time: the
+   * scene unmounts `children`, so the node that was clicked is destroyed and
+   * focusing it would silently do nothing. React re-attaches this ref to the
+   * freshly mounted node during the commit that brings the site back, which
+   * lands before the effect below reads it.
    */
-  reenter: (trigger?: HTMLElement | null) => void;
+  triggerRef: RefObject<HTMLButtonElement | null>;
 } | null>(null);
 
 export function useDeskScene() {
@@ -35,8 +43,8 @@ export function DeskSceneProvider({ children }: { children: React.ReactNode }) {
   // Entering the scene unmounts `children`, which destroys both focus
   // (activeElement falls back to <body>) and scroll offset (the document
   // collapses to viewport height, so the browser clamps scrollY to 0).
-  // Both are captured on the way in and replayed on the way out.
-  const triggerRef = useRef<HTMLElement | null>(null);
+  // Both are replayed on the way out.
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const scrollYRef = useRef(0);
   const shouldRestoreRef = useRef(false);
 
@@ -57,24 +65,23 @@ export function DeskSceneProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (phase !== 'site' || !shouldRestoreRef.current) return;
     shouldRestoreRef.current = false;
-    const trigger = triggerRef.current;
-    triggerRef.current = null;
-    // Instant, never smooth: this is restoring a position the visitor never
-    // asked to leave, not a navigation, and prefers-reduced-motion visitors
-    // skip the camera lerp for the same reason.
-    window.scrollTo({ top: scrollYRef.current, behavior: 'auto' });
+    // 'instant', not 'auto': globals.css sets `html { scroll-behavior:
+    // smooth }`, and 'auto' defers to that, so it would animate a
+    // multi-thousand-pixel scroll and race the focus() below. This is
+    // restoring a position the visitor never asked to leave, not a
+    // navigation, so it should not animate at all.
+    window.scrollTo({ top: scrollYRef.current, behavior: 'instant' });
     // No preventScroll — if the offset above landed correctly the element is
     // already in view and focusing is a no-op; if layout shifted, the browser
     // corrects rather than leaving focus off screen.
-    trigger?.focus();
+    triggerRef.current?.focus();
   }, [phase]);
 
   function handleZoomInComplete() {
     setPhase('site');
   }
 
-  function reenter(trigger?: HTMLElement | null) {
-    triggerRef.current = trigger ?? null;
+  function reenter() {
     scrollYRef.current = window.scrollY;
     shouldRestoreRef.current = true;
     setDeskInitialPhase('exiting');
@@ -82,7 +89,7 @@ export function DeskSceneProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <DeskSceneContext.Provider value={{ reenter }}>
+    <DeskSceneContext.Provider value={{ reenter, triggerRef }}>
       {phase === 'desk' ? (
         <DeskScene initialPhase={deskInitialPhase} onZoomInComplete={handleZoomInComplete} />
       ) : (
