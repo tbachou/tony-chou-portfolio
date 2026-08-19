@@ -221,6 +221,14 @@
     --cursor-fill: transparent;
     --cursor-stroke-width: 2px;
     --cursor-glow: none;
+    /* The current nav section is a filled block HERE ONLY. The CRT can
+       mark it with brighter type because ink and muted sit 2.86:1 apart
+       there; on paper they are two dark inks 1.77:1 apart and the mark
+       vanished. So paper spends the whole sheet-to-ink range instead,
+       reusing the hover pair rather than inventing a colour — see
+       `.terminal-select[aria-current]` below for the measurements. */
+    --select-current-bg: var(--select-bg);
+    --select-current-fg: var(--select-fg);
     --sheet-image: var(--paper-sheet-image);
     --sheet-size: var(--paper-sheet-size);
     --sheet-position: var(--paper-sheet-position);
@@ -255,6 +263,8 @@
   --cursor-fill: transparent;
   --cursor-stroke-width: 2px;
   --cursor-glow: none;
+  --select-current-bg: var(--select-bg);
+  --select-current-fg: var(--select-fg);
   --sheet-image: var(--paper-sheet-image);
   --sheet-size: var(--paper-sheet-size);
   --sheet-position: var(--paper-sheet-position);
@@ -407,6 +417,14 @@
 :root {
   --select-bg: var(--color-accent);
   --select-fg: var(--color-on-accent);
+  /* What the CURRENT item wears, which is NOT the same answer in both
+     palettes — see `.terminal-select[aria-current]` below. Dark keeps
+     its original brighter-text mark, so the "block" here is no block at
+     all: a transparent background and ink type. The two light palette
+     selectors map these to the --select-* pair instead, exactly the way
+     --cursor-fill is defaulted here and re-answered there. */
+  --select-current-bg: transparent;
+  --select-current-fg: var(--color-ink);
 }
 
 .terminal-select {
@@ -416,29 +434,46 @@
     color var(--duration-instant) var(--ease-standard);
 }
 
-/* The CURRENT item wears the same block, permanently.                  */
+/* The CURRENT item — a permanent block on PAPER, brighter type on the  */
+/* CRT. One rule, two palette answers, carried by the --select-current  */
+/* pair above.                                                          */
 /*                                                                      */
 /* Hooked off [aria-current] rather than a class of its own, so the      */
-/* fill and the attribute cannot drift apart: there is no way to paint   */
-/* the block without also announcing "current" to a screen reader, and   */
-/* no way to mark an item current and forget to show it. The attribute   */
-/* stays the accessible signal; the block is the sighted one.            */
+/* mark and the attribute cannot drift apart: there is no way to paint   */
+/* the current item without also announcing "current" to a screen        */
+/* reader, and no way to mark an item current and forget to show it.     */
+/* The attribute stays the accessible signal in BOTH palettes — losing   */
+/* the fill in dark must never mean losing the attribute, because it is  */
+/* programmatic state, not decoration.                                   */
 /*                                                                      */
-/* Why a fill and not the brighter-text it used to be: active vs         */
-/* inactive was `ink` vs `muted`, which is 2.86:1 apart on the CRT but   */
-/* 1.77:1 apart on the printout — two dark inks on one light sheet, so   */
-/* light mode could not say which section you were in at all. Same       */
-/* reasoning as the hover rule above, same tokens, same measurements:    */
+/* Why the fill is light-only. Active vs inactive is `ink` vs `muted`:   */
+/* on the CRT that is dull sage against bright phosphor, 2.86:1 apart    */
+/* and instantly readable, so a colour-only mark was already correct     */
+/* there and the fill would only be a louder mark than the state         */
+/* deserves. On the printout the same pair is two dark inks on one light */
+/* sheet, 1.77:1 apart, so light mode could not say which section you    */
+/* were in at all. Light therefore borrows the hover treatment's own     */
+/* tokens and measurements; dark stays as it was:                        */
 /*   light  text #f8f2e2 on block #16304f  11.97:1                      */
 /*          block vs canvas #f2ead6 11.16:1, vs bar #d4debc 9.54:1      */
-/*   dark   text #0a0a0f on block #39ff14  14.57:1                      */
-/*          block vs canvas #0a0a0f 14.57:1                             */
+/*   dark   ink #39ff14 vs muted #608c60   2.86:1, no fill              */
+/*          ink on canvas #0a0a0f          14.57:1                      */
+/*                                                                      */
+/* Scoped by TOKEN rather than by a light-scoped copy of this rule, for  */
+/* the same reason --cursor-fill is: the palette blocks are already the  */
+/* one place a "paper answers this differently" decision is recorded,    */
+/* and a token keeps this rule single, so both channels stay declared    */
+/* together. A `:root[data-theme='light'] .terminal-select[aria-current]`*/
+/* copy would also outrank the plain `.terminal-select:hover` below      */
+/* (0,3,0 vs 0,2,0) and quietly take the current item out of hover's     */
+/* reach in explicit-light mode.                                         */
+/*                                                                      */
 /* Not gated on (hover: hover): "which section am I in" is not pointer   */
 /* state, and a touch visitor needs it more than anyone.                 */
 /* ------------------------------------------------------------------ */
 .terminal-select[aria-current] {
-  background-color: var(--select-bg);
-  color: var(--select-fg);
+  background-color: var(--select-current-bg);
+  color: var(--select-current-fg);
 }
 
 /* ------------------------------------------------------------------ */
