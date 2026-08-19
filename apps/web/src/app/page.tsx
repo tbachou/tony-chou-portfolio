@@ -3,7 +3,7 @@ import { ContactSection } from '@/components/ContactSection';
 import { ConversationPanel } from '@/components/ConversationPanel';
 import { ProjectsSection } from '@/components/ProjectsSection';
 import { ResumeModalProvider } from '@/components/ResumeModalProvider';
-import { SiteIntroProvider } from '@/components/SiteIntroProvider';
+import { DeskSceneProvider } from '@/components/DeskSceneProvider';
 import { SiteNav } from '@/components/SiteNav';
 import { TerminalWindow } from '@/components/TerminalWindow';
 import { aboutSummary, contactInfo } from '@/lib/resume-data';
@@ -26,7 +26,7 @@ const personJsonLd = {
 
 export default function HomePage() {
   return (
-    <SiteIntroProvider>
+    <DeskSceneProvider>
       <ResumeModalProvider>
         <script
           type="application/ld+json"
@@ -92,6 +92,6 @@ export default function HomePage() {
           </footer>
         </div>
       </ResumeModalProvider>
-    </SiteIntroProvider>
+    </DeskSceneProvider>
   );
 }
