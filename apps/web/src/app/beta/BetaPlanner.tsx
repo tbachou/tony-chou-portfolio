@@ -46,7 +46,7 @@ const INJURY_OPTIONS: { value: InjuryArea; label: string; hint: string }[] = [
 ];
 
 const SYMPTOM_LABELS: Record<Symptom, string> = {
-  sudden_pop_with_swelling: 'A sudden pop, followed by swelling',
+  sudden_pop_with_swelling: 'A sudden pop, snap, or tearing feeling when it happened',
   numbness_or_tingling: 'Numbness or tingling',
   cannot_bear_weight_or_grip: 'Can’t bear weight, or can’t grip at all',
   night_pain: 'Pain that wakes me at night',
@@ -328,6 +328,7 @@ export function BetaPlanner() {
               {[
                 'It draws on common rehab patterns for three well-studied climbing injuries — nothing here is tailored by an examination.',
                 'Warning-sign symptoms are hard-blocked: if you report one, Beta stops and points you to a professional instead of drafting a plan.',
+                'It assumes a healthy adult. If you are under 18 (finger pain in young climbers can involve the growth plate), pregnant, diabetic, have an inflammatory condition, recently took fluoroquinolone antibiotics, or had surgery on this limb — see a professional instead of using a generic plan.',
                 'If anything is getting worse week over week, skip this tool and see a physical therapist or sports-medicine doctor.',
               ].map((item) => (
                 <li key={item} className="flex gap-2.5">
@@ -617,7 +618,7 @@ export function BetaPlanner() {
                 This tool stops here on purpose.
               </p>
               <p className="mt-1.5 text-[0.9375rem]">
-                The symptom you checked is one of four warning signs Beta always hands off to a
+                What you reported is one of the warning signs Beta always hands off to a
                 professional — not because it is necessarily serious, but because it deserves real
                 eyes before anyone loads it. One good assessment now beats six careful weeks of
                 the wrong plan.
@@ -641,6 +642,12 @@ export function BetaPlanner() {
               {errorKind === 'limit' ? 'You’ve hit the demo’s limit' : 'That didn’t work'}
             </h3>
             <p className="mt-3 max-w-[65ch]">{errorMessage}</p>
+            {planText && (
+              <p className="mt-3 max-w-[65ch] font-medium text-[color:var(--beta-error)]">
+                The plan above was cut off before it finished — its later stages and safety
+                notes are missing. Please don’t follow a partial plan; draft a fresh one instead.
+              </p>
+            )}
             {errorKind === 'failure' && (
               <button type="submit" form="beta-form" className="beta-btn beta-btn-secondary mt-6">
                 Try again
@@ -654,10 +661,30 @@ export function BetaPlanner() {
             <h3 className="text-[length:var(--beta-text-lg)]">A starting point, not a finish line</h3>
             <p className="mt-3 max-w-[65ch]">
               This plan is drawn from common rehab patterns, not an assessment of you. Let pain set
-              the pace: if a stage stirs things up, drop back a stage and give it another week. And
-              if things trend worse instead of better, that is your cue to see a physical therapist
-              or sports-medicine doctor.
+              the pace: if a stage stirs things up, drop back a stage and give it another week.
             </p>
+            <div className="mt-4 max-w-[65ch] rounded-lg bg-[color:var(--beta-surface-2)] p-4">
+              <p className="font-medium text-[color:var(--beta-ink)]">
+                Stop the plan and see a professional if any of these show up:
+              </p>
+              <ul className="mt-2 space-y-1 text-[0.9375rem]">
+                {[
+                  'new numbness or tingling',
+                  'pain that starts waking you at night',
+                  'a new pop or snap',
+                  'swelling that increases',
+                  'pain above 3 out of 10 that isn’t settling by the next morning, two sessions in a row',
+                ].map((item) => (
+                  <li key={item} className="flex gap-2.5">
+                    <span
+                      aria-hidden="true"
+                      className="mt-[0.6em] h-1.5 w-1.5 flex-none rounded-full bg-[color:var(--beta-error)]"
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
             <button type="button" onClick={resetResult} className="beta-btn beta-btn-secondary mt-6">
               Start over
             </button>

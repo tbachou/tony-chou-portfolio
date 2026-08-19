@@ -8,11 +8,16 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import type { Request, Response } from 'express';
-import { hashIp, resolveClientIp } from '../../common/utils/ip-hash.util';
+import {
+  hashIp,
+  rateLimitIdentity,
+  resolveClientIp,
+} from '../../common/utils/ip-hash.util';
 import { writeSseEvent } from '../conversation/sse.util';
+import { BetaThrottlerGuard } from './beta-throttler.guard';
 import { BetaService } from './beta.service';
 import { BetaUsageService, type BetaStatus } from './beta-usage.service';
 import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
@@ -26,7 +31,7 @@ export class BetaController {
   ) {}
 
   @Get('status')
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(BetaThrottlerGuard)
   @Throttle({
     short: { limit: 30, ttl: 60_000 },
     long: { limit: 300, ttl: 3_600_000 },
@@ -36,7 +41,7 @@ export class BetaController {
   }
 
   @Post('plan')
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(BetaThrottlerGuard)
   // 3 requests per hour per IP, in memory (AC-5). The short window keeps its
   // module default; the hourly cap is the real constraint.
   @Throttle({ long: { limit: 3, ttl: 3_600_000 } })
@@ -51,7 +56,8 @@ export class BetaController {
       );
     }
 
-    const hashedIp = hashIp(resolveClientIp(req));
+    // Per-IP identity uses the /64 prefix for IPv6 (audit finding).
+    const hashedIp = hashIp(rateLimitIdentity(resolveClientIp(req)));
 
     // Persisted caps checked before the stream opens, so 429/503 arrive as
     // plain HTTP errors (AC-5). After this point failures are SSE `error`

@@ -59,7 +59,7 @@ export type RedFlagCategory = (typeof RED_FLAG_CATEGORIES)[number];
 // model-written so the safety-critical wording is deterministic.
 export const RED_FLAG_MESSAGES: Record<RedFlagCategory, string> = {
   sudden_pop_with_swelling:
-    'A sudden pop followed by swelling can mean a pulley or tendon has torn, and that deserves a proper look before any rehab plan. Please see a sports medicine doctor or a hand specialist soon. They can image it, grade it, and get you on the right track. This tool is not the right next step for that symptom.',
+    'A sudden pop or snap at the moment of injury — with or without swelling — can mean a pulley or tendon has torn, and that deserves a proper look before any rehab plan. Please see a sports medicine doctor or a hand specialist soon. They can image it, grade it, and get you on the right track. This tool is not the right next step for that symptom.',
   numbness_or_tingling:
     'Numbness or tingling points at a nerve, and nerves need a real assessment, not a generic plan. Please see a doctor or a physical therapist trained in nerve evaluation before loading anything. Once a professional has cleared it, a staged return makes sense. This tool is not the right next step for that symptom.',
   cannot_bear_weight_or_grip:
@@ -67,6 +67,12 @@ export const RED_FLAG_MESSAGES: Record<RedFlagCategory, string> = {
   night_pain:
     'Pain that wakes you at night can point beyond a simple strain, and that is worth ruling out properly. Please see a physician before starting any loading program. Once they have cleared it, a staged return to climbing is a great goal. This tool is not the right next step for that symptom.',
 };
+
+// Constant pain at rest, weeks after onset or alongside swelling/weakness,
+// is one of the classic screening signs for something beyond a simple
+// strain. Escalated in code (clinical audit), not left to the drafter.
+export const CONSTANT_REST_PAIN_MESSAGE =
+  'Pain that stays constant even at rest — this long after the injury, or together with swelling or weakness — can point beyond a simple strain, and that is worth ruling out properly. Please see a physician or physical therapist before starting any loading program. Once they have cleared it, a staged return to climbing is a great goal.';
 
 export const RED_FLAG_FALLBACK_MESSAGE =
   'Something you described sounds like it needs a professional assessment before any rehab plan. Please see a sports medicine doctor or physical therapist first. This tool is not the right next step for that symptom.';
