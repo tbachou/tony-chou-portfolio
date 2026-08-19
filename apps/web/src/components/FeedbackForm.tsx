@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import {
   FEEDBACK_CATEGORIES,
   FEEDBACK_MESSAGE_MAX_LENGTH,
@@ -21,6 +21,10 @@ const RATE_LIMIT_MESSAGE_FALLBACK =
 
 const NETWORK_ERROR_MESSAGE =
   "Couldn't reach the feedback service. Check your connection and try again.";
+
+const EMPTY_MESSAGE_ERROR = 'Please write a message before sending.';
+
+const OVER_LIMIT_ERROR = `Please shorten your message to ${FEEDBACK_MESSAGE_MAX_LENGTH} characters or fewer.`;
 
 type Phase = 'idle' | 'submitting' | 'success' | 'error';
 
@@ -44,27 +48,63 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
   const [message, setMessage] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Client-side validation, kept separate from `errorMessage` (which is the
+  // api's answer) because it describes the field rather than the request.
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
 
   const messageId = useId();
   const categoryId = useId();
   const counterId = useId();
   const noticeId = useId();
+  const validationId = useId();
+  // Only one variant renders at a time, so a single ref serves both.
+  const messageRef = useRef<HTMLTextAreaElement>(null);
 
   const trimmedLength = message.trim().length;
   const overLimit = message.length > FEEDBACK_MESSAGE_MAX_LENGTH;
-  const canSubmit = phase !== 'submitting' && trimmedLength > 0 && !overLimit;
+
+  // The submit button stays enabled even when the message is empty. It used
+  // to be disabled on exactly that condition, and since the form is
+  // noValidate nothing ever said why: a screen-reader visitor heard "Send
+  // feedback, dimmed" with no stated reason and no way to provoke an error.
+  // Blocking now happens in the handler, which produces a real message.
+  const describedBy = [noticeId, counterId, validationError ? validationId : null]
+    .filter(Boolean)
+    .join(' ');
+
+  function handleMessageChange(value: string) {
+    setMessage(value);
+    // Clear as soon as the visitor fixes it, rather than making them submit
+    // again to find out.
+    if (validationError && value.trim().length > 0 && value.length <= FEEDBACK_MESSAGE_MAX_LENGTH) {
+      setValidationError(null);
+    }
+  }
 
   function resetToIdle() {
     setPhase('idle');
     setCategory('');
     setMessage('');
     setErrorMessage(null);
+    setValidationError(null);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (phase === 'submitting') return;
+
+    const blocked = trimmedLength === 0 ? EMPTY_MESSAGE_ERROR : overLimit ? OVER_LIMIT_ERROR : null;
+    if (blocked) {
+      setValidationError(blocked);
+      setErrorMessage(null);
+      setAnnouncement('');
+      // Puts the visitor on the field they have to fix; the message is wired
+      // in via aria-describedby, so it is read on arrival too.
+      messageRef.current?.focus();
+      return;
+    }
+    setValidationError(null);
 
     setPhase('submitting');
     setErrorMessage(null);
@@ -145,13 +185,15 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
               </p>
               <textarea
                 id={messageId}
+                ref={messageRef}
                 required
                 rows={4}
                 maxLength={FEEDBACK_MESSAGE_MAX_LENGTH}
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={(e) => handleMessageChange(e.target.value)}
                 disabled={phase === 'submitting'}
-                aria-describedby={`${noticeId} ${counterId}`}
+                aria-describedby={describedBy}
+                aria-invalid={validationError ? true : undefined}
                 className="w-full rounded-term-sm border border-term-border bg-term-canvas px-3 py-2 text-term-sm text-term-body transition-colors duration-term-instant focus-visible:outline-none disabled:opacity-60"
                 placeholder="What's on your mind?"
               />
@@ -161,6 +203,11 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
               >
                 {message.length}/{FEEDBACK_MESSAGE_MAX_LENGTH}
               </p>
+              {validationError && (
+                <p id={validationId} role="alert" className="text-term-sm text-term-error">
+                  {validationError}
+                </p>
+              )}
             </div>
 
             {phase === 'error' && errorMessage && (
@@ -171,7 +218,7 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
 
             <button
               type="submit"
-              disabled={!canSubmit}
+              disabled={phase === 'submitting'}
               className="mt-4 text-term-sm text-term-ink transition-colors duration-term-instant hover:text-term-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-term-ink"
             >
               {phase === 'submitting' ? '[ sending... ]' : '[ send feedback ]'}
@@ -225,13 +272,15 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
             </p>
             <textarea
               id={messageId}
+              ref={messageRef}
               required
               rows={5}
               maxLength={FEEDBACK_MESSAGE_MAX_LENGTH}
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => handleMessageChange(e.target.value)}
               disabled={phase === 'submitting'}
-              aria-describedby={`${noticeId} ${counterId}`}
+              aria-describedby={describedBy}
+              aria-invalid={validationError ? true : undefined}
               className="beta-textarea mt-3 max-w-[40rem]"
               placeholder="What's on your mind?"
             />
@@ -241,6 +290,15 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
             >
               {message.length}/{FEEDBACK_MESSAGE_MAX_LENGTH}
             </p>
+            {validationError && (
+              <p
+                id={validationId}
+                role="alert"
+                className="mt-1.5 max-w-[65ch] text-[color:var(--beta-error)]"
+              >
+                {validationError}
+              </p>
+            )}
           </div>
 
           {phase === 'error' && errorMessage && (
@@ -249,7 +307,11 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
             </p>
           )}
 
-          <button type="submit" disabled={!canSubmit} className="beta-btn beta-btn-primary mt-6">
+          <button
+            type="submit"
+            disabled={phase === 'submitting'}
+            className="beta-btn beta-btn-primary mt-6"
+          >
             {phase === 'submitting' ? 'Sending…' : 'Send feedback'}
           </button>
         </form>
