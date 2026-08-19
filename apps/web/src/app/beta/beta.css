@@ -81,6 +81,21 @@ body:has(.beta-theme),
   --beta-dur-base: 180ms;
   --beta-dur-slow: 260ms;
   --beta-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* Skip link (SkipLink.tsx, styled once in globals.css). Answering the
+     four --skip-link-* questions in Beta's own tokens is the whole reason
+     that component is token-driven — its terminal-palette defaults would
+     paint a phosphor-on-black chip onto a chalk-white page. Label is ink
+     on surface: 16.37:1. The BORDER is what actually makes it a chip —
+     surface against canvas is only 1.07:1, so white-on-chalk alone would
+     read as a floating word, and the terracotta ring (5.18:1 on the white
+     it sits on, 4.85:1 against the canvas around it) is what draws the
+     edge. Rounded to match every other Beta control; the terminal default
+     is sharp corners. */
+  --skip-link-bg: var(--beta-surface);
+  --skip-link-fg: var(--beta-ink);
+  --skip-link-border: var(--beta-accent);
+  --skip-link-radius: var(--beta-radius-control);
 }
 
 /* ------------------------------------------------------------------ */
@@ -126,8 +141,10 @@ body:has(.beta-theme),
 }
 
 /* Plain links inherit text color; anchors styled as buttons keep the
-   button's own color (this rule outranks .beta-btn-primary otherwise). */
-.beta-theme a:not(.beta-btn) {
+   button's own color (this rule outranks .beta-btn-primary otherwise).
+   .skip-link is excluded for the same reason .beta-btn is: it declares
+   its own color from --skip-link-fg, and this rule would outrank it. */
+.beta-theme a:not(.beta-btn):not(.skip-link) {
   color: inherit;
 }
 

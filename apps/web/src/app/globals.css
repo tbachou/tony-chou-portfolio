@@ -41,3 +41,57 @@ body {
     'Segoe UI',
     sans-serif;
 }
+
+/* ------------------------------------------------------------------ */
+/* Skip link (SkipLink.tsx). Lives here rather than in terminal.css     */
+/* because this app has TWO identities that share no palette — the      */
+/* terminal theme and Beta — and both need the same link. The geometry  */
+/* and the hidden-until-focused mechanics are written once; the four    */
+/* appearance decisions are tokens, so each identity answers them in    */
+/* its own vocabulary instead of the component hardcoding one theme's.  */
+/* Same shape as --select-current-* / --cursor-fill (see design.md):    */
+/* one rule, per-identity values. The defaults are the terminal palette */
+/* because that is the app-wide default (the html/body rule above reads */
+/* --color-canvas for exactly the same reason); beta.css remaps all     */
+/* four under .beta-theme.                                              */
+/* ------------------------------------------------------------------ */
+
+:root {
+  --skip-link-bg: var(--color-canvas);
+  --skip-link-fg: var(--color-accent);
+  --skip-link-border: var(--color-accent);
+  --skip-link-radius: 0;
+}
+
+/* Off-screen rather than display:none or visibility:hidden — both of
+   those remove it from the tab order, which would defeat the point. */
+.skip-link {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.skip-link:focus {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  /* Above the terminal site's sticky nav (z-20) and Beta's header. */
+  z-index: 50;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  overflow: visible;
+  clip: auto;
+  background: var(--skip-link-bg);
+  border: 1px solid var(--skip-link-border);
+  border-radius: var(--skip-link-radius);
+  color: var(--skip-link-fg);
+  text-decoration: none;
+}

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { FeedbackForm } from '@/components/FeedbackForm';
+import { SkipLink } from '@/components/SkipLink';
 import { BetaPlanner } from './BetaPlanner';
 import { TopoBackground } from './TopoBackground';
 
@@ -62,6 +63,8 @@ const FAQ_ITEMS = [
 export default function BetaPage() {
   return (
     <div className="flex min-h-dvh flex-col">
+      <SkipLink />
+
       <header className="border-b border-[color:var(--beta-border)]">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-5 sm:px-8">
           <p className="text-[length:var(--beta-text-lg)] font-bold tracking-tight text-[color:var(--beta-ink)]">
@@ -76,7 +79,11 @@ export default function BetaPage() {
         </div>
       </header>
 
-      <main id="main-content" className="flex-1">
+      {/* tabIndex={-1} is what makes the skip link actually work: without
+          it the browser scrolls the landmark into view but leaves focus on
+          the link, so the next Tab lands back in the header. Matches the
+          three project pages. */}
+      <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
         {/* Hero */}
         <section className="relative overflow-hidden">
           <TopoBackground className="-right-56 -top-40 sm:-right-24" />
