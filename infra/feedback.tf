@@ -167,6 +167,10 @@ resource "aws_lambda_function" "feedback_classifier" {
   timeout     = 30
   memory_size = 256
 
+  # Caps in-flight Bedrock calls from this flow. The api's per-IP limits bound
+  # a single abuser; this bounds a distributed one, which is the gap they leave.
+  reserved_concurrent_executions = var.classifier_reserved_concurrency
+
   environment {
     variables = {
       BEDROCK_MODEL_ID = var.bedrock_model_id
@@ -223,4 +227,45 @@ resource "aws_cloudwatch_metric_alarm" "feedback_classifier_errors" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.ops.arn]
   ok_actions          = [aws_sns_topic.ops.arn]
+}
+
+# --- Cost guardrail ------------------------------------------------------
+#
+# Bedrock is the only service in this program with no free tier and no
+# natural ceiling: the api's 5/hour + 10/day limits are per hashed IP, so a
+# distributed flood against a public anonymous endpoint is not bounded by
+# them. This budget notifies; reserved_concurrent_executions above is what
+# actually limits the rate.
+#
+# NOTE: the Service cost filter must match Cost Explorer's own service name
+# exactly or the budget silently tracks $0 forever. Verify once real Bedrock
+# spend appears (Billing -> Budgets -> this budget shows non-zero actual).
+
+resource "aws_budgets_budget" "bedrock_monthly" {
+  name         = "portfolio-bedrock-monthly"
+  budget_type  = "COST"
+  limit_amount = var.bedrock_monthly_budget_usd
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  cost_filter {
+    name   = "Service"
+    values = ["Amazon Bedrock"]
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 50
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.owner_email]
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "FORECASTED"
+    subscriber_email_addresses = [var.owner_email]
+  }
 }
