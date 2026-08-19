@@ -2,10 +2,10 @@
 
 import { contactInfo } from '@/lib/resume-data';
 import { TerminalWindow } from './TerminalWindow';
-import { useSiteIntro } from './SiteIntroProvider';
+import { useDeskScene } from './DeskSceneProvider';
 
 export function ContactSection() {
-  const { reenter } = useSiteIntro();
+  const { reenter } = useDeskScene();
   return (
     <section
       id="contact"

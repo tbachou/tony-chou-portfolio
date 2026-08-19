@@ -14,7 +14,13 @@ import {
   useThree,
   type ThreeEvent,
 } from '@react-three/fiber';
-import { ContactShadows, OrbitControls, useGLTF } from '@react-three/drei';
+import {
+  ContactShadows,
+  Environment,
+  Lightformer,
+  OrbitControls,
+  useGLTF,
+} from '@react-three/drei';
 import { EffectComposer, SelectiveBloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 
@@ -27,15 +33,15 @@ const ESTABLISHING_TARGET = new THREE.Vector3(0, 1.7, 0);
 const ZOOMED_POSITION = new THREE.Vector3(0, 1.55, 0.95);
 const ZOOMED_TARGET = new THREE.Vector3(0, 1.5, -0.4);
 
-interface SiteIntroSceneProps {
+interface DeskSceneProps {
   initialPhase: 'idle' | 'exiting';
   onZoomInComplete: () => void;
 }
 
-export default function SiteIntroScene({
+export default function DeskScene({
   initialPhase,
   onZoomInComplete,
-}: SiteIntroSceneProps) {
+}: DeskSceneProps) {
   const [phase, setPhase] = useState<ScenePhase>(initialPhase);
   const [screenHovered, setScreenHovered] = useState(false);
   const [bloomTargets, setBloomTargets] = useState<THREE.Object3D[]>([]);
@@ -91,33 +97,77 @@ export default function SiteIntroScene({
       ) : null}
 
       <Canvas
-        shadows
+        shadows='soft'
         camera={{ position: ESTABLISHING_POSITION.toArray(), fov: 42 }}
       >
         <Suspense fallback={null}>
           <fog attach='fog' args={['#0c0c12', 7, 18]} />
-          <ambientLight intensity={2.4} />
-          <directionalLight position={[3, 6, 4]} intensity={2.6} castShadow />
-          <directionalLight position={[-4, 3, -1]} intensity={1.4} />
-          <pointLight position={[0, 2.4, 3]} intensity={1.2} />
-          {/* Cyberpunk rim accents - tint the desk/leg edges with real color
-              so the reflective floor below has actual lit geometry to pick
-              up (a mirror reflection can't show a bare light source, only
-              what it illuminates). */}
-          <pointLight
-            position={[-1.4, 0.9, 0.4]}
-            intensity={4}
-            color='#ff2ec4'
-            distance={9}
-            decay={1.1}
+          {/* Low ambient - the Environment below carries the base fill now.
+              The old 2.4 ambient was compensating for having no IBL at all,
+              and washed every surface to the same flat tone. */}
+          <ambientLight intensity={0.5} />
+          {/* Key light and only shadow-caster. Frustum is pulled in tight
+              around the desk so the 2048 map's texels aren't spent on empty
+              floor; bias pair kills acne on the model's large flat faces. */}
+          <directionalLight
+            position={[3, 6, 4]}
+            intensity={1.6}
+            castShadow
+            shadow-mapSize={[2048, 2048]}
+            shadow-bias={-0.0001}
+            shadow-normalBias={0.02}
+            shadow-camera-left={-5}
+            shadow-camera-right={5}
+            shadow-camera-top={5}
+            shadow-camera-bottom={-5}
+            shadow-camera-near={2}
+            shadow-camera-far={16}
           />
-          <pointLight
-            position={[1.4, 0.9, 0.4]}
-            intensity={4}
-            color='#22d3ee'
-            distance={9}
-            decay={1.1}
-          />
+          <directionalLight position={[-4, 3, -1]} intensity={0.5} />
+          <pointLight position={[0, 2.4, 3]} intensity={0.5} />
+          {/* The colored accent light comes from the LED strip under the
+              desk edge (see ImportedDesk) - an earlier pair of bare
+              magenta/cyan point lights floating in mid-air painted big
+              sourceless blobs on the floor, which is exactly what made the
+              neon read as tacky. */}
+
+          {/* Local IBL: emissive panels baked once into a small cubemap
+              (frames={1}), so every PBR surface has something real to
+              reflect - the glossy floor and metal legs read flat black
+              without an environment. Side panels repeat the monitor
+              backlight's cyan so every reflection stays single-hue. Built
+              from Lightformers rather than an HDR file because drei's
+              presets fetch from a CDN at runtime. */}
+          <Environment resolution={256} frames={1}>
+            <Lightformer
+              intensity={1.2}
+              color='#cfe8ff'
+              position={[0, 5, 0]}
+              rotation={[Math.PI / 2, 0, 0]}
+              scale={[10, 4, 1]}
+            />
+            <Lightformer
+              intensity={0.8}
+              color='#22d3ee'
+              position={[-5, 2, 0]}
+              rotation={[0, Math.PI / 2, 0]}
+              scale={[6, 3, 1]}
+            />
+            <Lightformer
+              intensity={0.8}
+              color='#22d3ee'
+              position={[5, 2, 0]}
+              rotation={[0, -Math.PI / 2, 0]}
+              scale={[6, 3, 1]}
+            />
+            <Lightformer
+              intensity={0.5}
+              color='#8ea2c0'
+              position={[0, 2.5, 6]}
+              rotation={[0, Math.PI, 0]}
+              scale={[8, 3, 1]}
+            />
+          </Environment>
 
           <Room />
           <ImportedDesk
@@ -340,14 +390,16 @@ function Room() {
         <planeGeometry args={[ROOM_WIDTH, ROOM_WIDTH]} />
         <meshStandardMaterial
           color='#0a0a0d'
-          roughness={0.7}
-          metalness={0.35}
+          roughness={0.4}
+          metalness={0.5}
         />
       </mesh>
-      {/* Back wall, fades to black - reads as void, not a distinct surface. */}
+      {/* Back wall, fades to black - reads as void, not a distinct surface.
+          envMapIntensity 0 keeps the Environment's panels from lifting it
+          back out of black. */}
       <mesh position={[0, 3, WALL_Z]}>
         <planeGeometry args={[ROOM_WIDTH, 8]} />
-        <meshStandardMaterial map={wallTexture} roughness={1} />
+        <meshStandardMaterial map={wallTexture} roughness={1} envMapIntensity={0} />
       </mesh>
     </group>
   );
@@ -473,7 +525,10 @@ const MATERIAL_COLORS: Record<string, string> = {
   Desktop: '#23232b',
   Legs: '#4a4a52',
   'Leg stand': '#4a4a52',
-  'Monitor Stand': '#16232b',
+  // Brushed aluminum rather than near-black: this riser is the biggest
+  // surface in the center of the frame, and at '#16232b' it merged with the
+  // monitor/desk into one dark mass.
+  'Monitor Stand': '#8f98a3',
   Monitor: '#182a33',
   'Keyboard base': '#4a4a52',
   'Key section 1': '#eeeeee',
@@ -503,19 +558,83 @@ const MATERIAL_COLORS: Record<string, string> = {
   'Clock arm.001': '#d9639f',
 };
 
-function applyMaterialColors(root: THREE.Object3D) {
+// Named material -> surface response. The export ships every material with
+// the same default roughness/metalness, so metal legs, matte plastic keys,
+// and the glazed mug all reflected light identically; these values are what
+// make them read as different substances under the same lights.
+interface SurfaceProps {
+  roughness: number;
+  metalness: number;
+}
+
+const BARE_METAL: SurfaceProps = { roughness: 0.35, metalness: 0.75 };
+const DARK_METAL: SurfaceProps = { roughness: 0.4, metalness: 0.5 };
+const MATTE_PLASTIC: SurfaceProps = { roughness: 0.5, metalness: 0 };
+const PAINTED_WOOD: SurfaceProps = { roughness: 0.55, metalness: 0 };
+const LAMINATE: SurfaceProps = { roughness: 0.45, metalness: 0.05 };
+const CERAMIC: SurfaceProps = { roughness: 0.12, metalness: 0 };
+const PAPER: SurfaceProps = { roughness: 0.75, metalness: 0 };
+
+const MATERIAL_SURFACES: Record<string, SurfaceProps> = {
+  Desktop: LAMINATE,
+  Legs: BARE_METAL,
+  'Leg stand': BARE_METAL,
+  // Satin, not BARE_METAL: at high metalness the albedo only shows through
+  // reflections, and the environment in front of the stand is dim, so the
+  // lighter color was invisible from the camera side.
+  'Monitor Stand': { roughness: 0.4, metalness: 0.3 },
+  Monitor: DARK_METAL,
+  'Keyboard base': DARK_METAL,
+  'Key section 1': MATTE_PLASTIC,
+  'Key section 2': MATTE_PLASTIC,
+  'Key section 2.001': MATTE_PLASTIC,
+  'Key section 3': MATTE_PLASTIC,
+  'Key section 3.001': MATTE_PLASTIC,
+  'Key section 3.003': MATTE_PLASTIC,
+  'Key section 4': MATTE_PLASTIC,
+  'accent key': MATTE_PLASTIC,
+  'accent key.001': MATTE_PLASTIC,
+  'accent key.002': MATTE_PLASTIC,
+  'accent key.003': MATTE_PLASTIC,
+  'accent key.004': MATTE_PLASTIC,
+  'accent key.005': MATTE_PLASTIC,
+  'Pencil holder': { roughness: 0.4, metalness: 0.3 },
+  Pencil: PAINTED_WOOD,
+  'Pencil.001': PAINTED_WOOD,
+  'Pencil.002': PAINTED_WOOD,
+  Mug: CERAMIC,
+  Chest: LAMINATE,
+  Drawer: { roughness: 0.5, metalness: 0.1 },
+  Book: PAPER,
+  'Book.001': PAPER,
+  Clock: { roughness: 0.3, metalness: 0.1 },
+  'Clock arm': { roughness: 0.3, metalness: 0.4 },
+  'Clock arm.001': { roughness: 0.3, metalness: 0.4 },
+};
+
+function applyMaterialProps(root: THREE.Object3D) {
   root.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
+    // The Canvas-level shadow setup was a no-op before this: the key light
+    // cast shadows, but no imported mesh was flagged to cast or catch them.
+    obj.castShadow = true;
+    obj.receiveShadow = true;
     const materials = Array.isArray(obj.material)
       ? obj.material
       : [obj.material];
     materials.forEach((mat) => {
-      if (
-        mat instanceof THREE.MeshStandardMaterial &&
-        mat.name in MATERIAL_COLORS
-      ) {
+      if (!(mat instanceof THREE.MeshStandardMaterial)) return;
+      if (mat.name in MATERIAL_COLORS) {
         mat.color.set(MATERIAL_COLORS[mat.name]);
       }
+      const surface = MATERIAL_SURFACES[mat.name];
+      if (surface) {
+        mat.roughness = surface.roughness;
+        mat.metalness = surface.metalness;
+      }
+      // Slightly under full strength so the IBL reads as sheen on the desk
+      // objects rather than competing with the deliberate rim lights.
+      mat.envMapIntensity = 0.8;
     });
   });
 }
@@ -536,6 +655,10 @@ function ImportedDesk({
     backlightQuaternion: [number, number, number, number];
     backlightWidth: number;
     backlightHeight: number;
+    ledStripPosition: [number, number, number];
+    ledStripYaw: number;
+    ledStripLength: number;
+    ledStripThickness: number;
   } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textureRef = useRef<THREE.CanvasTexture | null>(null);
@@ -564,7 +687,7 @@ function ImportedDesk({
     const screen = scene.getObjectByName('Screen');
     if (!desktop) return;
 
-    applyMaterialColors(scene);
+    applyMaterialProps(scene);
 
     const overallBox = new THREE.Box3().setFromObject(scene);
     const desktopBox = new THREE.Box3().setFromObject(desktop);
@@ -661,6 +784,42 @@ function ImportedDesk({
       backlightHeight = (maxV - minV) * MARGIN;
     }
 
+    // Under-desk LED strip: spans the desktop slab's width, tucked just
+    // under its front edge. Derived from the slab's own bounding box in the
+    // same (right, front) basis as the screen work above, with world-unit
+    // offsets converted back to raw model units - same convention as the
+    // backlight placement.
+    const nHoriz = new THREE.Vector3(normal.x, 0, normal.z);
+    if (nHoriz.lengthSq() < 1e-6) nHoriz.set(0, 0, 1);
+    nHoriz.normalize();
+    const stripRight = new THREE.Vector3()
+      .crossVectors(new THREE.Vector3(0, 1, 0), nHoriz)
+      .normalize();
+    let minR = Infinity;
+    let maxR = -Infinity;
+    let maxN = -Infinity;
+    const deskCorners = [
+      new THREE.Vector3(desktopBox.min.x, desktopBox.min.y, desktopBox.min.z),
+      new THREE.Vector3(desktopBox.max.x, desktopBox.min.y, desktopBox.min.z),
+      new THREE.Vector3(desktopBox.min.x, desktopBox.min.y, desktopBox.max.z),
+      new THREE.Vector3(desktopBox.max.x, desktopBox.min.y, desktopBox.max.z),
+    ];
+    deskCorners.forEach((c) => {
+      minR = Math.min(minR, c.dot(stripRight));
+      maxR = Math.max(maxR, c.dot(stripRight));
+      maxN = Math.max(maxN, c.dot(nHoriz));
+    });
+    const ledStripLength = (maxR - minR) * 0.94;
+    const ledStripThickness = 0.035 / scale;
+    // Slightly proud of the slab's front face, not tucked behind it - from
+    // any camera above desk height the slab occludes a recessed bar
+    // completely, and the visible thin line IS the point of a desk strip.
+    const stripCenter = new THREE.Vector3()
+      .addScaledVector(stripRight, (minR + maxR) / 2)
+      .addScaledVector(nHoriz, maxN + 0.01 / scale);
+    stripCenter.y = desktopBox.min.y - ledStripThickness / 2;
+    const ledStripYaw = Math.atan2(-stripRight.z, stripRight.x);
+
     setTransform({
       scale,
       rotationY,
@@ -669,6 +828,10 @@ function ImportedDesk({
       backlightQuaternion,
       backlightWidth,
       backlightHeight,
+      ledStripPosition: [stripCenter.x, stripCenter.y, stripCenter.z],
+      ledStripYaw,
+      ledStripLength,
+      ledStripThickness,
     });
 
     if (screen instanceof THREE.Mesh) {
@@ -755,6 +918,45 @@ function ImportedDesk({
           toneMapped={false}
         />
       </mesh>
+      {/* Under-desk LED strip - the visible source of the cyan underglow.
+          The emissive bar is what the eye reads as "the light"; the two
+          short-range point lights hanging just below it are what actually
+          cast the wash onto the floor and legs, so the glow hugs the desk
+          instead of pooling in mid-air the way the old free-floating rim
+          lights did. */}
+      <group
+        position={transform.ledStripPosition}
+        rotation={[0, transform.ledStripYaw, 0]}
+      >
+        <mesh>
+          <boxGeometry
+            args={[
+              transform.ledStripLength,
+              transform.ledStripThickness,
+              transform.ledStripThickness,
+            ]}
+          />
+          <meshBasicMaterial color='#22d3ee' toneMapped={false} />
+        </mesh>
+        <pointLight
+          position={[
+            -transform.ledStripLength / 4,
+            -0.03 / transform.scale,
+            0,
+          ]}
+          color='#22d3ee'
+          intensity={9}
+          distance={5}
+          decay={2}
+        />
+        <pointLight
+          position={[transform.ledStripLength / 4, -0.03 / transform.scale, 0]}
+          color='#22d3ee'
+          intensity={9}
+          distance={5}
+          decay={2}
+        />
+      </group>
     </group>
   );
 }

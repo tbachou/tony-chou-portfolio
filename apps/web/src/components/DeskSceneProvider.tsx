@@ -3,16 +3,16 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 
-const SiteIntroScene = dynamic(() => import('./SiteIntroScene'), { ssr: false });
+const DeskScene = dynamic(() => import('./DeskScene'), { ssr: false });
 
-type Phase = 'intro' | 'site';
+type Phase = 'desk' | 'site';
 
-const SiteIntroContext = createContext<{ reenter: () => void } | null>(null);
+const DeskSceneContext = createContext<{ reenter: () => void } | null>(null);
 
-export function useSiteIntro() {
-  const ctx = useContext(SiteIntroContext);
+export function useDeskScene() {
+  const ctx = useContext(DeskSceneContext);
   if (!ctx) {
-    throw new Error('useSiteIntro must be used within SiteIntroProvider');
+    throw new Error('useDeskScene must be used within DeskSceneProvider');
   }
   return ctx;
 }
@@ -22,9 +22,9 @@ export function useSiteIntro() {
 // portfolio whose job is to get a busy visitor to actual content fast.
 // It's demoted to opt-in now: the site loads straight to `children`, and the
 // scene is only ever reached by explicitly asking for it via `reenter()`.
-export function SiteIntroProvider({ children }: { children: React.ReactNode }) {
+export function DeskSceneProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>('site');
-  const [introInitialPhase, setIntroInitialPhase] = useState<'idle' | 'exiting'>('idle');
+  const [deskInitialPhase, setDeskInitialPhase] = useState<'idle' | 'exiting'>('idle');
 
   // Direct navigation to a hash link (e.g. /#projects) needs its target to
   // already be in the DOM before the browser's own hash-scroll-on-navigation
@@ -42,17 +42,17 @@ export function SiteIntroProvider({ children }: { children: React.ReactNode }) {
   }
 
   function reenter() {
-    setIntroInitialPhase('exiting');
-    setPhase('intro');
+    setDeskInitialPhase('exiting');
+    setPhase('desk');
   }
 
   return (
-    <SiteIntroContext.Provider value={{ reenter }}>
-      {phase === 'intro' ? (
-        <SiteIntroScene initialPhase={introInitialPhase} onZoomInComplete={handleZoomInComplete} />
+    <DeskSceneContext.Provider value={{ reenter }}>
+      {phase === 'desk' ? (
+        <DeskScene initialPhase={deskInitialPhase} onZoomInComplete={handleZoomInComplete} />
       ) : (
         children
       )}
-    </SiteIntroContext.Provider>
+    </DeskSceneContext.Provider>
   );
 }
