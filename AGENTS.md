@@ -40,7 +40,7 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 - Validate at HTTP boundaries with class-validator DTOs; the global ValidationPipe runs whitelist + forbidNonWhitelisted.
 - AI agent prompts live as markdown skill files on disk beside their module (`apps/api/src/modules/*/skills/`), never inline in code.
 - Design tokens live in CSS custom properties; art direction lives in `apps/web/design.md`. Never hardcode a color.
-- Never persist or log visitor-typed content. The api writes anonymous counters only (Beta hard rule, spec 0004 AC-6).
+- Never persist planner-typed content: for Beta the api writes anonymous counters only (hard rule, spec 0004 AC-6). Feedback messages are the deliberate exception — spec 0005 persists them and forwards them to AWS — but no visitor-typed content is ever LOGGED, anywhere (spec 0005 AC-I7).
 - Tests are colocated `.spec.ts`, fully mocked; lint + typecheck + tests gate every commit.
 
 ## Agent skills

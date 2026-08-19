@@ -5,7 +5,7 @@
 
 ## Summary
 
-Beta is a public web tool that drafts a staged return to climbing plan for the three most common climbing injuries. A visitor describes their injury in a structured form, three AI agents run in sequence (a safety screener, a progression drafter, a plain language coach), and the plan streams in as graded stages. It lives inside the existing portfolio monorepo, reusing the NestJS API, the Anthropic client, the rate limiting patterns, and the Vercel hosted Next.js frontend, with no new external dependencies. Nothing a visitor types is ever stored; only anonymous usage counters are written, and a daily global cap bounds the AI spend.
+Beta is a public web tool that drafts a staged return to climbing plan for the three most common climbing injuries. A visitor describes their injury in a structured form, three AI agents run in sequence (a safety screener, a progression drafter, a plain language coach), and the plan streams in as graded stages. It lives inside the existing portfolio monorepo, reusing the NestJS API, the Anthropic client, the rate limiting patterns, and the Vercel hosted Next.js frontend, with no new external dependencies. Nothing a visitor types into the planner is stored; only anonymous usage counters are written, and a daily global cap bounds the AI spend. (Refined by spec 0005: the anonymous feedback form added later does persist and forward the message it collects — the no-storage rule here covers the planner only.)
 
 ## Requirements
 
