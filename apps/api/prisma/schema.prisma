@@ -31,6 +31,17 @@ enum ConversationRole {
   TONY
 }
 
+enum FeedbackSource {
+  beta
+  portfolio
+}
+
+enum FeedbackCategory {
+  bug
+  feature
+  other
+}
+
 model Story {
   id              String         @id @default(cuid())
   title           String
@@ -119,6 +130,22 @@ model AccessRequest {
   @@unique([email, appSlug])
   @@index([appSlug])
   @@index([status])
+}
+
+// Anonymous visitor feedback (spec 0005 child: feedback intake). Append
+// only, no update or delete API. No PII fields exist or may be added here
+// without a new spec (AC-I2); hashedIp serves rate limiting only. Message
+// text lands here and, fire-and-forget, in one SNS publish — nowhere else
+// (inline rationale, spec 0005-feedback-intake).
+model Feedback {
+  id        String             @id @default(cuid())
+  createdAt DateTime           @default(now())
+  source    FeedbackSource
+  category  FeedbackCategory?
+  message   String             @db.VarChar(2000)
+  hashedIp  String
+
+  @@index([hashedIp])
 }
 
 model User {
