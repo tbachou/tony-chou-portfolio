@@ -348,6 +348,81 @@
   outline-offset: 2px;
 }
 
+/* ------------------------------------------------------------------ */
+/* Interactive text — the selected-row highlight.                       */
+/*                                                                      */
+/* The nav renders its items as bracketed monospace text (`[ about ]`)  */
+/* and used to signal "interactive" by swapping the text COLOUR on      */
+/* hover, muted -> ink. On the CRT that is a real signal: the two are   */
+/* 2.86:1 apart from each other and the jump is dull sage to bright     */
+/* phosphor (5.10:1 -> 14.57:1 on canvas). On the printout the same     */
+/* rule is nearly a no-op, because both paper values are dark inks on a */
+/* light sheet — muted #4e555e sits at luminance 0.089 and ink #16304f  */
+/* at 0.029, only 1.77:1 apart, against a 0.826 ground. The item merely */
+/* gets a shade darker and nothing reads as a call to action.           */
+/*                                                                      */
+/* And anything already AT ink hovering to accent moved by exactly      */
+/* 1.00:1 in BOTH palettes, because --color-accent is aliased to        */
+/* --color-ink in every palette — that hover was painting the colour it */
+/* already had.                                                         */
+/*                                                                      */
+/* So the affordance stops being a colour delta at all and becomes a    */
+/* figure/ground swap: the item's own character cells invert to a solid */
+/* block, the way a curses menu or a shell completion list marks the    */
+/* selected row. Period-correct, and legible no matter how close the    */
+/* palette's two inks are, because it spends the whole range between    */
+/* sheet and ink instead of the sliver between two darks.               */
+/*                                                                      */
+/* Measured (design.md already records both pairs):                     */
+/*   light  text #f8f2e2 on block #16304f  11.97:1                      */
+/*          block vs canvas #f2ead6 11.16:1, vs bar #d4debc 9.54:1      */
+/*   dark   text #0a0a0f on block #39ff14  14.57:1                      */
+/*          block vs canvas #0a0a0f 14.57:1                             */
+/*                                                                      */
+/* Derived from the palette rather than restated, exactly like          */
+/* --chrome-bg above, so the pair re-inks per theme with no per-theme   */
+/* override: light and dark each already define a matched, measured     */
+/* accent/on-accent pair, and this is the first thing to use it outside */
+/* the Beta CTA that established the pattern.                           */
+/*                                                                      */
+/* No padding, so the block covers the item's own cells: design.md's    */
+/* "do not paint large surfaces with the accent" still applies, a       */
+/* character-cell highlight is what a terminal actually draws, and      */
+/* hugging the text means hover causes no layout shift. inline-block so */
+/* a link and a button get the identical block — Tailwind's preflight   */
+/* zeroes button padding, but an inline <a> paints only its font box    */
+/* while an inline-block <button> paints the full line box, and the nav */
+/* row mixes both.                                                      */
+/*                                                                      */
+/* Gated on (hover: hover) so a tap on a touch device does not leave    */
+/* the item stuck inverted after navigating.                            */
+/*                                                                      */
+/* Focus deliberately does NOT get this treatment: it stays the accent  */
+/* outline from :focus-visible above, so keyboard focus (ring, resting  */
+/* colours) never collapses into hover (filled block, no ring), and an  */
+/* item that is both shows both. The transition needs no reduced-motion */
+/* guard of its own — the global block below clamps every              */
+/* transition-duration inside .terminal-theme.                          */
+/* ------------------------------------------------------------------ */
+:root {
+  --select-bg: var(--color-accent);
+  --select-fg: var(--color-on-accent);
+}
+
+.terminal-select {
+  display: inline-block;
+  transition:
+    background-color var(--duration-instant) var(--ease-standard),
+    color var(--duration-instant) var(--ease-standard);
+}
+
+@media (hover: hover) {
+  .terminal-select:hover {
+    background-color: var(--select-bg);
+    color: var(--select-fg);
+  }
+}
+
 /* Faint phosphor glow pooling from the top of the viewport, like the CRT's
    own light spilling into the dark room behind it - a depth cue for the
    otherwise flat canvas, not a second color (still the one accent green,
