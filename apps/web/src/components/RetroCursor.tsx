@@ -16,7 +16,27 @@ export function RetroCursor() {
   useEffect(() => {
     const supportsFinePointer = window.matchMedia('(pointer: fine) and (hover: hover)').matches;
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!supportsFinePointer || prefersReducedMotion) return;
+    // Turning this on means `cursor: none` plus a fixed-size block, which
+    // silently throws away an enlarged or high-contrast OS pointer. That
+    // setting is NOT detectable — no media query or JS API exposes pointer
+    // size or colour (cursor size is a fingerprinting vector; the proposed
+    // `1cur` unit, w3c/csswg-drafts#12048, has not shipped), so there is no
+    // way to scale the replacement to match it.
+    //
+    // What IS detectable is the preference next to it. Both of these mean
+    // the OS has been told the default presentation is not legible enough:
+    // `forced-colors: active` is Windows High Contrast, and
+    // `prefers-contrast: more` is macOS "Increase contrast", which lives in
+    // the very same System Settings pane as Pointer size and Pointer
+    // outline colour. Neither one tells us anything about the pointer, and
+    // this is not pretending otherwise — it is the opposite move. When a
+    // visitor has tuned their display for legibility, the right answer is
+    // to stop replacing their pointer at all and hand back the native one,
+    // whatever size and colour they set it to. Same shape as the two gates
+    // above: the native cursor is always the safe default.
+    const prefersMoreContrast = window.matchMedia('(prefers-contrast: more)').matches;
+    const forcedColors = window.matchMedia('(forced-colors: active)').matches;
+    if (!supportsFinePointer || prefersReducedMotion || prefersMoreContrast || forcedColors) return;
 
     setPortalTarget(document.body);
 
