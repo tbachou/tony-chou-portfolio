@@ -13,7 +13,11 @@ import tseslint from 'typescript-eslint';
 const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 
 const webFiles = ['apps/web/**/*.{js,jsx,ts,tsx}'];
-const nodeTsFiles = ['apps/api/**/*.ts', 'packages/**/*.ts'];
+const nodeTsFiles = [
+  'apps/api/**/*.ts',
+  'packages/**/*.ts',
+  'infra/lambda/**/*.ts',
+];
 
 // Scope every config produced from next/core-web-vitals to apps/web only,
 // preserving eslint-config-next's own overrides (e.g. TS parser for *.ts?(x)).
