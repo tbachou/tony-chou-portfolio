@@ -107,6 +107,15 @@ body:has(.beta-theme),
   outline-offset: 2px;
 }
 
+/* Containers that script moves focus into (the form after the disclaimer
+   gate, the results region on submit, the red-flag and failure cards).
+   Programmatic focus does not trigger :focus-visible, so these need their
+   own ring — focus must stay visible wherever it is put. */
+.beta-theme .beta-focus-target:focus {
+  outline: 2px solid var(--beta-accent);
+  outline-offset: 3px;
+}
+
 .beta-theme h1,
 .beta-theme h2,
 .beta-theme h3 {
@@ -493,6 +502,68 @@ body:has(.beta-theme),
 
 .beta-faq[open] summary::after {
   transform: rotate(45deg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Form validation: summary, per-field errors, invalid controls        */
+/* ------------------------------------------------------------------ */
+
+.beta-error-summary {
+  background: var(--beta-surface-2);
+  border: 1px solid var(--beta-border);
+  border-left: 4px solid var(--beta-error);
+  border-radius: var(--beta-radius-card);
+  padding: 1.25rem 1.5rem;
+}
+
+/* Outranks `.beta-theme a:not(.beta-btn) { color: inherit }` on equal
+   specificity by coming later in the file. */
+.beta-theme a.beta-error-summary-link {
+  color: var(--beta-error);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.beta-theme a.beta-error-summary-link:hover {
+  color: var(--beta-accent-pressed);
+}
+
+/* Errors carry an icon and bold weight as well as colour, so nothing here
+   depends on colour alone (WCAG 1.4.1). */
+.beta-field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 0.625rem;
+  color: var(--beta-error);
+  font-weight: 500;
+}
+
+.beta-field-error-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.15rem;
+  border-radius: var(--beta-radius-pill);
+  background: var(--beta-error);
+  color: var(--beta-on-accent);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.beta-input[aria-invalid='true'],
+.beta-textarea[aria-invalid='true'] {
+  border-color: var(--beta-error);
+  box-shadow: inset 0 0 0 1px var(--beta-error);
+}
+
+.beta-choice:has(input[aria-invalid='true']) {
+  border-color: var(--beta-error);
 }
 
 /* ------------------------------------------------------------------ */
