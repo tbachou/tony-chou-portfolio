@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { IBM_Plex_Mono } from 'next/font/google';
 import { RetroCursor } from '@/components/RetroCursor';
 import { siteDescription, siteName, siteUrl } from '@/lib/site';
+import { THEME_INIT_SCRIPT } from '@/lib/theme';
 import './globals.css';
 import './terminal.css';
 
@@ -47,7 +48,18 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: the pre-paint script below stamps
+    // data-theme on <html>, so the client markup legitimately differs
+    // from what the server rendered. It applies to this element's
+    // attributes only, not to the tree beneath it.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Must stay a blocking inline script in <head>: it has to run
+            before first paint to avoid a flash of the wrong theme.
+            next/script, a client provider, or a useEffect all run after
+            the browser has already painted. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className={`terminal-theme ${ibmPlexMono.variable}`}>
         <div className="terminal-phosphor-glow" aria-hidden="true" />
         <div className="terminal-scanlines" aria-hidden="true" />

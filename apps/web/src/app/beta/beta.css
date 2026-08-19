@@ -25,7 +25,11 @@ body.retro-cursor-active:has(.beta-theme) summary { cursor: pointer; }
 body:has(.beta-theme) { background: var(--beta-canvas); }
 
 /* Overscroll behind the page should be chalk, not CRT black. */
-html:has(.beta-theme) { background: #faf7f2; }
+/* color-scheme is pinned too: the portfolio's theme toggle stamps
+   data-theme on <html>, and an explicit dark choice would otherwise hand
+   Beta dark scrollbars and dark UA form controls on its light page.
+   Beta does not participate in the toggle — it has one fixed mode. */
+html:has(.beta-theme) { background: #faf7f2; color-scheme: light; }
 
 /* ------------------------------------------------------------------ */
 /* Tokens. Defined on body:has(.beta-theme) as well so the escape rule */
