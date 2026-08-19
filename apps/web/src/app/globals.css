@@ -17,8 +17,12 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: #0a0a0f;
-  color: #f5f5f7;
+  /* Token-driven, not a literal: these paint the overscroll area and the
+     pre-hydration document, so a hardcoded dark value here is exactly
+     what causes a flash of the wrong theme. Tokens resolve on :root in
+     terminal.css. Beta overrides both with its own fixed palette. */
+  background: var(--color-canvas);
+  color: var(--color-body);
   font-family:
     system-ui,
     -apple-system,
