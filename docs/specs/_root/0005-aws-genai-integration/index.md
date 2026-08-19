@@ -15,8 +15,9 @@ Child specs, in build order:
 2. [0005-feedback-intake.md](0005-feedback-intake.md): the anonymous feedback form (Beta and portfolio surfaces), api endpoint, Postgres table, and the SNS publish hook.
 3. [0005-classifier-flow.md](0005-classifier-flow.md): SNS to Lambda to Bedrock to SES. Classifies each feedback message and emails the owner.
 4. [0005-provider-swap.md](0005-provider-swap.md): the AI_PROVIDER flag that can serve the interview simulator through Bedrock instead of the direct Anthropic API.
+5. [0005-beta-guardrails.md](0005-beta-guardrails.md): in process safety layers on the Beta planner, a per request drafter schema that makes unsafe plans unrepresentable plus a deterministic guard over the coach's output. Supports the decision that Beta's guardrail is built in code rather than bought from Bedrock, so Beta stays on the direct Anthropic API and clause 1 below holds unchanged. Adds no AWS footprint, deliberately.
 
-Planned future children, added when their build is reached (listed in Follow-up): Bedrock Guardrails on the Beta planner, and a Bedrock Knowledge Base RAG source for the interview agent.
+Planned future children, added when their build is reached (listed in Follow-up): a Bedrock Knowledge Base RAG source for the interview agent.
 
 ## Cross child contract
 
@@ -75,7 +76,7 @@ Tracer Bullet ordering (the repo's default approach): stand the thinnest end to 
 
 ## Follow-up
 
-- [ ] Write child specs for Bedrock Guardrails on Beta (hard prerequisite before broadly advertising Beta) and Knowledge Base RAG, when their builds are reached.
+- [ ] Write the Knowledge Base RAG child spec when its build is reached.
 - [ ] Install the three community skills shortlisted for this program (`hashicorp/agent-skills@terraform-style-guide`, `aws/agent-toolkit-for-aws@aws-iam`, `aws/agent-toolkit-for-aws@aws-serverless`) pending Tony's approval, then reference them in root AGENTS.md and the new `infra/AGENTS.md`.
 - [ ] After first AWS spend: activate the `project` cost allocation tag and create the tag filtered `genai-infra` budget.
 - [ ] Run /sync (or /audit infra) after the foundation lands so `infra/` gets its own AGENTS.md and the root AGENTS.md learns the new workspace.
