@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { FeedbackForm } from '@/components/FeedbackForm';
 import { BetaPlanner } from './BetaPlanner';
 import { TopoBackground } from './TopoBackground';
 
@@ -191,6 +192,20 @@ export default function BetaPage() {
                   <p className="max-w-[65ch] px-5 pb-5 pt-0">{item.answer}</p>
                 </details>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Feedback */}
+        <section className="border-t border-[color:var(--beta-border)] bg-[color:var(--beta-surface-2)]">
+          <div className="mx-auto w-full max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
+            <h2 className="text-[length:var(--beta-text-2xl)]">Send feedback</h2>
+            <p className="mt-3 max-w-[58ch]">
+              Found a bug, or have an idea for Beta? Tell me anonymously — no account or email
+              required.
+            </p>
+            <div className="mt-8 max-w-xl">
+              <FeedbackForm source="beta" variant="beta" />
             </div>
           </div>
         </section>
