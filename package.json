@@ -6,13 +6,15 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "infra/lambda/feedback-classifier"
   ],
   "scripts": {
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:api": "npm run start:dev --workspace=apps/api",
     "build:web": "npm run build --workspace=apps/web",
     "build:api": "npm run build --workspace=apps/api",
+    "build:feedback-classifier": "npm run build --workspace=infra/lambda/feedback-classifier",
     "lint": "eslint . --max-warnings 25"
   },
   "devDependencies": {
