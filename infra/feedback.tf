@@ -71,7 +71,8 @@ resource "aws_iam_policy" "feedback_publish" {
 # No local-exec / external data sources, so applies stay reproducible.
 
 locals {
-  feedback_classifier_zip = "${path.module}/lambda/feedback-classifier/dist/lambda.zip"
+  feedback_classifier_zip  = "${path.module}/lambda/feedback-classifier/dist/lambda.zip"
+  feedback_classifier_name = "portfolio-feedback-classifier"
 }
 
 resource "aws_iam_role" "feedback_classifier_exec" {
@@ -140,8 +141,22 @@ resource "aws_iam_role_policy" "feedback_classifier_ses" {
   })
 }
 
+# --- Classifier log group ----------------------------------------------
+#
+# Declared explicitly rather than left to the Lambda runtime's implicit
+# creation, so retention is bounded and Terraform owns the lifecycle
+# (an implicitly created group defaults to never-expire and survives
+# `terraform destroy`). The handler logs only {id, label, outcome,
+# durationMs} — never message text — but a bounded window limits the
+# blast radius if that ever regresses.
+
+resource "aws_cloudwatch_log_group" "feedback_classifier" {
+  name              = "/aws/lambda/${local.feedback_classifier_name}"
+  retention_in_days = 30
+}
+
 resource "aws_lambda_function" "feedback_classifier" {
-  function_name = "portfolio-feedback-classifier"
+  function_name = local.feedback_classifier_name
   role          = aws_iam_role.feedback_classifier_exec.arn
   runtime       = "nodejs22.x"
   handler       = "index.handler"
@@ -158,6 +173,10 @@ resource "aws_lambda_function" "feedback_classifier" {
       OWNER_EMAIL      = var.owner_email
     }
   }
+
+  # The group must exist before the function can be invoked, otherwise the
+  # runtime creates it implicitly and Terraform's create collides with it.
+  depends_on = [aws_cloudwatch_log_group.feedback_classifier]
 }
 
 # --- SES identity -----------------------------------------------------
