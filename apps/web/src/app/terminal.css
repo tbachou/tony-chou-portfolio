@@ -3,8 +3,28 @@
    admin) shares one identity. See apps/web/design.md for the art
    direction; this file is the token source of truth. */
 
-.terminal-theme {
-  /* Colors — contrast ratios verified against #0a0a0f canvas in design.md */
+/* ------------------------------------------------------------------ */
+/* Palette — three states: explicit light, explicit dark, and system.  */
+/*                                                                     */
+/* Colour tokens live on :root rather than .terminal-theme (which is   */
+/* on <body>) for two reasons: <html> can then paint the overscroll    */
+/* canvas from the same token, and the pre-paint init script in the    */
+/* root layout only ever has to stamp one element.                     */
+/*                                                                     */
+/* Resolution: the dark palette is the base. The system path is a      */
+/* prefers-color-scheme media query that deliberately skips            */
+/* [data-theme='dark'], so an explicit dark choice always beats a      */
+/* light OS setting. An explicit light choice is a plain attribute     */
+/* rule, so it beats a dark OS setting. No stamped attribute at all    */
+/* means "follow the system", which is also the never-chosen default.  */
+/*                                                                     */
+/* The literal values below are each written exactly once; the two     */
+/* light selectors share one mapping so the palettes cannot drift.     */
+/* ------------------------------------------------------------------ */
+
+:root {
+  /* Dark — the original CRT phosphor palette. Ratios against #0a0a0f
+     canvas are recorded in design.md. */
   --color-canvas: #0a0a0f;
   --color-surface: #10160f;
   --color-border: #458045;
@@ -15,7 +35,190 @@
   --color-on-accent: #0a0a0f;
   --color-success: #39ff14;
   --color-error: #ff3b3b;
+  /* The one deliberate exception to the single accent: the interview
+     transcript's dual-phosphor speaker pair (design.md). */
+  --color-interviewer: #39ff14;
+  --color-tony: #ffb000;
+  /* Decorative CRT textures — glow, scanlines, text bloom. Kept as an
+     rgb triple + alphas so the textures re-tint with the palette
+     instead of being hardcoded phosphor green. */
+  --texture-rgb: 57, 255, 20;
+  --texture-glow-alpha: 0.07;
+  --texture-scanline-alpha: 0.035;
+  --glow-alpha-near: 0.55;
+  --glow-alpha-far: 0.25;
+  --glow-blur-near: 4px;
+  --glow-blur-far: 12px;
+  /* The printed sheet (see the light palette below). A CRT has no paper,
+     so the dark canvas carries no background image at all. */
+  --sheet-image: none;
+  --sheet-size: auto;
+  --sheet-position: 0 0;
+  --sheet-repeat: repeat;
+  color-scheme: dark;
 
+  /* ---------------------------------------------------------------- */
+  /* Light — the PRINTOUT, not the screen. Same machine room, different  */
+  /* artifact: 1970s continuous-form line-printer stock, so it is light  */
+  /* by nature instead of being a CRT with the lights on. Ink is ink     */
+  /* (dark ribbon blue-black), never phosphor — green here is the        */
+  /* PAPER's pre-printed bar, which is the whole point of the switch.    */
+  /* Ratios (incl. text-on-bar) are recorded in design.md.               */
+  /* ---------------------------------------------------------------- */
+  --paper-canvas: #f2ead6; /* aged manila stock, the un-barred band */
+  --paper-bar: #d4debc; /* the pale green bar of green-bar paper */
+  --paper-surface: #f8f2e2;
+  --paper-border: #6b7484;
+  --paper-muted: #4e555e;
+  --paper-body: #23262b; /* carbon-ribbon near-black */
+  --paper-ink: #16304f; /* dark ink blue — headings, accents, links */
+  --paper-on-accent: #f8f2e2;
+  --paper-error: #8f1d1d;
+  /* Two ribbon colors, the way a real printer did it: black for the
+     interviewer, the red half of the ribbon for Tony. */
+  --paper-tony: #9a3412;
+  --paper-texture-rgb: 22, 48, 79;
+
+  /* Tractor-feed holes: punched through the stock, so they show the
+     desk under the paper rather than any ink color. */
+  --paper-hole: #c9c0a5;
+  --paper-hole-edge: #b1a684;
+
+  /* Continuous-form geometry. The band is three body lines tall so type
+     sits ON the ruling instead of fighting it (16px * 1.5 leading = one
+     line; real green-bar stock banded every three lines at 6 lpi).
+     Perforation strips only exist once the viewport is wide enough to
+     hold them clear of the max-w-4xl (896px) content column — below
+     that both widths collapse to 0 and the layers stop painting, which
+     is how the sheet degrades on mobile without a second media query. */
+  --paper-line: 1.5rem;
+  --paper-band: calc(var(--paper-line) * 3);
+  --paper-perf-w: 0px;
+  --paper-tear-w: 0px;
+  --paper-perf-pitch: 36px;
+}
+
+/* 1024px: the content column is 896px, leaving 64px of margin a side —
+   enough for a 26px hole strip plus clear space. */
+@media (min-width: 1024px) {
+  :root {
+    --paper-perf-w: 26px;
+    --paper-tear-w: 1px;
+  }
+}
+
+/* The sheet itself, as one stack of background layers so it can be handed
+   to <html> (which paints the whole scrollable canvas) and to <body>
+   (which paints the first viewport over it) from a single definition.
+   Both boxes start at document top-left with zero margin/padding, so the
+   two copies register exactly. Painted top layer first:
+     1-2  tear-off perforation rules, just inside the hole strips
+     3-4  the punched tractor-feed holes, hard against each edge
+     5    the green bars, over the manila background-color
+   The holes scroll with the paper because they ARE the paper — a fixed
+   overlay would read as a screen effect, which is the thing this palette
+   is getting away from. */
+:root {
+  --paper-sheet-image:
+    repeating-linear-gradient(to bottom, var(--paper-hole) 0 4px, transparent 4px 8px),
+    repeating-linear-gradient(to bottom, var(--paper-hole) 0 4px, transparent 4px 8px),
+    radial-gradient(
+      circle at 50% 50%,
+      var(--paper-hole) 0 4.5px,
+      var(--paper-hole-edge) 4.5px 5.5px,
+      transparent 5.5px
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      var(--paper-hole) 0 4.5px,
+      var(--paper-hole-edge) 4.5px 5.5px,
+      transparent 5.5px
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--paper-bar) 0 var(--paper-band),
+      transparent var(--paper-band) calc(var(--paper-band) * 2)
+    );
+  /* Every layer is sized to exactly one repeat. The bars in particular
+     must not be left at `auto` (which would size the gradient to the
+     background positioning area, i.e. the viewport-tall html/body box,
+     and put a visible phase jump in the banding at every box boundary
+     down a long document). */
+  --paper-sheet-size:
+    var(--paper-tear-w) 8px, var(--paper-tear-w) 8px,
+    var(--paper-perf-w) var(--paper-perf-pitch), var(--paper-perf-w) var(--paper-perf-pitch),
+    100% calc(var(--paper-band) * 2);
+  --paper-sheet-position:
+    left var(--paper-perf-w) top 0, right var(--paper-perf-w) top 0, left 0 top 0, right 0 top 0,
+    left 0 top 0;
+  --paper-sheet-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat;
+}
+
+/* System default: no explicit choice stored, OS asks for light. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --color-canvas: var(--paper-canvas);
+    --color-surface: var(--paper-surface);
+    --color-border: var(--paper-border);
+    --color-muted: var(--paper-muted);
+    --color-body: var(--paper-body);
+    --color-ink: var(--paper-ink);
+    --color-accent: var(--paper-ink);
+    --color-on-accent: var(--paper-on-accent);
+    --color-success: var(--paper-ink);
+    --color-error: var(--paper-error);
+    --color-interviewer: var(--paper-ink);
+    --color-tony: var(--paper-tony);
+    --texture-rgb: var(--paper-texture-rgb);
+    /* Paper neither blooms nor rasters. The CRT halo and the scanline
+       overlay both go to zero here; the ruling the light theme used to
+       fake with re-inked scanlines is now the real article — the green
+       bars printed into --paper-sheet-image. */
+    --texture-glow-alpha: 0;
+    --texture-scanline-alpha: 0;
+    /* Impact-printer ink spread instead: sub-pixel blur, so it reads as
+       glyph weight struck through a ribbon rather than as fuzz. */
+    --glow-alpha-near: 0.45;
+    --glow-alpha-far: 0.14;
+    --glow-blur-near: 0.4px;
+    --glow-blur-far: 1px;
+    --sheet-image: var(--paper-sheet-image);
+    --sheet-size: var(--paper-sheet-size);
+    --sheet-position: var(--paper-sheet-position);
+    --sheet-repeat: var(--paper-sheet-repeat);
+    color-scheme: light;
+  }
+}
+
+/* Explicit light choice — beats a dark OS setting. */
+:root[data-theme='light'] {
+  --color-canvas: var(--paper-canvas);
+  --color-surface: var(--paper-surface);
+  --color-border: var(--paper-border);
+  --color-muted: var(--paper-muted);
+  --color-body: var(--paper-body);
+  --color-ink: var(--paper-ink);
+  --color-accent: var(--paper-ink);
+  --color-on-accent: var(--paper-on-accent);
+  --color-success: var(--paper-ink);
+  --color-error: var(--paper-error);
+  --color-interviewer: var(--paper-ink);
+  --color-tony: var(--paper-tony);
+  --texture-rgb: var(--paper-texture-rgb);
+  --texture-glow-alpha: 0;
+  --texture-scanline-alpha: 0;
+  --glow-alpha-near: 0.45;
+  --glow-alpha-far: 0.14;
+  --glow-blur-near: 0.4px;
+  --glow-blur-far: 1px;
+  --sheet-image: var(--paper-sheet-image);
+  --sheet-size: var(--paper-sheet-size);
+  --sheet-position: var(--paper-sheet-position);
+  --sheet-repeat: var(--paper-sheet-repeat);
+  color-scheme: light;
+}
+
+.terminal-theme {
   /* Typography */
   --font-mono: var(--font-ibm-plex-mono), ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
   --text-xs: 0.6875rem; /* 11px */
@@ -52,6 +255,16 @@
   --cursor-blink-interval: 900ms;
 
   background: var(--color-canvas);
+  /* Must follow the shorthand above, which resets background-image. Body
+     paints its own copy of the sheet over <html>'s; both boxes start at
+     the document origin with no margin or padding, so the bands and hole
+     strips line up seamlessly across the seam. In dark, --sheet-image is
+     `none` and all four resolve to their initial values, so the CRT
+     renders exactly as it did before. */
+  background-image: var(--sheet-image);
+  background-size: var(--sheet-size);
+  background-position: var(--sheet-position);
+  background-repeat: var(--sheet-repeat);
   color: var(--color-body);
   font-family: var(--font-mono);
   font-size: var(--text-base);
@@ -75,7 +288,11 @@
   inset: 0;
   pointer-events: none;
   z-index: 1;
-  background: radial-gradient(120% 55% at 50% -10%, rgba(57, 255, 20, 0.07), transparent 65%);
+  background: radial-gradient(
+    120% 55% at 50% -10%,
+    rgba(var(--texture-rgb), var(--texture-glow-alpha)),
+    transparent 65%
+  );
 }
 
 /* Decorative scanline texture. Purely visual, never affects text contrast
@@ -87,17 +304,20 @@
   z-index: 50;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(57, 255, 20, 0.035) 0,
-    rgba(57, 255, 20, 0.035) 1px,
+    rgba(var(--texture-rgb), var(--texture-scanline-alpha)) 0,
+    rgba(var(--texture-rgb), var(--texture-scanline-alpha)) 1px,
     transparent 1px,
     transparent 3px
   );
 }
 
+/* Dark: phosphor bloom. Light: the same two shadows collapse to a
+   sub-pixel ink spread (see --glow-blur-* in the light palettes), which
+   is why the blur radii are tokens rather than the literal 4px/12px. */
 .terminal-glow {
   text-shadow:
-    0 0 4px rgba(57, 255, 20, 0.55),
-    0 0 12px rgba(57, 255, 20, 0.25);
+    0 0 var(--glow-blur-near) rgba(var(--texture-rgb), var(--glow-alpha-near)),
+    0 0 var(--glow-blur-far) rgba(var(--texture-rgb), var(--glow-alpha-far));
 }
 
 .terminal-cursor {

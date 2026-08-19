@@ -8,8 +8,10 @@ const config: Config = {
         // Interview transcript speaker colors — the one deliberate exception
         // to the terminal system's single accent (apps/web/design.md), a
         // dual-phosphor pairing (green/amber) rather than a modern UI palette.
-        interviewer: '#39ff14',
-        tony: '#ffb000',
+        // Tokenized so the pair re-inks for the light palette; the bright
+        // phosphor values would sit at ~1.4:1 on paper.
+        interviewer: 'var(--color-interviewer)',
+        tony: 'var(--color-tony)',
         // Retro terminal system (apps/web/design.md), scoped to .terminal-theme
         // which now wraps the whole app.
         term: {

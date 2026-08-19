@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useResumeModal } from './ResumeModalProvider';
+import { ThemeToggle } from './ThemeToggle';
 
 const NAV_LINKS = [
   { href: '#about', label: 'about' },
@@ -79,6 +80,12 @@ export function SiteNav() {
               >
                 [ resume ]
               </button>
+            </li>
+            <li aria-hidden="true" className="text-term-border">
+              |
+            </li>
+            <li>
+              <ThemeToggle />
             </li>
           </ul>
         </nav>
