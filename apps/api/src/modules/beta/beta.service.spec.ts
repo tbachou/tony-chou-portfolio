@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { BetaService } from './beta.service';
+import { BetaService, parseDraftPlan, __testing } from './beta.service';
 import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
 import {
   CONSTANT_REST_PAIN_MESSAGE,
@@ -53,13 +53,30 @@ function makeInput(
   };
 }
 
+/**
+ * A layer-1-shaped stage: structured dose, declared equipment, a rationale,
+ * two exercises and two advancement criteria (drafter.md's stated counts),
+ * and non-overlapping increasing time windows (1-2, 3-4, 5-6, 7-8).
+ */
 function makeStage(n: number) {
   return {
+    rationale: `Why stage ${n} looks the way it does for this profile.`,
     title: `Stage ${n}`,
-    timeWindow: `Weeks ${n}-${n + 1}`,
-    exercises: [{ name: 'Tendon glides', dose: '3 sets of 10, daily' }],
+    timeWindow: `Weeks ${n * 2 - 1}-${n * 2}`,
+    exercises: [
+      {
+        name: 'Tendon glides',
+        equipmentUsed: 'none',
+        dose: { sets: 3, reps: 10, frequencyPerWeek: 7 },
+      },
+      {
+        name: 'Open-hand rice bucket work',
+        equipmentUsed: 'none',
+        dose: { sets: 2, reps: 15, frequencyPerWeek: 3 },
+      },
+    ],
     allowedClimbing: 'Easy vertical jugs, two grades below max',
-    advanceWhen: ['Pain-free daily activities'],
+    advanceWhen: ['Pain-free daily activities', 'No added morning stiffness'],
   };
 }
 
@@ -136,6 +153,267 @@ function makeHarness() {
   };
   return { prisma, anthropic, usage, service, events, emit };
 }
+
+// ---------------------------------------------------------------------------
+// Layer 1: constrain the drafter to what drafter.md explicitly requires and
+// forbids (spec 0005 guardrails child, AC-G2 / G3 / G4 / G5 / G5b).
+// ---------------------------------------------------------------------------
+
+// The generated tool schema is plain JSON, walked positionally in these
+// tests; a precise type would only restate the assertions below.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type JsonSchema = Record<string, any>;
+
+function schemaFor(overrides: Partial<BetaPlanRequestDto> = {}): JsonSchema {
+  return __testing.buildDrafterSchema(makeInput(overrides)) as JsonSchema;
+}
+
+function stageSchema(schema: JsonSchema): JsonSchema {
+  return schema.properties.stages.items;
+}
+
+function exerciseSchema(schema: JsonSchema): JsonSchema {
+  return stageSchema(schema).properties.exercises.items;
+}
+
+describe('layer 1: the per-request drafter schema', () => {
+  describe('exercise naming stays open (AC-G2)', () => {
+    it('gives exercises[].name no enum, on every injury area', () => {
+      for (const injuryArea of [
+        'finger_pulley',
+        'elbow_tendinopathy',
+        'shoulder_impingement',
+      ] as const) {
+        const name = exerciseSchema(schemaFor({ injuryArea })).properties.name;
+        expect(name).toEqual({ type: 'string' });
+        expect(name).not.toHaveProperty('enum');
+      }
+    });
+  });
+
+  describe('equipment (AC-G3): "Only prescribe equipment the visitor has" / "Never invent gear"', () => {
+    it('offers only "none" when the visitor reported no equipment access', () => {
+      expect(
+        exerciseSchema(schemaFor({ equipmentAccess: ['none'] })).properties
+          .equipmentUsed.enum,
+      ).toEqual(['none']);
+    });
+
+    it('offers the reported gear plus "none", and nothing else', () => {
+      expect(
+        exerciseSchema(schemaFor({ equipmentAccess: ['hangboard'] })).properties
+          .equipmentUsed.enum,
+      ).toEqual(['hangboard', 'none']);
+      expect(
+        exerciseSchema(
+          schemaFor({ equipmentAccess: ['resistance_bands', 'climbing_gym'] }),
+        ).properties.equipmentUsed.enum,
+      ).toEqual(['climbing_gym', 'resistance_bands', 'none']);
+    });
+
+    it('does not narrow to "none" when the visitor reported nothing at all', () => {
+      // The field is optional. With nothing reported there is nothing to
+      // transcribe, so the enum must not invent a restriction.
+      const options = exerciseSchema(schemaFor({ equipmentAccess: undefined }))
+        .properties.equipmentUsed.enum;
+      expect(options).toEqual([
+        'climbing_gym',
+        'home_wall',
+        'hangboard',
+        'resistance_bands',
+        'weights',
+        'none',
+      ]);
+    });
+
+    it('makes equipmentUsed required, so gear must be declared', () => {
+      expect(exerciseSchema(schemaFor()).required).toContain('equipmentUsed');
+    });
+  });
+
+  describe('item counts (AC-G3): the numbers drafter.md states', () => {
+    it('bounds exercises to 2-4 and advanceWhen to 2-3', () => {
+      const stage = stageSchema(schemaFor());
+      expect(stage.properties.exercises.minItems).toBe(2);
+      expect(stage.properties.exercises.maxItems).toBe(4);
+      expect(stage.properties.advanceWhen.minItems).toBe(2);
+      expect(stage.properties.advanceWhen.maxItems).toBe(3);
+    });
+
+    it('leaves the 4-5 stage bound alone', () => {
+      const stages = schemaFor().properties.stages;
+      expect([stages.minItems, stages.maxItems]).toEqual([4, 5]);
+    });
+  });
+
+  describe('structured dose (AC-G5)', () => {
+    it('is an object of integers with a positive floor and NO ceiling', () => {
+      const dose = exerciseSchema(schemaFor()).properties.dose;
+      expect(dose.type).toBe('object');
+      expect(dose.required).toEqual(['sets', 'reps', 'frequencyPerWeek']);
+      for (const field of [
+        'sets',
+        'reps',
+        'holdSeconds',
+        'frequencyPerWeek',
+      ]) {
+        expect(dose.properties[field].type).toBe('integer');
+        expect(dose.properties[field].minimum).toBe(1);
+        // The calibration run that would justify a ceiling has not been done.
+        expect(dose.properties[field]).not.toHaveProperty('maximum');
+      }
+    });
+
+    it('is not a free string, so "a few" is unrepresentable', () => {
+      expect(exerciseSchema(schemaFor()).properties.dose.type).not.toBe(
+        'string',
+      );
+    });
+  });
+
+  describe('conditional caution (AC-G5b): "a MANDATORY overallCaution (never omit it for this pain behavior)"', () => {
+    it('requires overallCaution for constant_even_at_rest', () => {
+      expect(
+        schemaFor({ painBehavior: 'constant_even_at_rest' }).required,
+      ).toEqual(['stages', 'overallCaution']);
+    });
+
+    it.each([
+      'none_at_rest_hurts_under_load',
+      'warms_up_then_fine',
+      'worsens_as_session_goes_on',
+    ] as const)('leaves it optional for %s', (painBehavior) => {
+      expect(schemaFor({ painBehavior }).required).toEqual(['stages']);
+    });
+  });
+
+  describe('rationale', () => {
+    it('is capped and comes first in the stage property order', () => {
+      const stage = stageSchema(schemaFor());
+      expect(Object.keys(stage.properties)[0]).toBe('rationale');
+      expect(stage.properties.rationale.maxLength).toBe(400);
+    });
+  });
+});
+
+describe('layer 1: parseDraftPlan explicit prohibitions (AC-G4)', () => {
+  const pulley = makeInput({ injuryArea: 'finger_pulley' });
+
+  function planWithExercise(
+    stageIndex: number,
+    name: string,
+    input = pulley,
+  ): { raw: unknown; input: BetaPlanRequestDto } {
+    const stages = [1, 2, 3, 4].map(makeStage);
+    stages[stageIndex].exercises[0].name = name;
+    return { raw: { stages }, input };
+  }
+
+  it('accepts the layer-1-shaped happy path', () => {
+    const plan = parseDraftPlan({ stages: [1, 2, 3, 4].map(makeStage) }, pulley);
+    expect(plan.stages).toHaveLength(4);
+  });
+
+  describe('"Never program full-crimp training" — every stage', () => {
+    it.each([0, 1, 2, 3])('rejects a full-crimp exercise in stage %i', (i) => {
+      const { raw, input } = planWithExercise(i, 'Full-crimp hangs');
+      expect(() => parseDraftPlan(raw, input)).toThrow(/full-crimp/i);
+    });
+
+    it('rejects it however it is hyphenated or cased', () => {
+      for (const name of ['FULL CRIMP hangs', 'full_crimp pulls']) {
+        const { raw, input } = planWithExercise(2, name);
+        expect(() => parseDraftPlan(raw, input)).toThrow(/full-crimp/i);
+      }
+    });
+
+    it('does NOT fire for a non-finger_pulley injury, where the line does not apply', () => {
+      // "Never program full-crimp training" lives under drafter.md's
+      // finger_pulley section. Extending it to other injuries would be a
+      // clinical view, not a transcription.
+      const { raw } = planWithExercise(2, 'Full-crimp hangs');
+      expect(() =>
+        parseDraftPlan(raw, makeInput({ injuryArea: 'elbow_tendinopathy' })),
+      ).not.toThrow();
+    });
+  });
+
+  describe('the early phase\'s "No crimping of any kind" — stage 1 only', () => {
+    it('rejects any crimping in stage 1', () => {
+      const { raw, input } = planWithExercise(0, 'Half-crimp isometric holds');
+      expect(() => parseDraftPlan(raw, input)).toThrow(/stage 1/i);
+    });
+
+    it('ACCEPTS half crimp in stage 3, which drafter.md calls correct later', () => {
+      // "Later: gradual half-crimp reintroduction under load". Stage 2 is
+      // deliberately unconstrained too: mapping three prose phases onto
+      // four or five stages would be a judgement.
+      const { raw, input } = planWithExercise(2, 'Half-crimp isometric holds');
+      expect(() => parseDraftPlan(raw, input)).not.toThrow();
+      const { raw: raw2, input: input2 } = planWithExercise(
+        1,
+        'Half-crimp isometric holds',
+      );
+      expect(() => parseDraftPlan(raw2, input2)).not.toThrow();
+    });
+
+    it('ACCEPTS ordinary open-hand stage 1 work that never mentions crimping', () => {
+      const { raw, input } = planWithExercise(0, 'Open-hand putty squeezes');
+      expect(() => parseDraftPlan(raw, input)).not.toThrow();
+    });
+  });
+
+  describe('stage time windows are non-overlapping and increasing', () => {
+    it('rejects overlapping windows', () => {
+      const stages = [1, 2, 3, 4].map(makeStage);
+      stages[1].timeWindow = 'Weeks 2-4';
+      expect(() => parseDraftPlan({ stages }, pulley)).toThrow(/overlapping/i);
+    });
+
+    it('rejects a window that runs backwards', () => {
+      const stages = [1, 2, 3, 4].map(makeStage);
+      stages[0].timeWindow = 'Weeks 4-1';
+      expect(() => parseDraftPlan({ stages }, pulley)).toThrow(/backwards/i);
+    });
+
+    it('skips windows whose numbers cannot be read rather than erroring', () => {
+      const stages = [1, 2, 3, 4].map(makeStage);
+      stages[1].timeWindow = 'Once the previous stage feels settled';
+      expect(() => parseDraftPlan({ stages }, pulley)).not.toThrow();
+    });
+  });
+
+  describe('structured dose validation', () => {
+    it.each([
+      ['a free-string dose', '3 sets of 10'],
+      ['a zero set count', { sets: 0, reps: 10, frequencyPerWeek: 3 }],
+      ['a fractional rep count', { sets: 3, reps: 10.5, frequencyPerWeek: 3 }],
+      ['a missing frequency', { sets: 3, reps: 10 }],
+    ])('rejects %s', (_label, dose) => {
+      const stages = [1, 2, 3, 4].map(makeStage);
+      (stages[0].exercises[0] as { dose: unknown }).dose = dose;
+      expect(() => parseDraftPlan({ stages }, pulley)).toThrow(/malformed/i);
+    });
+
+    it('accepts an optional holdSeconds', () => {
+      const stages = [1, 2, 3, 4].map(makeStage);
+      (stages[0].exercises[0] as { dose: unknown }).dose = {
+        sets: 3,
+        reps: 5,
+        holdSeconds: 7,
+        frequencyPerWeek: 3,
+      };
+      expect(() => parseDraftPlan({ stages }, pulley)).not.toThrow();
+    });
+
+    it('rejects a stage that never declared its equipment', () => {
+      const stages = [1, 2, 3, 4].map(makeStage);
+      delete (stages[0].exercises[0] as { equipmentUsed?: string })
+        .equipmentUsed;
+      expect(() => parseDraftPlan({ stages }, pulley)).toThrow(/malformed/i);
+    });
+  });
+});
 
 describe('BetaService.generatePlan', () => {
   beforeAll(() => {
