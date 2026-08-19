@@ -106,6 +106,7 @@ function makeHarness() {
   const usage = {
     reserveGlobalSlot: jest.fn().mockResolvedValue(true),
     refundGlobalSlot: jest.fn().mockResolvedValue(undefined),
+    recordRedFlagBlock: jest.fn().mockResolvedValue(undefined),
     successIncrementOps: jest.fn().mockReturnValue(['global-op', 'ip-op']),
   };
   const service = new BetaService(
@@ -150,6 +151,9 @@ describe('BetaService.generatePlan', () => {
       expect(h.usage.reserveGlobalSlot).not.toHaveBeenCalled();
       expect(h.usage.refundGlobalSlot).not.toHaveBeenCalled();
       expect(h.prisma.$transaction).not.toHaveBeenCalled();
+      // Pre-reserve blocks never reach refund, so the "told to see a
+      // professional" tally is written directly.
+      expect(h.usage.recordRedFlagBlock).toHaveBeenCalledTimes(1);
     });
 
     it('blocks constant rest pain at 3+ weeks after onset', async () => {
@@ -170,6 +174,7 @@ describe('BetaService.generatePlan', () => {
       ]);
       expect(h.anthropic.forceToolCall).not.toHaveBeenCalled();
       expect(h.usage.reserveGlobalSlot).not.toHaveBeenCalled();
+      expect(h.usage.recordRedFlagBlock).toHaveBeenCalledTimes(1);
     });
 
     it.each([['mild_swelling'], ['weakness_or_early_fatigue']] as const)(
@@ -193,6 +198,7 @@ describe('BetaService.generatePlan', () => {
         ]);
         expect(h.anthropic.forceToolCall).not.toHaveBeenCalled();
         expect(h.usage.reserveGlobalSlot).not.toHaveBeenCalled();
+        expect(h.usage.recordRedFlagBlock).toHaveBeenCalledTimes(1);
       },
     );
 
@@ -216,6 +222,7 @@ describe('BetaService.generatePlan', () => {
       expect(h.usage.reserveGlobalSlot).toHaveBeenCalledTimes(1);
       expect(h.anthropic.forceToolCall).toHaveBeenCalledTimes(2);
       expect(h.events[h.events.length - 1]).toEqual(['done', {}]);
+      expect(h.usage.recordRedFlagBlock).not.toHaveBeenCalled();
     });
   });
 
@@ -263,6 +270,7 @@ describe('BetaService.generatePlan', () => {
       expect(h.anthropic.forceToolCall).toHaveBeenCalledTimes(1);
       expect(h.anthropic.streamMessage).not.toHaveBeenCalled();
       expect(h.usage.refundGlobalSlot).toHaveBeenCalledTimes(1);
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('red_flag');
       expect(h.prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -286,6 +294,7 @@ describe('BetaService.generatePlan', () => {
       ]);
       expect(h.anthropic.forceToolCall).toHaveBeenCalledTimes(1);
       expect(h.usage.refundGlobalSlot).toHaveBeenCalledTimes(1);
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('refusal');
       expect(h.prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -312,7 +321,9 @@ describe('BetaService.generatePlan', () => {
       ]);
       expect(h.anthropic.forceToolCall).toHaveBeenCalledTimes(1);
       expect(h.anthropic.streamMessage).not.toHaveBeenCalled();
+      // Fail-closed verdicts read as "told to see a professional" too.
       expect(h.usage.refundGlobalSlot).toHaveBeenCalledTimes(1);
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('red_flag');
     });
   });
 
@@ -392,6 +403,7 @@ describe('BetaService.generatePlan', () => {
       ]);
       expect(h.anthropic.streamMessage).not.toHaveBeenCalled();
       expect(h.usage.refundGlobalSlot).toHaveBeenCalledTimes(1);
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('error');
       expect(h.prisma.$transaction).not.toHaveBeenCalled();
     });
   });
@@ -434,6 +446,7 @@ describe('BetaService.generatePlan', () => {
         ['error', { message: FRIENDLY_ERROR_MESSAGE }],
       ]);
       expect(h.usage.refundGlobalSlot).toHaveBeenCalledTimes(1);
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('error');
       expect(h.prisma.$transaction).not.toHaveBeenCalled();
     });
   });
