@@ -233,6 +233,33 @@
   color-scheme: light;
 }
 
+/* ------------------------------------------------------------------ */
+/* Translucent chrome — the backgrounds of things that float over       */
+/* scrolling content: the sticky nav, the desk-scene header and its     */
+/* controls, the resume dialog's scrim. Each is the canvas held back    */
+/* from full opacity so a little of the page shows through behind the   */
+/* blur.                                                                */
+/*                                                                      */
+/* Derived from --color-canvas rather than restated, so they re-resolve */
+/* with the palette and no literal colour is repeated here.             */
+/*                                                                      */
+/* These are tokens rather than Tailwind alpha modifiers because        */
+/* `bg-term-canvas/90` does not work: the term-* colours are bare       */
+/* `var()` values, and Tailwind 3 cannot take a `var()` apart to        */
+/* rebuild it with a new alpha channel. Rather than erroring it emits   */
+/* no declaration at all, so every one of those utilities was silently  */
+/* dropped and the chrome rendered fully transparent — on the CRT that  */
+/* read as a design choice, but on the printout the nav sat directly on */
+/* the green bars and tractor-feed holes scrolling under it. Mixing     */
+/* toward `transparent` does the same job in plain CSS and keeps the    */
+/* alpha next to the palette it belongs to.                             */
+/* ------------------------------------------------------------------ */
+:root {
+  --chrome-bg: color-mix(in srgb, var(--color-canvas) 90%, transparent);
+  --control-bg: color-mix(in srgb, var(--color-canvas) 80%, transparent);
+  --scrim-bg: color-mix(in srgb, var(--color-canvas) 85%, transparent);
+}
+
 .terminal-theme {
   /* Typography */
   --font-mono: var(--font-ibm-plex-mono), ui-monospace, 'SF Mono', 'Cascadia Code', monospace;

@@ -43,7 +43,7 @@ export function SiteNav() {
   const activeId = useActiveSection();
 
   return (
-    <header className="sticky top-0 z-20 border-b border-term-border bg-term-canvas/90 backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-term-border bg-[color:var(--chrome-bg)] backdrop-blur">
       <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3 sm:px-0">
         <a href="#top" className="text-term-sm text-term-muted">
           <span aria-hidden="true">$ </span>
