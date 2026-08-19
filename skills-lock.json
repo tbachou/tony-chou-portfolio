@@ -1,6 +1,18 @@
 {
   "version": 1,
   "skills": {
+    "aws-iam": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/core-skills/aws-iam/SKILL.md",
+      "computedHash": "67b278df3b015551bc81ebca239866fde4832090211fdd923274ef5d0af87d72"
+    },
+    "aws-serverless": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/core-skills/aws-serverless/SKILL.md",
+      "computedHash": "f932a616f7b064c4355e6acfe156fb146259438ceb53c8cde06f00e7725bea06"
+    },
     "better-auth-best-practices": {
       "source": "better-auth/skills",
       "sourceType": "github",
@@ -30,6 +42,12 @@
       "sourceType": "github",
       "skillPath": "prisma-postgres/SKILL.md",
       "computedHash": "8ddb96affba2097240fff6449622e82c069f9fac32b77375f9b96c7fbea1a3a7"
+    },
+    "terraform-style-guide": {
+      "source": "hashicorp/agent-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/terraform/skills/terraform-style-guide/SKILL.md",
+      "computedHash": "3b914c5ae01a7101d45b5222fbc38e0be6eb7412deba5f54d471905f22af70c6"
     },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
