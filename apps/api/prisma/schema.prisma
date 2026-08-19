@@ -77,12 +77,22 @@ model DailyUsageCounter {
 
 // Beta (the return-to-climbing rehab planner, spec 0004) writes exactly two
 // anonymous counter tables and nothing else: no injury details, goals text,
-// or generated plan content is ever persisted (AC-6). Unrelated to the
-// "beta access" wording on AccessRequest below.
+// or generated plan content is ever persisted (AC-6). planCount stays
+// success-only (AC-8); the other columns are anonymous daily tallies of
+// blocked/failed outcomes (errors, red-flag blocks, refusals) and rate-limit
+// rejections (in-memory throttle, per-IP cap, global cap) — still zero
+// visitor content. Unrelated to the "beta access" wording on AccessRequest
+// below.
 model BetaDailyUsageCounter {
-  date       DateTime @id @db.Date
-  planCount  Int      @default(0)
-  tokenCount Int      @default(0)
+  date              DateTime @id @db.Date
+  planCount         Int      @default(0)
+  tokenCount        Int      @default(0)
+  errorCount        Int      @default(0)
+  redFlagCount      Int      @default(0)
+  refusalCount      Int      @default(0)
+  throttledCount    Int      @default(0)
+  ipCappedCount     Int      @default(0)
+  globalCappedCount Int      @default(0)
 }
 
 model BetaIpDailyCount {
