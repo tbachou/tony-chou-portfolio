@@ -45,7 +45,7 @@ const FAQ_ITEMS = [
   {
     question: 'What data do you store?',
     answer:
-      'Nothing you type into the planner. Your form answers and the generated plan are never written to a database — they exist only in your browser and in the request that produces the plan. The only things the planner stores are two anonymous counters: how many plans were drafted today in total, and how many came from your (hashed) network address. Those exist purely to enforce the daily caps. The feedback form at the bottom of this page is the one exception — that message is stored and emailed to me.',
+      'Nothing you type into the planner. Your form answers and the generated plan are never written to a database — they exist only in your browser and in the request that produces the plan. The only things the planner stores are two anonymous counters: how many plans were drafted today in total, and how many came from your (hashed) network address. Those exist purely to enforce the daily caps. The feedback form at the bottom of this page is the one exception — that message is stored, run through an automated classifier on AWS, and emailed to me.',
   },
   {
     question: 'Why only three injuries?',
@@ -202,8 +202,8 @@ export default function BetaPage() {
             <h2 className="text-[length:var(--beta-text-2xl)]">Send feedback</h2>
             <p className="mt-3 max-w-[58ch]">
               Found a bug, or have an idea for Beta? Tell me anonymously — no account or email
-              required. Unlike the planner, the message you send here is stored and emailed to
-              me.
+              required. Unlike the planner, the message you send here is stored, run through an
+              automated classifier on AWS, and emailed to me.
             </p>
             <p className="mt-3 max-w-[58ch]">
               This goes to a mailbox I read when I can. It is not a way to reach a clinician, and
