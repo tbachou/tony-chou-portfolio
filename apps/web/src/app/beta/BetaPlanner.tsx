@@ -430,8 +430,12 @@ export function BetaPlanner() {
 
             {/* Onset */}
             <div className="max-w-xs">
+              {/* The unit goes in the accessible name, not just a describedby:
+                  the whole staged progression scales from this number, and
+                  min=0/max=520 happily accepts a value the visitor meant as
+                  months or years. The name is announced in every mode. */}
               <label htmlFor="beta-onset" className="beta-legend">
-                When did it start?
+                When did it start? <span className="sr-only">(in weeks)</span>
               </label>
               <p className="beta-hint mb-4">Your best guess is fine.</p>
               <div className="flex items-center gap-3">
