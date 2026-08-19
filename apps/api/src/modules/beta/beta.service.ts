@@ -73,6 +73,9 @@ export class BetaService {
         category: checkedRedFlag,
         message: RED_FLAG_MESSAGES[checkedRedFlag],
       });
+      // This path blocks before any slot is reserved, so it never reaches
+      // the refund bookkeeping — tally the block directly (never throws).
+      await this.usage.recordRedFlagBlock();
       return;
     }
 
@@ -87,6 +90,8 @@ export class BetaService {
     ) {
       emit('status', { stage: 'screening' });
       emit('red_flag', { category: null, message: CONSTANT_REST_PAIN_MESSAGE });
+      // Pre-reserve block, same bookkeeping as the checked-symptom gate.
+      await this.usage.recordRedFlagBlock();
       return;
     }
 
@@ -108,13 +113,13 @@ export class BetaService {
           ? RED_FLAG_MESSAGES[screening.category]
           : RED_FLAG_FALLBACK_MESSAGE;
         emit('red_flag', { category: screening.category ?? null, message });
-        await this.usage.refundGlobalSlot();
+        await this.usage.refundGlobalSlot('red_flag');
         return;
       }
       if (screening.verdict === 'off_topic') {
         // Injection or off-topic free text: polite refusal, not model output (AC-7).
         emit('error', { message: REFUSAL_MESSAGE });
-        await this.usage.refundGlobalSlot();
+        await this.usage.refundGlobalSlot('refusal');
         return;
       }
 
@@ -138,7 +143,7 @@ export class BetaService {
       this.logger.error(`Beta pipeline failed: ${describeError(error)}`);
       emit('error', { message: FRIENDLY_ERROR_MESSAGE });
       await this.usage
-        .refundGlobalSlot()
+        .refundGlobalSlot('error')
         .catch(() => this.logger.warn('Beta slot refund failed'));
     }
   }

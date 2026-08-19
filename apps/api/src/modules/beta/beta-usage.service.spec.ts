@@ -1,4 +1,8 @@
-import { HttpException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  HttpException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { BetaUsageService } from './beta-usage.service';
 import {
   BETA_GLOBAL_DAILY_CAP,
@@ -49,6 +53,7 @@ describe('BetaUsageService', () => {
 
   beforeAll(() => {
     jest.useFakeTimers({ now: NOW });
+    Logger.overrideLogger(false);
   });
 
   afterAll(() => {
@@ -78,25 +83,54 @@ describe('BetaUsageService', () => {
       });
     });
 
-    it('returns false when the guarded update matches no row (cap reached)', async () => {
+    it('returns false when the guarded update matches no row (cap reached) and tallies the raced global-cap rejection', async () => {
       prisma.betaDailyUsageCounter.upsert.mockResolvedValue({});
       prisma.betaDailyUsageCounter.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(service.reserveGlobalSlot()).resolves.toBe(false);
+
+      // Second upsert (after the row-ensuring one) is the tally.
+      expect(prisma.betaDailyUsageCounter.upsert).toHaveBeenLastCalledWith({
+        where: { date: TODAY },
+        create: { date: TODAY, globalCappedCount: 1 },
+        update: { globalCappedCount: { increment: 1 } },
+      });
+    });
+
+    it('does not tally globalCappedCount when a slot is reserved', async () => {
+      prisma.betaDailyUsageCounter.upsert.mockResolvedValue({});
+      prisma.betaDailyUsageCounter.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(service.reserveGlobalSlot()).resolves.toBe(true);
+
+      // Only the row-ensuring upsert ran, no tally upsert.
+      expect(prisma.betaDailyUsageCounter.upsert).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('refundGlobalSlot', () => {
-    it('decrements with a planCount > 0 guard so refunds can never go negative', async () => {
-      prisma.betaDailyUsageCounter.updateMany.mockResolvedValue({ count: 1 });
+    it.each([
+      ['error', 'errorCount'],
+      ['red_flag', 'redFlagCount'],
+      ['refusal', 'refusalCount'],
+    ] as const)(
+      'refunds with reason %s: decrements planCount (> 0 guard) and increments %s in the same atomic update',
+      async (reason, column) => {
+        prisma.betaDailyUsageCounter.updateMany.mockResolvedValue({
+          count: 1,
+        });
 
-      await service.refundGlobalSlot();
+        await service.refundGlobalSlot(reason);
 
-      expect(prisma.betaDailyUsageCounter.updateMany).toHaveBeenCalledWith({
-        where: { date: TODAY, planCount: { gt: 0 } },
-        data: { planCount: { decrement: 1 } },
-      });
-    });
+        expect(prisma.betaDailyUsageCounter.updateMany).toHaveBeenCalledTimes(
+          1,
+        );
+        expect(prisma.betaDailyUsageCounter.updateMany).toHaveBeenCalledWith({
+          where: { date: TODAY, planCount: { gt: 0 } },
+          data: { planCount: { decrement: 1 }, [column]: { increment: 1 } },
+        });
+      },
+    );
   });
 
   describe('getStatus', () => {
@@ -143,6 +177,11 @@ describe('BetaUsageService', () => {
       expect((error as ServiceUnavailableException).message).toBe(
         DEMO_BUDGET_MESSAGE,
       );
+      expect(prisma.betaDailyUsageCounter.upsert).toHaveBeenCalledWith({
+        where: { date: TODAY },
+        create: { date: TODAY, globalCappedCount: 1 },
+        update: { globalCappedCount: { increment: 1 } },
+      });
     });
 
     it('throws 429 HttpException at the per-IP cap', async () => {
@@ -161,9 +200,43 @@ describe('BetaUsageService', () => {
       expect(prisma.betaIpDailyCount.findUnique).toHaveBeenCalledWith({
         where: { hashedIp_date: { hashedIp: 'hash', date: TODAY } },
       });
+      expect(prisma.betaDailyUsageCounter.upsert).toHaveBeenCalledWith({
+        where: { date: TODAY },
+        create: { date: TODAY, ipCappedCount: 1 },
+        update: { ipCappedCount: { increment: 1 } },
+      });
     });
 
-    it('resolves when both counters are under their caps', async () => {
+    it.each([
+      [
+        'global',
+        503,
+        { planCount: BETA_GLOBAL_DAILY_CAP },
+        null,
+      ] as const,
+      [
+        'per-IP',
+        429,
+        { planCount: 5 },
+        { count: BETA_IP_DAILY_CAP },
+      ] as const,
+    ])(
+      'still rejects with %s cap status %i when the tally write itself fails',
+      async (_label, status, globalRow, ipRow) => {
+        prisma.betaDailyUsageCounter.findUnique.mockResolvedValue(globalRow);
+        prisma.betaIpDailyCount.findUnique.mockResolvedValue(ipRow);
+        prisma.betaDailyUsageCounter.upsert.mockRejectedValue(
+          new Error('db down'),
+        );
+
+        const error = await captureRejection(service.assertAvailable('hash'));
+
+        expect(error).toBeInstanceOf(HttpException);
+        expect((error as HttpException).getStatus()).toBe(status);
+      },
+    );
+
+    it('resolves without any tally write when both counters are under their caps', async () => {
       prisma.betaDailyUsageCounter.findUnique.mockResolvedValue({
         planCount: BETA_GLOBAL_DAILY_CAP - 1,
       });
@@ -172,6 +245,51 @@ describe('BetaUsageService', () => {
       });
 
       await expect(service.assertAvailable('hash')).resolves.toBeUndefined();
+      expect(prisma.betaDailyUsageCounter.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recordRedFlagBlock', () => {
+    it('increments redFlagCount on today\'s row (the pre-reserve block paths)', async () => {
+      prisma.betaDailyUsageCounter.upsert.mockResolvedValue({});
+
+      await service.recordRedFlagBlock();
+
+      expect(prisma.betaDailyUsageCounter.upsert).toHaveBeenCalledWith({
+        where: { date: TODAY },
+        create: { date: TODAY, redFlagCount: 1 },
+        update: { redFlagCount: { increment: 1 } },
+      });
+    });
+
+    it('swallows a failed write so the red-flag response is never disturbed', async () => {
+      prisma.betaDailyUsageCounter.upsert.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(service.recordRedFlagBlock()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('recordThrottled', () => {
+    it('increments throttledCount on today\'s row', async () => {
+      prisma.betaDailyUsageCounter.upsert.mockResolvedValue({});
+
+      await service.recordThrottled();
+
+      expect(prisma.betaDailyUsageCounter.upsert).toHaveBeenCalledWith({
+        where: { date: TODAY },
+        create: { date: TODAY, throttledCount: 1 },
+        update: { throttledCount: { increment: 1 } },
+      });
+    });
+
+    it('never rejects, even when the write fails (fire-and-forget contract)', async () => {
+      prisma.betaDailyUsageCounter.upsert.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(service.recordThrottled()).resolves.toBeUndefined();
     });
   });
 
