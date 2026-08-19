@@ -100,7 +100,14 @@
   /* Ratios (incl. text-on-bar) are recorded in design.md.               */
   /* ---------------------------------------------------------------- */
   --paper-canvas: #f2ead6; /* aged manila stock, the un-barred band */
-  --paper-bar: #d4debc; /* the pale green bar of green-bar paper */
+  /* The pale green bar of green-bar paper. Deliberately quiet: at 1.09:1
+     against the canvas it still reads as a printed band, but it no longer
+     competes with body type that crosses a band boundary mid-line. That
+     mid-line change of ground is the real readability cost of a banded
+     page, and no contrast ratio measures it, since a ratio only compares
+     text to one background at a time. Lightening it also lifts the type's
+     own contrast ON the bar (body 10.82:1 -> 11.58:1). */
+  --paper-bar: #dde4c9;
   --paper-surface: #f8f2e2;
   --paper-border: #6b7484;
   --paper-muted: #4e555e;
@@ -186,6 +193,27 @@
     left var(--paper-perf-w) top 0, right var(--paper-perf-w) top 0, left 0 top 0, right 0 top 0,
     left 0 top 0;
   --paper-sheet-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat;
+}
+
+/* A banded page is harder to read than a flat one, and the cost lands on
+   exactly the people least able to absorb it: low vision, dyslexia, and
+   visual processing differences all suffer when the ground changes under a
+   line of text. No WCAG criterion covers it, because a contrast ratio only
+   ever compares text to ONE background.
+
+   So anyone whose OS asks for more contrast gets a flat manila page: the
+   bars go transparent, the perforations and tear rules go with them, and
+   the type sits on a single unchanging ground. Everyone else keeps the
+   printout. This is the same signal `.retro-cursor` yields to, and it is
+   detectable, unlike the pointer-size preference it sits beside in macOS
+   System Settings. */
+@media (prefers-contrast: more) {
+  :root:not([data-theme='dark']),
+  :root[data-theme='light'] {
+    --paper-bar: transparent;
+    --paper-perf-w: 0px;
+    --paper-tear-w: 0px;
+  }
 }
 
 /* System default: no explicit choice stored, OS asks for light. */
