@@ -25,6 +25,13 @@ export function ConversationPanel() {
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [transcript, setTranscript] = useState<ConversationTurn[]>([]);
   const [streamingText, setStreamingText] = useState('');
+  // Batched per turn boundary, never per token. The transcript itself is NOT
+  // a live region: `setStreamingText` fires on every token event, so a live
+  // region wrapping it would re-read the whole answer from the top on every
+  // token — hundreds of uninterruptible passes per turn. Same treatment as
+  // beta/BetaPlanner.tsx, which keeps streamed text out of any live region
+  // and announces stage transitions here instead.
+  const [announcement, setAnnouncement] = useState('');
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   // Avoids a stale closure over streamingText inside the async generator loop.
   const streamingTextRef = useRef('');
@@ -47,6 +54,10 @@ export function ConversationPanel() {
     if (isBusyRef.current) return;
     isBusyRef.current = true;
     let currentRole: 'interviewer' | 'tony' | null = null;
+    // Announcements carry the exchange number so consecutive turns never
+    // produce byte-identical live-region text, which a screen reader would
+    // treat as "nothing changed" and stay silent on.
+    const exchange = Math.floor(history.length / 2) + 1;
 
     // Snapshots role/text into their own const bindings before queuing the
     // state update. currentRole is a mutable `let` reassigned immediately
@@ -71,8 +82,14 @@ export function ConversationPanel() {
           currentRole = event.role;
           streamingTextRef.current = '';
           setStreamingText('');
+          setAnnouncement(
+            event.role === 'interviewer'
+              ? `Question ${exchange}: the interviewer is speaking.`
+              : `Question ${exchange} finished. Tony's answer is coming in.`
+          );
           setPanelState({ status: 'streaming', role: event.role });
         } else if (event.type === 'token') {
+          // Deliberately NOT announced — see the `announcement` comment above.
           streamingTextRef.current += event.text;
           setStreamingText(streamingTextRef.current);
         } else if (event.type === 'turn_end') {
@@ -81,12 +98,19 @@ export function ConversationPanel() {
           streamingTextRef.current = '';
           setStreamingText('');
           setConversationId(event.conversationId);
+          setAnnouncement(
+            event.isFinal
+              ? `Answer ${exchange} finished. That is the end of this topic; the full transcript is above.`
+              : `Answer ${exchange} finished and is in the transcript above. Continue the interview for the next question.`
+          );
           setPanelState(event.isFinal ? { status: 'concluded' } : { status: 'awaiting-advance' });
         } else if (event.type === 'turn_error') {
+          setAnnouncement('');
           setPanelState({ status: 'turn-error', message: event.message });
         }
       }
     } catch {
+      setAnnouncement('');
       setPanelState({ status: 'turn-error', message: 'Lost connection to the interview. Try again.' });
     } finally {
       isBusyRef.current = false;
@@ -97,6 +121,7 @@ export function ConversationPanel() {
     setTopic(selected);
     setTranscript([]);
     setConversationId(undefined);
+    setAnnouncement('');
     void runTurn(selected, []);
   }
 
@@ -110,6 +135,7 @@ export function ConversationPanel() {
     setTopic(null);
     setTranscript([]);
     setConversationId(undefined);
+    setAnnouncement('');
     fetchTopics()
       .then((topics) => setPanelState({ status: 'idle', topics }))
       .catch(() => setPanelState({ status: 'topics-error', message: 'Could not load topics.' }));
@@ -129,6 +155,12 @@ export function ConversationPanel() {
         <TopicPicker topics={panelState.topics} onSelect={handleSelectTopic} />
       ) : (
         <div>
+          {/* Turn-boundary announcements only — the transcript below is not a
+              live region on purpose. */}
+          <p aria-live="polite" className="sr-only">
+            {announcement}
+          </p>
+
           <div className="flex items-center justify-between gap-3">
             <p className="text-term-sm text-term-muted">
               <span aria-hidden="true">$ </span>
@@ -145,9 +177,16 @@ export function ConversationPanel() {
             ) : null}
           </div>
 
+          {/* role + tabIndex, not aria-live: this scrolls past 55vh, and
+              Safari (unlike Chrome/Firefox) does not make scroll containers
+              focusable on its own, so without tabIndex a keyboard-only or
+              VoiceOver visitor cannot reach earlier turns. `role="region"`
+              also earns the aria-label — a bare div maps to `generic`, which
+              does not support an accessible name, so the label was dropped. */}
           <div
+            role="region"
+            tabIndex={0}
             className="mt-4 max-h-[55vh] space-y-5 overflow-y-auto border-t border-term-border pt-5"
-            aria-live="polite"
             aria-label="Interview transcript"
           >
             {transcript.map((turn, index) => (
