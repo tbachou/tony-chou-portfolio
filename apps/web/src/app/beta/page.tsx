@@ -45,7 +45,7 @@ const FAQ_ITEMS = [
   {
     question: 'What data do you store?',
     answer:
-      'Nothing you type. Your form answers and the generated plan are never written to a database — they exist only in your browser and in the request that produces the plan. The only things stored are two anonymous counters: how many plans were drafted today in total, and how many came from your (hashed) network address. Those exist purely to enforce the daily caps.',
+      'Nothing you type into the planner. Your form answers and the generated plan are never written to a database — they exist only in your browser and in the request that produces the plan. The only things the planner stores are two anonymous counters: how many plans were drafted today in total, and how many came from your (hashed) network address. Those exist purely to enforce the daily caps. The feedback form at the bottom of this page is the one exception — that message is stored and emailed to me.',
   },
   {
     question: 'Why only three injuries?',
@@ -106,7 +106,7 @@ export default function BetaPage() {
               <a href="#planner" className="beta-btn beta-btn-primary">
                 Start your plan
               </a>
-              <p className="beta-hint">Nothing you type is stored.</p>
+              <p className="beta-hint">Nothing you type into the planner is stored.</p>
             </div>
           </div>
         </section>
@@ -172,9 +172,9 @@ export default function BetaPage() {
                 a clinician would insist on, starting with knowing when to refuse.
               </p>
               <p>
-                It is deliberately stateless. Your answers and your plan are never stored — the
-                only thing Beta writes down is a pair of anonymous daily counters that keep the
-                demo’s AI bill honest. The interesting engineering is exactly there: hard safety
+                The planner is deliberately stateless. Your answers and your plan are never
+                stored — the only thing it writes down is a pair of anonymous daily counters that
+                keep the demo’s AI bill honest. The interesting engineering is exactly there: hard safety
                 rails, streaming pipelines, and real cost controls on a public AI product.
               </p>
             </div>
@@ -202,7 +202,13 @@ export default function BetaPage() {
             <h2 className="text-[length:var(--beta-text-2xl)]">Send feedback</h2>
             <p className="mt-3 max-w-[58ch]">
               Found a bug, or have an idea for Beta? Tell me anonymously — no account or email
-              required.
+              required. Unlike the planner, the message you send here is stored and emailed to
+              me.
+            </p>
+            <p className="mt-3 max-w-[58ch]">
+              This goes to a mailbox I read when I can. It is not a way to reach a clinician, and
+              it is not monitored for urgent problems — if something is getting worse, contact a
+              doctor or emergency services.
             </p>
             <div className="mt-8 max-w-xl">
               <FeedbackForm source="beta" variant="beta" />
@@ -232,7 +238,7 @@ export default function BetaPage() {
           </p>
           <p className="mt-1.5 text-sm text-[color:var(--beta-muted)]">
             Beta is an educational demo, not medical advice, diagnosis, or physical therapy.
-            Nothing you type here is stored.
+            Nothing you type into the planner is stored.
           </p>
         </div>
       </footer>
