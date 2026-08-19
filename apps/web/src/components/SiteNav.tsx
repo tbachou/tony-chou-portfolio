@@ -66,14 +66,17 @@ export function SiteNav() {
                     href={link.href}
                     aria-current={isActive ? 'true' : undefined}
                     className={
-                      // Only the resting colour differs. Hover is
-                      // `terminal-select` for every item in the row (see
-                      // terminal.css): the active item used to have no hover
-                      // rule at all, and the inactive one had a muted -> ink
-                      // swap that is 1.77:1 on paper and so read as nothing.
-                      isActive
-                        ? 'terminal-select text-term-ink'
-                        : 'terminal-select text-term-muted'
+                      // The active item carries no text-colour utility on
+                      // purpose: `.terminal-select[aria-current]` in
+                      // terminal.css owns BOTH channels for it, painting the
+                      // --select-bg block and the --select-fg type together.
+                      // Adding `text-term-ink` here would be a dead class the
+                      // stylesheet immediately outranks, and worse, it would
+                      // imply the fill is optional. It is not — active is the
+                      // filled block in both palettes, because the old
+                      // ink-vs-muted distinction is only 1.77:1 on the
+                      // printout and could not be seen.
+                      isActive ? 'terminal-select' : 'terminal-select text-term-muted'
                     }
                   >
                     [ {link.label} ]
