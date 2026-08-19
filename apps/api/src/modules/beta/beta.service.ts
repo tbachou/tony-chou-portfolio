@@ -26,11 +26,18 @@ import {
   type RedFlagCategory,
 } from './beta.constants';
 import {
+  evaluateCoachOutput,
+  renderPlanFallback,
+  resolveGuardMode,
   toCoachPlan,
   type DoseSpec,
   type DraftPlan,
   type PlanStage,
 } from './beta-output-guard';
+// Second consumer of the conversation module's chunker, as the ownership
+// guard's call site already does: text the guard has finished deciding on
+// still has to arrive as a series of SSE events.
+import { splitIntoChunks } from '../conversation/ownership-guard';
 
 export type EmitFn = (event: string, data: unknown) => void;
 
@@ -142,9 +149,7 @@ export class BetaService {
       const { plan, tokens: drafterTokens } = await this.runDrafter(input);
 
       emit('status', { stage: 'coaching' });
-      const coachTokens = await this.runCoach(input, plan, (text) =>
-        emit('plan_delta', { text }),
-      );
+      const coachTokens = await this.runCoach(input, plan, emit);
 
       const totalTokens = screening.tokens + drafterTokens + coachTokens;
       await this.prisma.$transaction(
@@ -241,13 +246,33 @@ export class BetaService {
     return { plan, tokens: result.inputTokens + result.outputTokens };
   }
 
+  /**
+   * Layer 2's call site (spec 0005 guardrails child, AC-G6 / G7 / G12).
+   *
+   * At mode `off` the coach streams live, byte for byte today's behavior.
+   * Otherwise `onToken` accumulates without emitting — exactly as
+   * conversation.service.ts does for the ownership guard — the guard sees
+   * the complete text, and whatever is finally shown goes out re-chunked
+   * through `splitIntoChunks`. A visitor never sees an unguarded token, and
+   * never sees a plan that is not complete.
+   *
+   * The honest cost is a longer wait before the plan area fills: the visitor
+   * waits for the coach's whole generation rather than its first token. That
+   * is deliberate. Beta's UI already warns about partial plans because
+   * partial plans are dangerous here, so making the partial plan a routine
+   * state would be moving the wrong way on a clinical surface.
+   */
   private async runCoach(
     input: BetaPlanRequestDto,
     plan: DraftPlan,
-    onDelta: (text: string) => void,
+    emit: EmitFn,
   ): Promise<number> {
+    const mode = resolveGuardMode();
+    const buffered = mode !== 'off';
+
     // Only retry the stream if nothing has reached the client yet; a retry
-    // after partial output would duplicate visible text.
+    // after partial output would duplicate visible text. When buffering,
+    // nothing ever has, so a retry is always safe.
     let emittedAnything = false;
     const result = await this.timedAgentCall(
       'coach',
@@ -268,13 +293,45 @@ export class BetaService {
           maxTokens: 4000,
           timeoutMs: AGENT_CALL_TIMEOUT_MS,
           maxRetries: 0,
-          onToken: (text) => {
-            emittedAnything = true;
-            onDelta(text);
-          },
+          onToken: buffered
+            ? () => undefined
+            : (text) => {
+                emittedAnything = true;
+                emit('plan_delta', { text });
+              },
         }),
       () => !emittedAnything,
     );
+
+    if (buffered) {
+      let text = result.text;
+      const verdict = evaluateCoachOutput(result.text, plan, input);
+      if (!verdict.ok) {
+        // Log-safe by construction: `reason` is built only from literals,
+        // our own rule constants, and integer counts. It can never carry
+        // visitor or model text (Beta writes anonymous counters only).
+        this.logger.warn(
+          JSON.stringify({
+            guard: 'beta-output',
+            mode,
+            rule: verdict.reason,
+            outcome: mode === 'enforce' ? 'substituted' : 'observed',
+          }),
+        );
+        await this.usage.recordGuardBlock();
+        if (mode === 'enforce') {
+          // Discard the coach's prose and render the plan deterministically
+          // from the validated drafter object. The visitor still gets a
+          // complete plan, no spend is wasted, and the request counts as the
+          // success it was — only the warmth is lost. Silent by design.
+          text = renderPlanFallback(plan);
+        }
+      }
+      for (const chunk of splitIntoChunks(text)) {
+        emit('plan_delta', { text: chunk });
+      }
+    }
+
     return result.inputTokens + result.outputTokens;
   }
 
