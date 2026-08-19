@@ -104,6 +104,11 @@ model BetaDailyUsageCounter {
   throttledCount    Int      @default(0)
   ipCappedCount     Int      @default(0)
   globalCappedCount Int      @default(0)
+  // Spec 0005 guardrails child. Neither is a refund reason: a guard failure
+  // still delivers a complete plan (so planCount increments as normal), and
+  // an injection block happens before a slot is reserved.
+  guardBlockCount   Int      @default(0)
+  injectionBlockCount Int    @default(0)
 }
 
 model BetaIpDailyCount {

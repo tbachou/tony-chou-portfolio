@@ -15,6 +15,7 @@ import {
   EQUIPMENT_ACCESS,
   FRIENDLY_ERROR_MESSAGE,
   FULL_CRIMP_PATTERN,
+  INJECTION_BLOCKLIST,
   RATIONALE_MAX_LENGTH,
   RED_FLAG_CATEGORIES,
   RED_FLAG_FALLBACK_MESSAGE,
@@ -61,6 +62,19 @@ export class BetaService {
     emit: EmitFn;
   }): Promise<void> {
     const { input, hashedIp, emit } = params;
+
+    // Deterministic prompt-attack check over `goals`, the only untrusted
+    // free text in the request (spec 0005 guardrails child, AC-G10). Runs
+    // before any model call and before reserveGlobalSlot(), like the two
+    // hard blocks below, so a blatant injection costs no spend and no slot.
+    // It does not replace the screener's off_topic verdict, which stays as
+    // the layer that understands language rather than matching strings.
+    if (containsInjectionAttempt(input.goals)) {
+      emit('status', { stage: 'screening' });
+      emit('error', { message: REFUSAL_MESSAGE });
+      await this.usage.recordInjectionBlock();
+      return;
+    }
 
     // Code-enforced red-flag gate (clinical audit MUST-FIX): a checked
     // red-flag box blocks deterministically, before any model call — free
@@ -370,6 +384,18 @@ function buildVisitorProfile(input: BetaPlanRequestDto): string {
     '</free_text_goals>',
     '</visitor_profile>',
   ].join('\n');
+}
+
+/**
+ * Cheap prompt-attack check over the visitor's free-text goals. Not a
+ * general content filter: every other field is an enum validated by IsIn or
+ * a grade constrained by regex, and `goals` is capped at 200 characters by
+ * the DTO. Matching only, never logging or storing what matched.
+ */
+export function containsInjectionAttempt(goals: string | undefined): boolean {
+  if (!goals) return false;
+  const normalized = normalizeForMatch(goals);
+  return INJECTION_BLOCKLIST.some((phrase) => normalized.includes(phrase));
 }
 
 /**
