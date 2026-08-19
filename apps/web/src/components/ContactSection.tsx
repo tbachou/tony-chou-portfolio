@@ -6,7 +6,7 @@ import { TerminalWindow } from './TerminalWindow';
 import { useDeskScene } from './DeskSceneProvider';
 
 export function ContactSection() {
-  const { reenter } = useDeskScene();
+  const { reenter, triggerRef } = useDeskScene();
   return (
     <section
       id="contact"
@@ -62,6 +62,10 @@ export function ContactSection() {
         </p>
         <button
           type="button"
+          // Leaving the scene puts focus back here rather than at <body>.
+          // This control sits near the bottom of a very long single-page
+          // site, so landing at the top instead is a real cost.
+          ref={triggerRef}
           onClick={reenter}
           className="mt-3 text-term-sm text-term-ink transition-colors duration-term-instant hover:text-term-accent"
         >
