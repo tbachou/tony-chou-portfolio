@@ -293,6 +293,62 @@ describe('BetaUsageService', () => {
     });
   });
 
+  describe('recordGuardBlock (AC-G11)', () => {
+    it("increments guardBlockCount on today's row", async () => {
+      prisma.betaDailyUsageCounter.upsert.mockResolvedValue({});
+
+      await service.recordGuardBlock();
+
+      expect(prisma.betaDailyUsageCounter.upsert).toHaveBeenCalledWith({
+        where: { date: TODAY },
+        create: { date: TODAY, guardBlockCount: 1 },
+        update: { guardBlockCount: { increment: 1 } },
+      });
+    });
+
+    it('swallows a failed write so the plan the visitor gets is never disturbed', async () => {
+      prisma.betaDailyUsageCounter.upsert.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(service.recordGuardBlock()).resolves.toBeUndefined();
+    });
+
+    it('writes a count only — never the text that triggered the firing', async () => {
+      prisma.betaDailyUsageCounter.upsert.mockResolvedValue({});
+      await service.recordGuardBlock();
+      const call = prisma.betaDailyUsageCounter.upsert.mock.calls[0][0] as {
+        create: Record<string, unknown>;
+      };
+      expect(Object.keys(call.create).sort()).toEqual([
+        'date',
+        'guardBlockCount',
+      ]);
+    });
+  });
+
+  describe('recordInjectionBlock (AC-G11)', () => {
+    it("increments injectionBlockCount on today's row", async () => {
+      prisma.betaDailyUsageCounter.upsert.mockResolvedValue({});
+
+      await service.recordInjectionBlock();
+
+      expect(prisma.betaDailyUsageCounter.upsert).toHaveBeenCalledWith({
+        where: { date: TODAY },
+        create: { date: TODAY, injectionBlockCount: 1 },
+        update: { injectionBlockCount: { increment: 1 } },
+      });
+    });
+
+    it('swallows a failed write', async () => {
+      prisma.betaDailyUsageCounter.upsert.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(service.recordInjectionBlock()).resolves.toBeUndefined();
+    });
+  });
+
   describe('successIncrementOps', () => {
     it('increments tokenCount only on the global row (slot already reserved) and count on the per-IP row', () => {
       prisma.betaDailyUsageCounter.upsert.mockReturnValue('global-op');

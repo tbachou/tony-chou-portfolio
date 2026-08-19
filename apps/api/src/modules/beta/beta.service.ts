@@ -6,18 +6,38 @@ import { loadBetaSkill } from './skill-loader';
 import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
 import {
   AGENT_CALL_TIMEOUT_MS,
+  ANY_CRIMP_PATTERN,
   COACH_MODEL,
   CONSTANT_REST_PAIN_MESSAGE,
   DEMO_BUDGET_MESSAGE,
+  DOSE_MIN,
   DRAFTER_MODEL,
+  EQUIPMENT_ACCESS,
   FRIENDLY_ERROR_MESSAGE,
+  FULL_CRIMP_PATTERN,
+  INJECTION_BLOCKLIST,
+  RATIONALE_MAX_LENGTH,
   RED_FLAG_CATEGORIES,
   RED_FLAG_FALLBACK_MESSAGE,
   RED_FLAG_MESSAGES,
   REFUSAL_MESSAGE,
   SCREENER_MODEL,
+  normalizeForMatch,
   type RedFlagCategory,
 } from './beta.constants';
+import {
+  evaluateCoachOutput,
+  renderPlanFallback,
+  resolveGuardMode,
+  toCoachPlan,
+  type DoseSpec,
+  type DraftPlan,
+  type PlanStage,
+} from './beta-output-guard';
+// Second consumer of the conversation module's chunker, as the ownership
+// guard's call site already does: text the guard has finished deciding on
+// still has to arrive as a series of SSE events.
+import { splitIntoChunks } from '../conversation/ownership-guard';
 
 export type EmitFn = (event: string, data: unknown) => void;
 
@@ -26,16 +46,6 @@ type ScreeningResult = {
   category?: RedFlagCategory;
   tokens: number;
 };
-
-type PlanExercise = { name: string; dose: string; notes?: string };
-type PlanStage = {
-  title: string;
-  timeWindow: string;
-  exercises: PlanExercise[];
-  allowedClimbing: string;
-  advanceWhen: string[];
-};
-type DraftPlan = { stages: PlanStage[]; overallCaution?: string };
 
 @Injectable()
 export class BetaService {
@@ -59,6 +69,19 @@ export class BetaService {
     emit: EmitFn;
   }): Promise<void> {
     const { input, hashedIp, emit } = params;
+
+    // Deterministic prompt-attack check over `goals`, the only untrusted
+    // free text in the request (spec 0005 guardrails child, AC-G10). Runs
+    // before any model call and before reserveGlobalSlot(), like the two
+    // hard blocks below, so a blatant injection costs no spend and no slot.
+    // It does not replace the screener's off_topic verdict, which stays as
+    // the layer that understands language rather than matching strings.
+    if (containsInjectionAttempt(input.goals)) {
+      emit('status', { stage: 'screening' });
+      emit('error', { message: REFUSAL_MESSAGE });
+      await this.usage.recordInjectionBlock();
+      return;
+    }
 
     // Code-enforced red-flag gate (clinical audit MUST-FIX): a checked
     // red-flag box blocks deterministically, before any model call — free
@@ -126,9 +149,7 @@ export class BetaService {
       const { plan, tokens: drafterTokens } = await this.runDrafter(input);
 
       emit('status', { stage: 'coaching' });
-      const coachTokens = await this.runCoach(input, plan, (text) =>
-        emit('plan_delta', { text }),
-      );
+      const coachTokens = await this.runCoach(input, plan, emit);
 
       const totalTokens = screening.tokens + drafterTokens + coachTokens;
       await this.prisma.$transaction(
@@ -213,81 +234,45 @@ export class BetaService {
         toolName: 'submit_plan',
         toolDescription:
           'Submit the staged return-to-climbing plan as structured JSON.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            stages: {
-              type: 'array',
-              minItems: 4,
-              maxItems: 5,
-              items: {
-                type: 'object',
-                properties: {
-                  title: { type: 'string' },
-                  timeWindow: {
-                    type: 'string',
-                    description: 'e.g. "Weeks 1-2"',
-                  },
-                  exercises: {
-                    type: 'array',
-                    minItems: 1,
-                    items: {
-                      type: 'object',
-                      properties: {
-                        name: { type: 'string' },
-                        dose: {
-                          type: 'string',
-                          description: 'Sets and reps, e.g. "3 sets of 10, every other day"',
-                        },
-                        notes: { type: 'string' },
-                      },
-                      required: ['name', 'dose'],
-                    },
-                  },
-                  allowedClimbing: {
-                    type: 'string',
-                    description:
-                      "What climbing is allowed this stage, relative to the visitor's own grade.",
-                  },
-                  advanceWhen: {
-                    type: 'array',
-                    minItems: 1,
-                    items: { type: 'string' },
-                  },
-                },
-                required: [
-                  'title',
-                  'timeWindow',
-                  'exercises',
-                  'allowedClimbing',
-                  'advanceWhen',
-                ],
-              },
-            },
-            overallCaution: {
-              type: 'string',
-              description:
-                'One short caution the coach should weave in, if any.',
-            },
-          },
-          required: ['stages'],
-        },
+        // Layer 1: built per request, so several of drafter.md's prose rules
+        // become structural facts the model cannot drift past.
+        inputSchema: buildDrafterSchema(input),
         timeoutMs: AGENT_CALL_TIMEOUT_MS,
         maxRetries: 0,
       }),
     );
 
-    const plan = parseDraftPlan(result.input);
+    const plan = parseDraftPlan(result.input, input);
     return { plan, tokens: result.inputTokens + result.outputTokens };
   }
 
+  /**
+   * Layer 2's call site (spec 0005 guardrails child, AC-G6 / G7 / G12).
+   *
+   * At mode `off` the coach streams live, byte for byte today's behavior.
+   * Otherwise `onToken` accumulates without emitting — exactly as
+   * conversation.service.ts does for the ownership guard — the guard sees
+   * the complete text, and whatever is finally shown goes out re-chunked
+   * through `splitIntoChunks`. A visitor never sees an unguarded token, and
+   * never sees a plan that is not complete.
+   *
+   * The honest cost is a longer wait before the plan area fills: the visitor
+   * waits for the coach's whole generation rather than its first token. That
+   * is deliberate. Beta's UI already warns about partial plans because
+   * partial plans are dangerous here, so making the partial plan a routine
+   * state would be moving the wrong way on a clinical surface.
+   */
   private async runCoach(
     input: BetaPlanRequestDto,
     plan: DraftPlan,
-    onDelta: (text: string) => void,
+    emit: EmitFn,
   ): Promise<number> {
+    const mode = resolveGuardMode();
+    const buffered = mode !== 'off';
+
     // Only retry the stream if nothing has reached the client yet; a retry
-    // after partial output would duplicate visible text.
+    // after partial output would duplicate visible text. When buffering,
+    // nothing ever has, so a retry is always safe.
     let emittedAnything = false;
     const result = await this.timedAgentCall(
       'coach',
@@ -301,18 +286,52 @@ export class BetaService {
             buildVisitorProfile(input),
             '',
             'Draft plan JSON to rewrite (keep every number and dose exactly):',
-            JSON.stringify(plan, null, 2),
+            // Dose prose is rendered by code, never by the model, so the
+            // coach receives a finished string it cannot alter numerically.
+            JSON.stringify(toCoachPlan(plan), null, 2),
           ].join('\n'),
           maxTokens: 4000,
           timeoutMs: AGENT_CALL_TIMEOUT_MS,
           maxRetries: 0,
-          onToken: (text) => {
-            emittedAnything = true;
-            onDelta(text);
-          },
+          onToken: buffered
+            ? () => undefined
+            : (text) => {
+                emittedAnything = true;
+                emit('plan_delta', { text });
+              },
         }),
       () => !emittedAnything,
     );
+
+    if (buffered) {
+      let text = result.text;
+      const verdict = evaluateCoachOutput(result.text, plan, input);
+      if (!verdict.ok) {
+        // Log-safe by construction: `reason` is built only from literals,
+        // our own rule constants, and integer counts. It can never carry
+        // visitor or model text (Beta writes anonymous counters only).
+        this.logger.warn(
+          JSON.stringify({
+            guard: 'beta-output',
+            mode,
+            rule: verdict.reason,
+            outcome: mode === 'enforce' ? 'substituted' : 'observed',
+          }),
+        );
+        await this.usage.recordGuardBlock();
+        if (mode === 'enforce') {
+          // Discard the coach's prose and render the plan deterministically
+          // from the validated drafter object. The visitor still gets a
+          // complete plan, no spend is wasted, and the request counts as the
+          // success it was — only the warmth is lost. Silent by design.
+          text = renderPlanFallback(plan);
+        }
+      }
+      for (const chunk of splitIntoChunks(text)) {
+        emit('plan_delta', { text: chunk });
+      }
+    }
+
     return result.inputTokens + result.outputTokens;
   }
 
@@ -424,7 +443,249 @@ function buildVisitorProfile(input: BetaPlanRequestDto): string {
   ].join('\n');
 }
 
-function parseDraftPlan(raw: unknown): DraftPlan {
+/**
+ * Cheap prompt-attack check over the visitor's free-text goals. Not a
+ * general content filter: every other field is an enum validated by IsIn or
+ * a grade constrained by regex, and `goals` is capped at 200 characters by
+ * the DTO. Matching only, never logging or storing what matched.
+ */
+export function containsInjectionAttempt(goals: string | undefined): boolean {
+  if (!goals) return false;
+  const normalized = normalizeForMatch(goals);
+  return INJECTION_BLOCKLIST.some((phrase) => normalized.includes(phrase));
+}
+
+/**
+ * Layer 1: the equipment enum for THIS request.
+ *
+ * Transcribes drafter.md's "Only prescribe equipment the visitor has
+ * (`equipment_access`)" and "Never invent gear". It constrains the GEAR, never
+ * the exercise, so it enforces the instruction without expressing any opinion
+ * about what a valid exercise is. `none` is always offered: an exercise that
+ * needs no gear is available to everyone.
+ *
+ * When the visitor reported no equipment at all (the field is optional), there
+ * is nothing to transcribe — we do not know what they have — so the enum stays
+ * the full list rather than narrowing to `none`, which would be a decision.
+ */
+function allowedEquipment(input: BetaPlanRequestDto): string[] {
+  const reported = input.equipmentAccess ?? [];
+  if (reported.length === 0) return [...EQUIPMENT_ACCESS];
+  return EQUIPMENT_ACCESS.filter(
+    (value) => value === 'none' || reported.includes(value),
+  );
+}
+
+/**
+ * Layer 1: the drafter's tool schema, built per request.
+ *
+ * Every constraint here transcribes an explicit requirement or prohibition in
+ * drafter.md — see the source comment on each. `exercises[].name` carries NO
+ * enum on purpose (spec AC-G2): an allowlist of permitted exercises would
+ * require knowing everything that is clinically valid, which is judgement and
+ * out of scope, and drafter.md's injury lists are illustrative, not exhaustive.
+ */
+function buildDrafterSchema(
+  input: BetaPlanRequestDto,
+): Record<string, unknown> {
+  // "a MANDATORY `overallCaution` (never omit it for this pain behavior)"
+  const cautionMandatory = input.painBehavior === 'constant_even_at_rest';
+
+  return {
+    type: 'object',
+    properties: {
+      stages: {
+        type: 'array',
+        // "Never exceed 5 stages or go below 4." (unchanged)
+        minItems: 4,
+        maxItems: 5,
+        items: {
+          type: 'object',
+          properties: {
+            // Placed FIRST so the drafter states its reasoning before it
+            // prescribes. Not a constraint: it restricts nothing and encodes
+            // no view about what is valid.
+            rationale: {
+              type: 'string',
+              maxLength: RATIONALE_MAX_LENGTH,
+              description:
+                'Why this stage looks the way it does for this profile. Stated before the prescriptions, and not shown to the visitor.',
+            },
+            title: { type: 'string' },
+            timeWindow: {
+              type: 'string',
+              description:
+                'A concrete range, e.g. "Weeks 1-2". Windows must not overlap and must increase across stages.',
+            },
+            exercises: {
+              type: 'array',
+              // "`exercises` — 2 to 4 exercises with exact dose"
+              minItems: 2,
+              maxItems: 4,
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  // "Only prescribe equipment the visitor has" / "Never invent gear"
+                  equipmentUsed: {
+                    type: 'string',
+                    enum: allowedEquipment(input),
+                    description:
+                      'The gear this exercise needs. Only what the visitor reported having; use "none" for bodyweight, household objects, and self-massage.',
+                  },
+                  // "Every number you output (sets, reps, weeks, grades) must
+                  // be concrete, not a range like 'some'." Integers, with a
+                  // positive-integer floor and deliberately no ceiling: see
+                  // DOSE_MIN in beta.constants.ts for why.
+                  dose: {
+                    type: 'object',
+                    properties: {
+                      sets: { type: 'integer', minimum: DOSE_MIN },
+                      reps: { type: 'integer', minimum: DOSE_MIN },
+                      holdSeconds: {
+                        type: 'integer',
+                        minimum: DOSE_MIN,
+                        description:
+                          'Only for holds/isometrics; omit for rep-based work.',
+                      },
+                      frequencyPerWeek: {
+                        type: 'integer',
+                        minimum: DOSE_MIN,
+                        description: 'Sessions per week.',
+                      },
+                    },
+                    required: ['sets', 'reps', 'frequencyPerWeek'],
+                  },
+                  notes: { type: 'string' },
+                },
+                required: ['name', 'equipmentUsed', 'dose'],
+              },
+            },
+            allowedClimbing: {
+              type: 'string',
+              description:
+                "What climbing is allowed this stage, relative to the visitor's own grade.",
+            },
+            advanceWhen: {
+              type: 'array',
+              // "`advanceWhen` — 2 to 3 concrete, self-assessable criteria"
+              minItems: 2,
+              maxItems: 3,
+              items: { type: 'string' },
+            },
+          },
+          required: [
+            'rationale',
+            'title',
+            'timeWindow',
+            'exercises',
+            'allowedClimbing',
+            'advanceWhen',
+          ],
+        },
+      },
+      overallCaution: {
+        type: 'string',
+        description: cautionMandatory
+          ? 'REQUIRED for this profile: pain at rest that does not improve within a couple of weeks deserves a professional assessment.'
+          : 'One short caution the coach should weave in, if any.',
+      },
+    },
+    required: cautionMandatory ? ['stages', 'overallCaution'] : ['stages'],
+  };
+}
+
+/** A parsed `timeWindow`, or null when its numbers cannot be read. */
+function parseTimeWindow(raw: string): { start: number; end: number } | null {
+  const numbers = raw.match(/\d+/g);
+  if (!numbers || numbers.length === 0) return null;
+  const values = numbers.map(Number);
+  return { start: values[0], end: values[values.length - 1] };
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= DOSE_MIN;
+}
+
+function isValidDose(dose: unknown): dose is DoseSpec {
+  const candidate = dose as Partial<DoseSpec> | null;
+  if (!candidate || typeof candidate !== 'object') return false;
+  if (
+    !isPositiveInteger(candidate.sets) ||
+    !isPositiveInteger(candidate.reps) ||
+    !isPositiveInteger(candidate.frequencyPerWeek)
+  ) {
+    return false;
+  }
+  return (
+    candidate.holdSeconds === undefined ||
+    isPositiveInteger(candidate.holdSeconds)
+  );
+}
+
+/**
+ * Layer 1's explicit prohibitions, checked on the drafter's own output.
+ *
+ * These MUST sit here rather than only in layer 2: when the output guard
+ * rejects the coach's prose it renders this plan object verbatim, so a
+ * forbidden prescription that reached the object would be faithfully shipped
+ * by the fallback. The drafter-side checks are what make the fallback safe.
+ *
+ * They are deliberately few, because a rejection here lands on the hard error
+ * path — the visitor sees an error rather than a plan. Each one transcribes a
+ * prohibition drafter.md states in so many words.
+ */
+function assertExplicitProhibitions(
+  stages: PlanStage[],
+  input: BetaPlanRequestDto,
+): void {
+  if (input.injuryArea === 'finger_pulley') {
+    stages.forEach((stage, index) => {
+      for (const exercise of stage.exercises) {
+        const name = normalizeForMatch(exercise.name);
+        // "Never program full-crimp training." — every stage.
+        if (name.includes(FULL_CRIMP_PATTERN)) {
+          throw new Error(
+            'Drafter named a full-crimp exercise in a finger_pulley plan',
+          );
+        }
+        // The early phase's "No crimping of any kind." — stage 1 only.
+        // Narrowed to stage 1 deliberately: mapping the skill file's three
+        // phases (early/middle/later) onto four or five stages would be a
+        // judgement, so only the part that transcribes cleanly is enforced.
+        if (index === 0 && name.includes(ANY_CRIMP_PATTERN)) {
+          throw new Error(
+            'Drafter named a crimping exercise in stage 1 of a finger_pulley plan',
+          );
+        }
+      }
+    });
+  }
+
+  // Structural, not clinical: stage time windows must not overlap and must
+  // increase. Windows whose numbers cannot be read are skipped rather than
+  // rejected — an unreadable format is not evidence of a bad plan.
+  let previousEnd: number | null = null;
+  for (const stage of stages) {
+    const window = parseTimeWindow(stage.timeWindow);
+    if (!window) {
+      previousEnd = null;
+      continue;
+    }
+    if (window.end < window.start) {
+      throw new Error('Drafter returned a stage time window that runs backwards');
+    }
+    if (previousEnd !== null && window.start <= previousEnd) {
+      throw new Error('Drafter returned overlapping stage time windows');
+    }
+    previousEnd = window.end;
+  }
+}
+
+export function parseDraftPlan(
+  raw: unknown,
+  input: BetaPlanRequestDto,
+): DraftPlan {
   const candidate = raw as DraftPlan | null;
   const stages = candidate?.stages;
   if (!Array.isArray(stages) || stages.length < 4 || stages.length > 5) {
@@ -437,17 +698,24 @@ function parseDraftPlan(raw: unknown): DraftPlan {
       typeof stage?.title !== 'string' ||
       typeof stage?.timeWindow !== 'string' ||
       typeof stage?.allowedClimbing !== 'string' ||
+      typeof stage?.rationale !== 'string' ||
       !Array.isArray(stage?.exercises) ||
       stage.exercises.length === 0 ||
       !Array.isArray(stage?.advanceWhen) ||
       stage.advanceWhen.length === 0 ||
       stage.exercises.some(
-        (e) => typeof e?.name !== 'string' || typeof e?.dose !== 'string',
+        (e) =>
+          typeof e?.name !== 'string' ||
+          typeof e?.equipmentUsed !== 'string' ||
+          !isValidDose(e?.dose),
       )
     ) {
       throw new Error('Drafter returned a malformed stage');
     }
   }
+
+  assertExplicitProhibitions(stages, input);
+
   return {
     stages,
     ...(typeof candidate?.overallCaution === 'string' && {
@@ -455,3 +723,6 @@ function parseDraftPlan(raw: unknown): DraftPlan {
     }),
   };
 }
+
+/** Exported for tests only: the per-request schema layer 1 builds. */
+export const __testing = { buildDrafterSchema, allowedEquipment };
