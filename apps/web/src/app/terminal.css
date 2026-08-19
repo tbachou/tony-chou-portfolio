@@ -49,6 +49,13 @@
   --glow-alpha-far: 0.25;
   --glow-blur-near: 4px;
   --glow-blur-far: 12px;
+  /* How the custom cursor composites against whatever it is over
+     (.retro-cursor, below). `difference` is not a neutral default — it is
+     a palette-specific trick that only reads because bright phosphor
+     inverted against a near-black canvas stays bright. Tokenized for the
+     same reason the glow radii above are: the light palette has to
+     answer this question differently. */
+  --cursor-blend: difference;
   /* The printed sheet (see the light palette below). A CRT has no paper,
      so the dark canvas carries no background image at all. */
   --sheet-image: none;
@@ -182,6 +189,12 @@
     --glow-alpha-far: 0.14;
     --glow-blur-near: 0.4px;
     --glow-blur-far: 1px;
+    /* Paper has nothing to invert against. Differencing the ink against
+       manila lands on ~rgb(220,186,135) — 1.53:1, an invisible cursor,
+       and 1.58:1 over a green bar. Struck flat instead, the same ink
+       block measures 11.16:1 on the canvas and 9.54:1 on a bar, and
+       reads as a struck block rather than a glowing one. */
+    --cursor-blend: normal;
     --sheet-image: var(--paper-sheet-image);
     --sheet-size: var(--paper-sheet-size);
     --sheet-position: var(--paper-sheet-position);
@@ -211,6 +224,8 @@
   --glow-alpha-far: 0.14;
   --glow-blur-near: 0.4px;
   --glow-blur-far: 1px;
+  /* See the note in the prefers-color-scheme block above. */
+  --cursor-blend: normal;
   --sheet-image: var(--paper-sheet-image);
   --sheet-size: var(--paper-sheet-size);
   --sheet-position: var(--paper-sheet-position);
@@ -353,11 +368,16 @@
   }
 }
 
-/* Custom mouse cursor — a phosphor-block trail with a mix-blend-mode
-   invert, the same trick as a spotlight blend cursor but sharp-edged and
-   green, matching the CRT identity. RetroCursor.tsx only adds the
-   `retro-cursor-active` class when JS has confirmed a fine pointer and no
-   reduced-motion preference, so the native cursor is the safe default. */
+/* Custom mouse cursor — a sharp-edged accent block that trails the
+   pointer. How it composites is palette-dependent and comes from
+   --cursor-blend: on the CRT it inverts against the near-black canvas
+   (a phosphor block, the spotlight-cursor trick); on paper it is struck
+   flat, because differencing ink against manila stock yields a ~1.5:1
+   ghost. Since the native cursor is hidden below, this element is the
+   only pointer the visitor has, so it must clear contrast in every
+   palette. RetroCursor.tsx only adds the `retro-cursor-active` class
+   when JS has confirmed a fine pointer and no reduced-motion
+   preference, so the native cursor is the safe default. */
 body.retro-cursor-active,
 body.retro-cursor-active a,
 body.retro-cursor-active button,
@@ -372,7 +392,7 @@ body.retro-cursor-active [role='button'] {
   width: 12px;
   height: 12px;
   background: var(--color-accent);
-  mix-blend-mode: difference;
+  mix-blend-mode: var(--cursor-blend);
   pointer-events: none;
   z-index: 100;
   opacity: 0;
