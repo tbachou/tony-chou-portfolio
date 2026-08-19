@@ -205,6 +205,11 @@ export default function BetaPage() {
               required. Unlike the planner, the message you send here is stored and emailed to
               me.
             </p>
+            <p className="mt-3 max-w-[58ch]">
+              This goes to a mailbox I read when I can. It is not a way to reach a clinician, and
+              it is not monitored for urgent problems — if something is getting worse, contact a
+              doctor or emergency services.
+            </p>
             <div className="mt-8 max-w-xl">
               <FeedbackForm source="beta" variant="beta" />
             </div>
