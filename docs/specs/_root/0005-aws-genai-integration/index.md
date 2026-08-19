@@ -15,14 +15,16 @@ Child specs, in build order:
 2. [0005-feedback-intake.md](0005-feedback-intake.md): the anonymous feedback form (Beta and portfolio surfaces), api endpoint, Postgres table, and the SNS publish hook.
 3. [0005-classifier-flow.md](0005-classifier-flow.md): SNS to Lambda to Bedrock to SES. Classifies each feedback message and emails the owner.
 4. [0005-provider-swap.md](0005-provider-swap.md): the AI_PROVIDER flag that can serve the interview simulator through Bedrock instead of the direct Anthropic API.
+5. [0005-beta-guardrails.md](0005-beta-guardrails.md): Bedrock Guardrails as a second safety layer on the Beta planner, called standalone through `ApplyGuardrail` while Beta stays on the direct Anthropic API. Supports the decision to make Beta advertisable without moving the clinical surface onto Bedrock, and proposes an amendment to cross child contract clause 1.
 
-Planned future children, added when their build is reached (listed in Follow-up): Bedrock Guardrails on the Beta planner, and a Bedrock Knowledge Base RAG source for the interview agent.
+Planned future children, added when their build is reached (listed in Follow-up): a Bedrock Knowledge Base RAG source for the interview agent.
 
 ## Cross child contract
 
 Every child must honor these. They are the umbrella's law, and a child may tighten but never loosen them.
 
 1. **Data boundary (refined 2026-08-19).** Beta planner visitor content (injury details, goals, plans) never leaves Render and the direct Anthropic API. Feedback text is a separate, consented class: the form labels it "do not include personal or medical details", and it may transit AWS (SNS, Lambda, Bedrock, SES) for classification and delivery, but is never persisted on AWS (no S3, no DynamoDB, no CloudWatch log line containing the text). Postgres on Render remains the only store.
+   > **Amendment proposed, not applied.** The Guardrails child ([0005-beta-guardrails.md](0005-beta-guardrails.md), decision D5) proposes replacement wording for this clause, because a guardrail must read Beta content to judge it and so violates the clause as written. The clause above is still the law until the engineer ratifies that amendment. The proposed replacement lives in the child spec; it is deliberately not applied here.
 2. **Credentials are one directional.** The api holds AWS credentials scoped to publishing one SNS topic. AWS never holds database credentials or Anthropic keys for the Render side. Tony creates all IAM users, roles, and keys in the console himself; keys enter Render through its env UI, never through code, state, or chat.
 3. **Region**: us-east-2. Claude models reach Bedrock there through cross region inference profiles (ids prefixed `us.`) when not directly hosted.
 4. **Tagging**: every Terraform managed resource carries `project = "genai-track"` through provider `default_tags`. After first spend, Tony activates the tag for cost allocation and creates the tag filtered budget (see Follow-up).
@@ -75,7 +77,8 @@ Tracer Bullet ordering (the repo's default approach): stand the thinnest end to 
 
 ## Follow-up
 
-- [ ] Write child specs for Bedrock Guardrails on Beta (hard prerequisite before broadly advertising Beta) and Knowledge Base RAG, when their builds are reached.
+- [ ] **Ratify or reject the amendment to cross child contract clause 1 proposed by [0005-beta-guardrails.md](0005-beta-guardrails.md) (decision D5 in that child).** Clause 1 below is unchanged and still governs until then. Every guardrail option violates it as written, because a guardrail must read the content to judge it, so the Guardrails child cannot be built until this is settled. The proposed replacement wording is in the child, not applied here.
+- [ ] Write the Knowledge Base RAG child spec when its build is reached.
 - [ ] Install the three community skills shortlisted for this program (`hashicorp/agent-skills@terraform-style-guide`, `aws/agent-toolkit-for-aws@aws-iam`, `aws/agent-toolkit-for-aws@aws-serverless`) pending Tony's approval, then reference them in root AGENTS.md and the new `infra/AGENTS.md`.
 - [ ] After first AWS spend: activate the `project` cost allocation tag and create the tag filtered `genai-infra` budget.
 - [ ] Run /sync (or /audit infra) after the foundation lands so `infra/` gets its own AGENTS.md and the root AGENTS.md learns the new workspace.
