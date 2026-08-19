@@ -1,424 +1,324 @@
-# 0005 child: Bedrock Guardrails on the Beta planner
+# 0005 child: in process safety layers on the Beta planner
 
 ## Summary
 
-Beta moves onto Bedrock along with everything else, and gains guardrails without imposing them on every surface. Two guardrails, split along a permissiveness seam: a **baseline** guardrail (prompt attack filtering and PII masking) applied account wide through Bedrock's enforced configuration, because those two things help on every surface and hurt none, plus a **clinical** guardrail (denied topics about medication and diagnosis, contextual grounding of the coach against the drafted plan) applied only to Beta's calls. Enforced and request level guardrails layer as a union with the most restrictive control winning, so Beta gets both and nothing else gets the clinical one.
+Beta gets an output side safety layer it does not currently have, built in process with no new dependency and no AWS footprint. Beta stays on the direct Anthropic API on Sonnet 5, and the umbrella's data boundary promise survives untouched: Beta visitor content never leaves Render and Anthropic.
 
-Two things must be said plainly rather than buried. First, moving Beta to Bedrock **downgrades the clinical surface from Sonnet 5 to Sonnet 4.6**, because Sonnet 5 returns 403 for this account. The health feature will run a weaker model than it runs today. Second, the clinical guardrail cannot be delivered the way it looks like it should be: `@anthropic-ai/bedrock-sdk` cannot carry a request level `guardrailConfig`, so the clinical half is applied through standalone `ApplyGuardrail` calls from the api instead. That is enforcement by the application, not by Bedrock.
+The pattern already exists in this repo. `conversation/ownership-guard.ts` evaluates the model's complete output against deterministic rules and, on failure, discards the generated text and substitutes safe copy, re chunking it so it still reads as streamed. Beta has nothing equivalent. Two layers close the gap: first, tighten the drafter's forced tool schema so unsafe plans cannot be represented at all, and second, a deterministic guard over the coach's output. A third layer, an LLM judge, is recommended against for v1 with reasons.
 
-This child needs an amendment to the umbrella's cross child contract clause 1, and the amendment is now much larger than a screening exception: under this architecture all Beta visitor content goes to AWS for generation.
+## The gap this closes, stated plainly
+
+**Beta has no output side check of any kind.** Its screener is input side. Its two hard blocks (checked red flag box, constant rest pain escalation) are pre model. `parseDraftPlan` checks shape, not content. Nothing looks at what the drafter prescribed or what the coach wrote before a visitor reads it.
+
+So the clinical surface, the one that tells injured people how to load an injured tendon, is missing the guard the work history chatbot already has. That is the whole reason for this child.
 
 ## Requirements
 
 **User stories**:
-- As the owner, I want every AI surface on Bedrock so that the AWS work is real and consistent, without every surface having to pass a guardrail it does not need.
-- As the owner, I want a second, independent safety net on Beta's clinical surface so that I can advertise the tool without the whole safety story resting on one screener call and my own prompt writing.
-- As an injured climber, I want that net to be invisible when I am asking an ordinary question, so that describing a torn pulley in blunt words never gets me refused.
+- As an injured climber, I want the plan I am given to be incapable of telling me something harmful, not merely unlikely to.
+- As the owner, I want Beta's safety to rest on code I can test rather than on prompt wording alone, so that a model that drifts cannot quietly take the product with it.
+- As the owner, I want that safety to cost no new service, no new dependency, and no change to what leaves Render.
 
-**Acceptance criteria** (the contract `/develop` builds to and `/check verify` checks):
+**Acceptance criteria**:
 
-- **AC-G1**: Beta generates through Bedrock behind `AI_PROVIDER_BETA`, streaming included, verified live in the browser. With the flag unset Beta stays on the direct Anthropic API and behavior is byte for byte today's.
-- **AC-G2**: `BedrockAnthropicService.streamMessage` and `.forceToolCall` have unit tests before Beta is pointed at them, covering the request shape (including the `cache_control` block), token streaming, usage field extraction, and timeout and retry option passing. Beta must not be the first thing to exercise those methods in production.
-- **AC-G3**: the baseline guardrail is enforced account wide in us-east-2 and applies to Bedrock calls with no request parameter, proven by a call that trips it.
-- **AC-G4**: enabling enforcement breaks nothing. A documented dry run, before enforcement is switched on, proves that the interview simulator, the feedback classifier, and Beta all still work under the baseline policy, that streaming is unaffected, and that no surface's system prompt trips the prompt attack filter.
-- **AC-G5**: the clinical guardrail applies to Beta only. No clinical denied topic ever evaluates an interview simulator or feedback classifier call.
-- **AC-G6**: with `BETA_GUARDRAIL_MODE` unset or `off`, no clinical `ApplyGuardrail` call is made on any path, and every existing beta spec passes unchanged.
-- **AC-G7**: in `shadow`, the visitor sees exactly what they see today: the same copy, the same token by token stream, the same timing within noise. Interventions are recorded as counter increments and structured log lines only.
-- **AC-G8**: in `enforce`, an input intervention blocks before the screener runs. No screener, drafter, or coach call is made, the visitor sees the existing refusal copy, and the reserved global slot is refunded with reason `guardrail`.
-- **AC-G9**: in `enforce`, an output intervention on a coach segment withholds that segment and every segment after it. The visitor sees the new guardrail card, plus the existing "cut off, do not follow a partial plan" warning when earlier segments were already on screen, and the slot is refunded.
-- **AC-G10**: the clinical guardrail never overrides a clinical block. When the screener returns `red_flag` (including its fail closed coercion of an unparseable verdict) and the guardrail also intervened, the visitor sees the red flag card.
-- **AC-G11**: the clinical `ApplyGuardrail` call fails open. Any error, timeout, throttle, or missing configuration on that call lets the request proceed as mode `off` would, logs one structured line, and increments `guardrailErrorCount`. (This does **not** extend to Bedrock generation itself, which Beta now depends on; see Consequences.)
-- **AC-G12**: a masking only result is not a block. When the sensitive information policy anonymizes text and no filter, denied topic, or word policy returns a blocked action, the request proceeds with the masked text and the visitor is not refused.
-- **AC-G13**: legitimate rehab content is never intervened on. A corpus of at least 30 realistic profiles across the three injury areas, deliberately including blunt injury description, profanity, constant pain wording, and ordinary climbing goals, produces zero interventions across a full shadow run before `enforce` is enabled.
-- **AC-G14**: the data boundary holds as amended, and no Beta content comes to rest on AWS. Bedrock model invocation logging and CloudTrail data events for Bedrock runtime are both off, verified by a documented console check, and no Beta text appears in any CloudWatch log line.
-- **AC-G15**: both guardrails are pinned to numbered versions. `DRAFT` is rejected at boot for the clinical guardrail and is not accepted by the enforcement API for the baseline. A Terraform policy edit cannot change production behavior without an explicit promotion step.
-- **AC-G16**: counters follow the module's established pattern. `guardrailFlagCount` (shadow), `guardrailBlockCount` (enforce, riding the refund's atomic update), and `guardrailErrorCount` (fail open) each increment on their own event, and a lost tally write never disturbs the response.
+- **AC-G1**: no AWS is involved. Beta stays on the direct Anthropic API on Sonnet 5, and cross child contract clause 1 holds unchanged: Beta visitor content never leaves Render and the direct Anthropic API.
+- **AC-G2**: the drafter's tool schema is built per request from `injuryArea` and `equipmentAccess`. An exercise outside the visitor's injury vocabulary, or requiring equipment they do not have, is not representable in the drafter's output.
+- **AC-G3**: full crimp work is not representable for a `finger_pulley` plan. The vocabulary contains no such entry, so the skill file's "never program full-crimp training" becomes a structural fact rather than an instruction.
+- **AC-G4**: exercise dosing is structured (`sets`, `reps`, optional `holdSeconds`, `frequencyPerWeek`) with schema enforced ceilings, and is rendered into prose by code. The coach is never in a position to alter a dose number.
+- **AC-G5**: `overallCaution` is a required field when `painBehavior` is `constant_even_at_rest`, enforced by the schema built for that request.
+- **AC-G6**: the coach's output is buffered in full, evaluated by the guard, and only then emitted, re chunked through the existing `splitIntoChunks` so it still arrives as multiple SSE events. A visitor never sees an unguarded token.
+- **AC-G7**: when the guard rejects the coach's output, the visitor still receives a complete plan, rendered deterministically from the validated drafter object. No error card, no partial plan, and `planCount` still increments because the request succeeded.
+- **AC-G8**: every rule in the guard's rule table is implemented, and each has tests covering both what it must catch and the legitimate rehab language it must not catch.
+- **AC-G9**: a corpus of at least 30 realistic profiles across the three injury areas, including blunt injury description, profanity, and constant pain wording, produces zero guard firings in shadow mode before `enforce` is enabled.
+- **AC-G10**: a deterministic injection check runs over `goals` before any model call and before `reserveGlobalSlot()`, and reuses the existing `REFUSAL_MESSAGE`.
+- **AC-G11**: counters follow Beta's established tally pattern: `guardBlockCount` and `injectionBlockCount`, each incremented on its own event by a swallowed `safeIncrement` that can never disturb the response.
+- **AC-G12**: with `BETA_OUTPUT_GUARD_MODE` unset or `off`, behavior is byte for byte today's and every existing beta spec passes unchanged.
+- **AC-G13**: no new npm dependency, no new infrastructure, and no new configuration beyond the one mode flag.
 
 ## Options considered
 
-The prior question, whether Beta should stay on the direct Anthropic API, is **settled by the engineer's intent**: everything moves to Bedrock. What was open is how to apply a guardrail selectively once it does, since blanket application is explicitly not wanted. Four ways were weighed.
+### Option 1: Bedrock Guardrails (evaluated in depth, rejected)
 
-### Option A: per request `guardrailConfig` in application code only
+Recorded so the reasoning is not lost. Two shapes were designed and costed: a standalone `ApplyGuardrail` check either side of Beta's model calls, and a two guardrail split with a permissive baseline enforced account wide plus a Beta specific clinical guardrail.
 
-Beta's calls carry a guardrail identifier; other surfaces do not.
+**Rejected because**:
+- It requires amending the umbrella's cross child contract clause 1. Every variant sends Beta visitor content to AWS, because a guardrail must read content to judge it. The strongest variant required withdrawing the clause outright, since it moved Beta's generation to Bedrock too.
+- Moving Beta to Bedrock costs Sonnet 5. Bedrock returns 403 for Sonnet 5 on this account, so the clinical reasoning core would have dropped to Sonnet 4.6.
+- It would make the health feature depend on AWS for availability. An AWS incident would take Beta fully down, which is not true today.
+- Per request `guardrailConfig` is not expressible on this stack. `@anthropic-ai/bedrock-sdk` emits Anthropic Messages shaped bodies, and Bedrock requires a top level `amazon-bedrock-guardrailConfig` object plus `guardContent` marker tags when the guardrail headers are present, failing HTTP 400 otherwise.
+- Which meant the clinical half would have been applied by standalone calls the application chooses to make, so it would have been application enforced anyway. Having established that, the AWS version bought coverage and consistency rather than a stronger clinical guarantee, at the cost of three real things.
 
-**Pros**: simple, surgical, exactly as selective as wanted, and expressed entirely in one module's code.
-**Cons**: a future code path that forgets the parameter silently loses the layer, with nothing outside the repo to catch it. And, decisively, **it is not expressible on the SDK this repo uses** (see the finding below).
+Bedrock stays the right answer for the interview simulator (Sonnet 4.6) and the feedback classifier (Haiku 4.5). Beta is the exception, deliberately.
 
-### Option B: IAM condition key `bedrock:GuardrailIdentifier`, scoped by model ARN
+### Option 2: in process layers, mirroring `ownership-guard.ts` (chosen)
 
-An IAM policy allows inference only when the request carries a named guardrail, with the `Resource` scoped to particular foundation model ARNs so only some surfaces are covered.
+Schema tightening plus a deterministic output guard, built the way this repo already builds this.
 
-**Pros**: unbypassable at the permission layer, and selective within a single IAM user without needing separate credentials.
-**Cons**: it discriminates by **model**, not by application. It only works if Beta uses a model id no other surface uses, and if Beta and the interview simulator both want Sonnet 4.6 there is nothing to key on. Verified against the AWS reference policies: the condition reads the guardrail identifier **present in the request**, so it also inherits option A's blocker completely. Since the SDK cannot put an identifier in the request, the paired `Deny` on `StringNotEquals` would reject every Beta call outright. Option B does not merely fail to help here, it would break the surface.
+**Pros**: no new dependency, no new service, no boundary change, no availability coupling, fully testable under the repo's mocked test convention, and it reuses a pattern and a helper (`splitIntoChunks`) that already exist. Layer 1 in particular is prevention rather than detection, which no external guardrail can offer.
+**Cons**: the rules are hand written and catch the phrasings they were written for, not every way a model could express the same idea, exactly as `ownership-guard.ts` says of itself in a comment. Maintaining them is on the owner, and nothing will remind anyone to revisit them when a skill file changes.
 
-### Option C: two guardrails split along a permissiveness seam (chosen)
+### Option 3: prompt hardening only
 
-A permissive **baseline** guardrail applied account wide through `PutEnforcedGuardrailConfiguration`, plus a Beta specific **clinical** guardrail applied only to Beta's calls. Enforced and request level guardrails layer as a union with the most restrictive winning, so Beta gets both.
+Strengthen the skill files and rely on the models to comply.
 
-**Pros**: the insight that makes it work is that "guardrail" is not one thing. Prompt attack filtering and PII redaction are good on every surface in this program and have almost no false positive risk on any of them. Clinical denied topics and contextual grounding are Beta specific and would be actively harmful elsewhere. Splitting along that seam gives an **unbypassable floor everywhere** plus **depth where it matters**, and it needs none of the model id gymnastics option B depends on. The floor half is genuinely unforgettable: enforcement is server side and needs no request parameter, so no code path can drop it.
-**Cons**: two guardrail resources and two mental models. Billing counts text units per guardrail ARN per request, so Beta's calls pay for both. The floor cannot be shadow tested in place, because enforcement has no shadow mode, so proving it safe takes a deliberate dry run. And the clinical half cannot be delivered as a request parameter, so it is applied by the api instead and is therefore not unbypassable.
-
-### Option D: one guardrail account wide
-
-A single guardrail, clinical policy included, enforced across the account.
-
-**Pros**: one resource, one policy, nothing to forget anywhere.
-**Cons**: rejected. The feedback classifier Lambda reads arbitrary visitor text and its documented failure mode is a silent fall back to "unclassified" (child spec AC-C2), so a clinical guardrail firing there would degrade classification invisibly. The interview simulator would eat latency, cost, and a refusal path it has no use for.
-
-## The finding that reshapes option C
-
-**`@anthropic-ai/bedrock-sdk` cannot carry a request level guardrail.** Verified 2026-08-19 against the AWS guardrails documentation and a matching open issue against Anthropic's own Bedrock path (`anthropics/claude-agent-sdk-python` issue 999, opened 2026-05-28, still open, no maintainer response).
-
-The mechanics: on the `InvokeModel` and `InvokeModelWithResponseStream` path, a guardrail is requested through the `X-Amzn-Bedrock-GuardrailIdentifier` and `X-Amzn-Bedrock-GuardrailVersion` headers. When those headers are present, Bedrock additionally requires a top level `amazon-bedrock-guardrailConfig` object in the request body, and expects natural language segments wrapped in `<amazon-bedrock-guardrails-guardContent_...>` marker tags (with `tool_use` and `tool_result` blocks left unwrapped). The Anthropic SDKs emit Anthropic Messages shaped bodies with neither, so Bedrock rejects the call with HTTP 400 "Guardrail was enabled but input is in incorrect format" **before the model is invoked**. It fails closed and loudly, which is the one mercy here.
-
-`guardrailConfig` as a first class parameter belongs to the `Converse` and `ConverseStream` operations, which this repo does not use for chat. `infra/bedrock.tf` and the provider swap child deliberately chose `@anthropic-ai/bedrock-sdk` precisely because `messages.create` and `messages.stream` are shape identical to the direct SDK, which is what made the provider swap a zero consumer change refactor.
-
-Three ways out, and the third is chosen:
-
-1. **Smuggle the header and body fields through the Anthropic SDK.** Undocumented, unsupported, and the sibling SDK's issue shows it is exactly the thing that breaks. It would also need the marker tag wrapping, which means reimplementing Bedrock's tagging format by hand inside a clinical surface. Rejected.
-2. **Move Beta to the raw `Converse` API** via `@aws-sdk/client-bedrock-runtime`. This is where `guardrailConfig`, `guardContent` tagging, and `streamProcessingMode` all work properly. But it means rewriting `forceToolCall` and `streamMessage` against a different message shape, a different tool call shape, and a different streaming event model, for Beta only, which splits the provider abstraction the last child just built. Rejected for this child, recorded in Follow-up as the honest long term answer if request level guardrails become important.
-3. **Apply the clinical guardrail through standalone `ApplyGuardrail` calls** from the api, while Beta's generation goes through Bedrock like everything else. Chosen. The AWS documentation describes `ApplyGuardrail` as explicitly decoupled from model invocation and designed for exactly this, and the SDK issue names it as the workaround. The cost is that the clinical layer is enforced by the api reading a verdict, not by Bedrock refusing to answer, so it carries option A's forgettable property. The baseline half remains unbypassable, which is where the floor belongs.
-
-**Net effect on option C**: the split survives intact and so does its reasoning. The floor is enforced by AWS; the depth is enforced by the application. That asymmetry is a real weakening of what option C promised and is recorded as such.
+**Pros**: free, immediate, no code.
+**Cons**: this is what exists today, and it is the thing the gap describes. A prompt cannot make an output impossible.
 
 ## Decisions awaiting ratification
 
 **None of these is settled until the engineer ratifies it.**
 
-### D1. Beta moves to Bedrock, and guardrails are split into baseline and clinical
+### D1. Two layers, not three: schema tightening plus a deterministic guard
 
-**Chosen**: option C. Beta joins the `AI_PROVIDER` abstraction through the `AI_PROVIDER_BETA` flag the provider swap child reserved for exactly this, generating on Bedrock like every other surface. A permissive baseline guardrail is enforced account wide; a clinical guardrail is applied to Beta's calls only, through `ApplyGuardrail`. **Runner up**: option A, per request configuration only, which is what option C degrades to if account enforcement cannot be made safe.
+**Chosen**: layer 1 (make unsafe plans unrepresentable) and layer 2 (deterministic guard over the coach). **Runner up**: layer 2 alone, leaving the schema as it is, which is less work but leaves the drafter free to prescribe anything the prose rules did not anticipate.
 
-This supersedes spec 0005 AC-P3's clause that Beta keeps the direct path. That clause was scoped to the provider swap child and explicitly deferred the question here, so this is the intended succession, not a contradiction.
+Layer 1 is the higher value of the two and should be built first. Detection catches what you thought of; prevention catches what you did not, because the model is never offered the option.
 
-### D2. Which policy goes in which guardrail
+### D2. Streaming: buffer the whole coach output, guard it, then re chunk
 
-**Chosen**: the seam is false positive risk, not subject matter. Anything that is safe on an interview transcript, a feedback message, and a rehab plan alike goes in the baseline. Anything tuned to clinical language stays Beta specific. **Runner up**: putting PII masking in the clinical guardrail too, so Beta's boundary story does not depend on an account wide setting.
+**Chosen**: the exact `ownership-guard` pattern. `onToken` accumulates without emitting, the guard sees the complete text, and `splitIntoChunks` re chunks whatever is finally shown. **Runner up**: guard each `## Stage n:` segment as it completes and stream segment by segment.
 
-### D3. Failure mode: the clinical call fails open
+Costs are given in the Cost and latency section, but the reasoning is not primarily about latency. Beta's existing UI shows a partial plan stamped "the plan above was cut off, please don't follow a partial plan", and that stamp exists because partial plans are dangerous on this surface. Segment streaming would make the partial plan a routine state and would leave whole document rules (correct stage count, closing caution present) unable to fire until text was already on screen. Buffering moves in the opposite direction: the visitor never sees a plan that is not complete and not guarded.
 
-**Chosen**: any failure of the clinical `ApplyGuardrail` call lets the request proceed. **Runner up**: fail closed.
+The honest cost is a longer wait before the plan area fills. The remedy, if measurement says it matters, is not to weaken the guard but to show the validated drafter plan first and upgrade it to the coach's prose when the guard passes. That is recorded in Follow-up rather than built now.
 
-The reasoning has changed since Beta moved to Bedrock and must be restated honestly. Previously fail open was defensible because Beta did not depend on AWS at all, so degrading to today's audited posture cost nothing. **That is no longer true**: Beta now generates on Bedrock, so an AWS outage takes Beta down whatever the guardrail does. What survives of the argument is narrower and still sound: when generation has succeeded and only the guardrail call failed, turning that into a visitor facing error converts a working plan into an outage for a layer that is additive. Layer one (the code blocks, the fail closed screener, conservative drafter rules) is unaffected either way.
+### D3. Guard failure substitutes a rendered plan, not an error
 
-### D4. Rollout: shadow first for the clinical guardrail, dry run first for the baseline
+**Chosen**: on failure, discard the coach's prose and render the plan deterministically from the validated drafter object. **Runner up**: the existing friendly error and refund path.
 
-**Chosen**: `BETA_GUARDRAIL_MODE` with values `off`, `shadow`, `enforce` for the clinical half, deployed at `shadow`. For the baseline half there is no shadow mode, because enforcement is server side and binary, so its equivalent is a deliberate dry run: exercise the baseline policy against representative prompts from all three surfaces using standalone `ApplyGuardrail` calls, which are free standing and affect nothing, and only then switch enforcement on. **Runner up**: enforce both from the start.
+This is the Beta analogue of `requiredFraming ?? GENERIC_GUARD_FALLBACK`, and it is only possible because layer 1 makes the drafter's output structured enough to render. The plan itself was schema constrained and validated, so it is safe; only the warmth is lost. The visitor gets a complete plan instead of an error, no spend is wasted, and the request counts as the success it was.
 
-### D5. The data boundary amendment (much larger than before)
+### D4. No LLM judge in v1
 
-Clause 1 currently reads, in part: "Beta planner visitor content (injury details, goals, plans) never leaves Render and the direct Anthropic API." Under this architecture that is not merely narrowed, it is **withdrawn**. All Beta visitor content now goes to AWS for generation, not two slices for screening.
+**Chosen**: do not add a third model call to judge the output. **Runner up**: add it in shadow only.
 
-**Proposed replacement wording for clause 1** (the feedback half is unchanged):
-
-> 1. **Data boundary (refined 2026-08-19; amended by the Guardrails child, pending ratification).** Beta planner visitor content is processed on AWS. Beta's three agent calls run on Amazon Bedrock in us-east-2, so the full assembled prompt (the skill files plus the visitor's structured answers and free text goals) and the full generated plan pass through Bedrock for generation. The account enforced baseline guardrail evaluates those calls, and Beta's clinical guardrail additionally sends the goals text and each coach output segment, with the matching drafter stage object as grounding source, to the Bedrock `ApplyGuardrail` API. **The previous promise, that Beta visitor content never leaves Render and the direct Anthropic API, is withdrawn.** What replaces it is narrower and is the whole of the commitment: no Beta visitor content is ever persisted anywhere outside Postgres on Render, and Postgres holds only anonymous counters for Beta, never content. Bedrock model invocation logging stays off, CloudTrail data events for Bedrock runtime stay off, no S3 or DynamoDB holds Beta content, and no CloudWatch log line may contain it. Feedback text remains a separate, consented class: the form labels it "do not include personal or medical details", and it may transit AWS (SNS, Lambda, Bedrock, SES) for classification and delivery, but is never persisted on AWS (no S3, no DynamoDB, no CloudWatch log line containing the text). Postgres on Render remains the only store.
-
-**Runner up**: keep Beta on the direct Anthropic API so the stronger clause survives, and apply the clinical guardrail through `ApplyGuardrail` alone. This is worth naming because it is now the **only** option that preserves both Sonnet 5 and the original boundary promise, and it costs only the consistency of having everything on Bedrock.
+Reasoning is in the Layer 3 section below.
 
 ## Decision
 
-### The two guardrails
+### Layer 1: make unsafe plans unrepresentable
 
-**`portfolio-baseline-guardrail`**, account enforced, deliberately permissive. Every policy in it is chosen because it is beneficial on an interview transcript, a feedback message, and a rehab plan alike.
+The drafter is already a `forceToolCall` with a JSON schema, and the schema is constructed inside `runDrafter` at call time, where `input` is in scope. That means the schema can be built **per request**, which is what turns several prose rules in `drafter.md` into structural facts.
 
-| Policy | Setting | Why it is safe everywhere |
+**Per request vocabulary.** `exercises[].name` becomes an enum rather than a free string. The vocabulary is a table in `beta.constants.ts` keyed by injury area, derived from `drafter.md`'s own injury specific sections, with each entry tagged with the equipment it needs and a load class. At call time the enum offered to the model is filtered to the visitor's `injuryArea` and their `equipmentAccess`.
+
+| Injury area | Vocabulary (derived from `drafter.md`) |
+|---|---|
+| `finger_pulley` | tendon glides, open hand putty squeeze, rice bucket work, light finger massage, finger extensions against band, open hand isometric on a pick up block, open hand isometric on a hangboard with feet weighted, half crimp isometric under load, wrist and forearm stretch |
+| `elbow_tendinopathy` | eccentric wrist curls, slow tempo wrist curls, reverse wrist curls, forearm massage, forearm stretching, band external rotation, rows, band pull aparts, scapular retraction |
+| `shoulder_impingement` | pendulums, wall slides in pain free range, isometric external rotation at the side, band external rotation, rows, band pull aparts, serratus wall slides, push up plus, thoracic mobility, light overhead press |
+
+Two consequences fall straight out. There is **no full crimp entry anywhere**, so `drafter.md`'s "Never program full-crimp training" stops being an instruction a model could drift from. And a visitor whose `equipmentAccess` is `none` is never offered a hangboard or band entry, so "Never invent gear" becomes structural too.
+
+**Structured dosing.** `dose` stops being a free string and becomes an object with schema enforced ceilings:
+
+| Field | Type | Range | Source |
+|---|---|---|---|
+| `sets` | integer | 1 to 5 | conservative rehab ceiling; `drafter.md`'s canonical example is 3 |
+| `reps` | integer | 1 to 30 | as above; example is 10 |
+| `holdSeconds` | integer, optional | 1 to 60 | for the isometric entries |
+| `frequencyPerWeek` | integer | 1 to 7 | `drafter.md`: "modest and regular (roughly every other day)" |
+
+The api then renders that object into the prose string the coach receives. This is the quiet win: **the coach never handles a dose number as text it could change.** `coach.md`'s "Keep every number exactly as drafted" stops depending on the coach.
+
+**Counts matched to the skill file.** The current schema allows `exercises` `minItems: 1` and `advanceWhen` `minItems: 1` with no maximum, while `drafter.md` says 2 to 4 exercises and 2 to 3 advancement criteria. That is an existing mismatch. Tighten to `minItems: 2, maxItems: 4` and `minItems: 2, maxItems: 3`.
+
+**A required rationale per stage.** A new `rationale` string, capped, placed **first** in the schema's property order so the model produces it before the prescriptions. It gives the guard and any future judge something to check against, and asking for reasoning before output tends to improve the output.
+
+**Conditionally required caution.** When `painBehavior` is `constant_even_at_rest`, `overallCaution` is added to the schema's `required` array for that request. `drafter.md` calls it mandatory for that pain behavior; this makes it so.
+
+**Two code level checks in `parseDraftPlan`**, deliberately only two, because a rejection here lands on the hard error path rather than the fallback renderer, so only high confidence rules belong:
+1. The `half crimp isometric under load` entry may not appear in stages 1 or 2 (`drafter.md` places it in later stages).
+2. Stage time windows must be non overlapping and increasing.
+
+### Layer 2: the deterministic output guard
+
+A new `beta-output-guard.ts`, the Beta analogue of `ownership-guard.ts`, exporting `evaluateCoachOutput(text, plan, input): GuardResult`. Same `{ ok: true } | { ok: false; reason: string }` shape, same lowercase substring approach, same honest limitation: it catches the obvious phrasing of each item, not every way a model could imply it.
+
+The rules use a fact the coach is contracted to provide: its output format is fixed, with headingless opening and closing paragraphs, one `## Stage n:` heading per stage, and the labels `**When:**`, `**Climbing:**`, `**Do this:**`, `**Move on when:**`. That lets several rules be **scoped to the region where they apply** rather than run over the whole document, which is what keeps their false positive rates down.
+
+| # | Rule | What it catches | What it must NOT catch |
+|---|---|---|---|
+| **R1** | Contraindicated pain phrasing. Blocklist: "push through the pain", "push through it", "work through the pain", "work through it", "no pain no gain", "ignore the pain", "tough it out", "power through", "pain is nothing to worry about" | The single most dangerous thing a rehab coach can say | The pain traffic light language the skill files mandate: "no more than about 3 out of 10", "settling by the next morning", "some discomfort is normal and expected", "'no pain' is not required". Rule keys on pain **plus** a push or ignore verb, never on the word pain alone |
+| **R2** | Full crimp programming, scoped to `**Do this:**` bullet lines only | The coach adding crimp loading the drafter never prescribed | The legitimate cautionary uses everywhere else: "no crimping of any kind", "full crimp moves are the very last thing to return", and "half crimp", which is explicitly correct in later stages. Scoping to prescription lines is what makes this rule safe; a document wide substring match would fire on the skill file's own safety language |
+| **R3** | Numeric fidelity. Every numeric token inside a stage section must also appear in that stage's drafter object | The coach inflating a dose, inventing "twice daily", or changing a grade or a week count | The `## Stage n:` heading number itself (excluded), and the opening and closing paragraphs (not stage sections). Every other number the coach legitimately writes came from the drafter, so it is present by construction |
+| **R4** | Structural conformance. Exactly one `## Stage n:` heading per drafter stage, in order, each containing all four labels | A dropped, merged, or reordered stage, all forbidden by `coach.md` and all clinically material, since a dropped stage is a jump in load | Nothing. It is a format check against a format the coach is contracted to produce. Lowest false positive risk in the table and among the highest value |
+| **R5** | Medication naming. Blocklist: ibuprofen, naproxen, advil, aleve, tylenol, paracetamol, acetaminophen, cortisone, corticosteroid, voltaren, diclofenac, nsaid, anti inflammatories | `drafter.md`: "Do not diagnose, name medications" | Nothing legitimate. Drug naming is outside the product's contract entirely, so a firing here is correct behavior, not a false positive |
+| **R6** | Diagnosis asserted as fact. Narrow constructions: "you have torn", "you have a grade", "you have ruptured", "is torn", "diagnosed with", "this is definitely a" | The coach turning an educational plan into a clinical claim about this person | The visitor's own selected injury label ("your finger pulley strain", "climber's elbow"), and general education ("pulley strains usually", "this kind of injury often"). The **weakest rule in the table** and the one most likely to need loosening during calibration |
+| **R7** | Promised recovery as fact. Blocklist: "you will be back", "you will be climbing again", "you will fully recover", "guaranteed", "you will be healed" | `drafter.md`: do not "promise recovery timelines as fact"; `coach.md`: "say 'climbers usually find' rather than 'you will'" | The stage time windows themselves, which are explicitly guidance and allowed; "climbers usually find", "most climbers", "typically"; and ordinary uses of "you will feel" or "you will notice" |
+| **R8** | Mandatory caution carried through. When `painBehavior` is `constant_even_at_rest`, the closing section must carry the drafter's `overallCaution` | The coach dropping the one caution the skill file calls mandatory | Rephrasing, which the coach is supposed to do. Checks for the caution's key terms, not an exact string match |
+
+Rules R1, R5, R6 and R7 are blocklists over the whole document. R2 is scoped to prescription lines. R3 and R4 are scoped per stage section. R8 is scoped to the closing.
+
+### Layer 3: an LLM judge, recommended against for v1
+
+**Do not build it.** Five reasons:
+
+1. It adds a fourth model call to a path that already makes three, inside a 40 per day global budget and a 60 second per call timeout budget, for roughly a third more latency and spend on every plan.
+2. It is itself fallible and non deterministic, so it needs its own failure decision. A judge that fails open adds nothing anyone can rely on; a judge that fails closed adds a new way to refuse an injured person.
+3. It cannot be gated by this repo's test convention, which is fully mocked with no network. Layers 1 and 2 are deterministic and testable; a judge is neither.
+4. Its marginal catch rate is low once layers 1 and 2 exist. The plan content is schema constrained and the coach cannot drift numerically or structurally, so what remains is semantically poor but structurally valid advice, produced by Sonnet 5 working from a detailed skill file.
+5. When it is worth adding, the right shape is not a runtime gate. It is a **shadow judge that logs where it disagrees with the deterministic guard**, used to discover missing layer 2 rules. That is a tool for improving layer 2, and it belongs in a later child if the owner wants it.
+
+### The input side check
+
+`goals` is the only untrusted free text in a Beta request, capped at 200 characters by the DTO, because every other field is an enum validated by `IsIn` or a grade constrained by regex to 12 characters. So an input guard here is not a general content filter, it is a cheap prompt attack check.
+
+A small blocklist over the lowercased `goals` ("ignore your instructions", "ignore the above", "disregard your", "you are now", "system prompt", "new instructions", "act as"), run **before any model call and before `reserveGlobalSlot()`**, like the two existing hard blocks. It costs nothing, adds no latency, and saves a screener call on the blatant cases. On a hit the visitor sees the existing `REFUSAL_MESSAGE`, exactly as an `off_topic` screener verdict produces today, so no new copy and no web client change.
+
+It does not replace the screener's `off_topic` verdict, which stays as the layer that understands language rather than matching strings.
+
+### Streaming and what the visitor sees
+
+The coach call changes to `onToken: () => undefined`, accumulating without emitting, exactly as `conversation.service.ts` does. The guard runs on the complete text. Then either the coach's prose or the rendered fallback is emitted through `splitIntoChunks` as a series of `plan_delta` events.
+
+| Situation | What the visitor gets | New copy |
 |---|---|---|
-| `PROMPT_ATTACK` | HIGH, input | every surface takes untrusted text; none has a legitimate reason to accept instruction injection |
-| Sensitive information | `NAME`, `EMAIL`, `PHONE`, `ADDRESS`, anonymize (never block), input | masking cannot refuse anyone; `AGE` is excluded because it is clinically relevant to a rehab plan |
-| `HATE`, `SEXUAL` | LOW, both directions | no surface has a legitimate use |
+| Guard passes | the coach's prose, re chunked, indistinguishable from today | no |
+| Guard fails | the complete plan, rendered deterministically from the drafter object, in plainer language | no visitor facing message; the substitution is silent by design, because announcing it would alarm without informing |
+| Injection check hits | the existing `REFUSAL_MESSAGE` through the existing error path | no |
+| Screener red flag | the existing red flag card | no |
+| Upstream failure | the existing friendly error and the existing partial plan warning | no |
 
-Deliberately **not** in the baseline: denied topics of any kind, `VIOLENCE`, `INSULTS`, `MISCONDUCT`, profanity, and contextual grounding. Each of those is either clinical or a false positive risk on at least one surface.
+Nothing in this child adds a visitor facing string. The existing "cut off, do not follow a partial plan" warning stays for genuine mid stream upstream failures, and becomes rarer, because guard failures no longer produce partial plans.
 
-**`portfolio-beta-clinical-guardrail`**, applied by the api to Beta only, through `ApplyGuardrail`.
+### Counters
 
-| Policy | Setting | Reasoning |
-|---|---|---|
-| Denied topics (output only) | `medication_and_dosage`, `diagnosis_as_fact`, `invasive_or_procedural_treatment` | the subtlest part; see the definitions below |
-| `VIOLENCE` | NONE input, LOW output | "it popped", "I tore a pulley" is the product's own vocabulary and the likeliest false positive on this surface |
-| `INSULTS` | NONE input, MEDIUM output | a frustrated climber swearing at their finger must still get help |
-| `MISCONDUCT` | LOW input, MEDIUM output | catches the coach drifting into unsafe instruction |
-| Word filter | managed profanity, output only | same reason as `INSULTS` |
-| Contextual grounding | stage segments only, grounding 0.5, relevance 0.5 | the strongest fit in the whole design |
-
-**Denied topics are output only.** On input, the screener skill file already treats requests for medication advice or diagnosis as `off_topic`. Duplicating that on input would refuse a visitor who merely mentions they took ibuprofen. The coach must never *answer* those things, which is what these catch. Each definition names its exclusions, because the exclusions are what keep the product working:
-
-- `medication_and_dosage`: naming, recommending, or dosing any drug, supplement, injection, or painkiller. Excludes: describing pain levels, exercise dosage in sets, reps, load, or frequency, and advising the visitor to see a professional.
-- `diagnosis_as_fact`: asserting a specific named diagnosis, tear grade, or structural classification as fact about this person, or interpreting imaging results. Excludes: referring to the injury area the visitor selected, and general education about how that kind of injury behaves.
-- `invasive_or_procedural_treatment`: recommending surgery, injections, manipulation, or prescriptive taping and splinting as treatment. Excludes: telling the visitor a professional may consider such options.
-
-Deliberately **not** included: a self harm or crisis denied topic. A visitor in genuine distress writing "the pain is unbearable" is a real edge case, but a guardrail block is the worst available response to it, and the phrase is also ordinary climbing injury language. Left open in Follow-up rather than guessed at.
-
-**Contextual grounding**, the strongest fit, because the coach's job per its skill file is literally "rewrite this JSON, keep every number, add nothing":
-
-- **Source**: the single drafter stage object matching that segment, serialized, not the whole plan. Cheaper and semantically correct.
-- **Query**: a fixed string synthesized from the structured fields only, for example "A staged return to climbing plan for a shoulder_impingement, 6 weeks after onset, for a sport climber at 5.11a." No free text enters the query.
-- **Critical exclusion**: the coach's opening and closing paragraphs are legitimately not grounded in the JSON, since the skill file mandates a fixed warm opening and a closing that adds a referral reminder. Applying grounding to them would fire on every plan. Those segments are sent as plain text with no grounding source, so the grounding policy does not evaluate them. This is why segmentation happens at heading boundaries: the coach skill file requires the opening and closing to carry no heading and every stage to carry a `## Stage n:` heading, so the split is already deterministic.
-
-### Where the calls sit
-
-| Order | Step | Change |
-|---|---|---|
-| 1 | Checked red flag box, hard block in code | unchanged, still first, still costs nothing |
-| 2 | Constant rest pain escalation, hard block in code | unchanged |
-| 3 | `reserveGlobalSlot()` | unchanged |
-| **3a** | **Clinical `ApplyGuardrail` on `input.goals`** | new |
-| 4 | Screener, `forceToolCall` | **now on Bedrock**, baseline guardrail applies server side |
-| 5 | Drafter, `forceToolCall` | **now on Bedrock**, baseline applies |
-| 6 | Coach, `streamMessage` | **now on Bedrock**, baseline applies; segment accumulator added |
-| **6a** | **Clinical `ApplyGuardrail` per coach segment** | new |
-
-The input call is sequential rather than run in parallel with the screener, because PII masking has to be applied before the model sees the text, because a blocked input then saves three model calls, and because it keeps the precedence rule below clean. The cost is one round trip, roughly 100 to 300 milliseconds, on a path already several seconds long.
-
-Input scope stays exactly as scoped before: **only `input.goals`**, never the assembled `buildVisitorProfile` string. The DTO caps `goals` at 200 characters, and every other field is an enum validated by `IsIn` or a grade constrained by regex to 12 characters, so `goals` is the only untrusted free text in the whole request. Sending Beta's own `<visitor_profile>` scaffolding into a prompt attack filter would be asking for a false positive on our own tags.
-
-### Precedence when layers disagree
-
-1. **Screener `red_flag` wins over everything.** Telling someone who described numbness "we cannot process that" instead of "please see a doctor trained in nerve evaluation" is a strictly worse outcome. The guardrail intervention is still counted and logged.
-2. **Clinical input intervention beats `off_topic`.** Both produce the same visible refusal, so only the counter differs. Attribute it to the guardrail, which fired first.
-3. **`off_topic` unchanged** when the guardrail was clean.
-4. On output there is no competing layer, so an intervention is terminal.
-5. **A baseline block arrives differently**: it comes back as a Bedrock error or a blocked completion on the generation call itself, not as a verdict the api asked for. It is handled by the existing upstream error path and surfaces as the friendly error.
-
-### A masking result is not a block
-
-`ApplyGuardrail` returns `action: GUARDRAIL_INTERVENED` when the sensitive information policy merely anonymizes, exactly as when a content filter blocks. A naive `action === 'GUARDRAIL_INTERVENED'` check would refuse every visitor who types a name. Treat the result as a **block** only when a content filter, denied topic, or word policy reports a blocked action, and as a **mask** when the only intervention came from the sensitive information policy. On a mask, pass the guardrail's returned masked text downstream in place of the raw goals.
-
-### Streaming
-
-Unchanged from the previous design, and it survives precisely because the clinical guardrail is a standalone call rather than an inline one. Had it been inline, Bedrock's own `streamProcessingMode` would have governed this and the choice would not have been ours.
-
-- The coach's token callback appends to a buffer. A segment closes when a new `## ` heading arrives at a line start, and the final segment closes when the stream ends.
-- In `shadow`: tokens are emitted immediately as they arrive, exactly as today. When a segment closes, the `ApplyGuardrail` call is fired without being awaited, purely to record a verdict. Nothing is withheld, so shadow is genuinely invisible.
-- In `enforce`: tokens are held in the segment buffer. When a segment closes its verdict is awaited, then the whole segment is emitted as one `plan_delta` if clean, or the stream is terminated if not.
-
-The difference between modes is one `await` at one call site. The honest cost: **in `enforce` the plan appears segment by segment rather than token by token.** That still satisfies spec 0004 AC-4, but it is visible and it is the main thing to watch during the soak.
-
-Rejected alternatives: per token guarding costs one billed call per chunk with a one text unit minimum; buffering the whole output before display kills progressive streaming; guarding after the fact cannot block anything.
-
-### What the visitor sees
-
-Reuse where the meaning matches, add new copy only where it does not.
-
-| Event | What the visitor gets | New copy |
-|---|---|---|
-| Input intervention (`enforce`) | the **existing refusal path**: `error` carrying `REFUSAL_MESSAGE`. Identical in meaning to an `off_topic` verdict, and no web client change needed | no |
-| Output intervention (`enforce`) | a **new** `guardrail_block` SSE event and card. The existing failure copy claims something went wrong on our side, which would be a lie, and its retry button would invite a loop | yes, one constant |
-| Output intervention with text already shown | the new card **plus** the existing "cut off, do not follow a partial plan" warning | no |
-| Screener red flag, guardrail also fired | the existing red flag card | no |
-| Baseline guardrail block on generation | the existing friendly error, through the normal upstream error path | no |
-| Clinical guardrail unavailable | nothing; identical to mode `off` | no |
-
-New constant in `beta.constants.ts`, human written like every other safety string there:
-
-> `GUARDRAIL_OUTPUT_BLOCK_MESSAGE`: "Beta stopped this plan partway through. The wording it was writing did not pass Beta's own safety check, so the rest was not shown. Nothing you entered was stored, and this attempt did not count against your daily limit. Drafting a fresh plan usually works. If it stops again, this tool is not the right fit for your situation, and a physical therapist or sports medicine doctor is."
-
-Deploy skew note: the web client's SSE switch has no `default` branch, so a stale cached client receiving `guardrail_block` ignores it, never sets `terminal`, and falls through to the existing "connection dropped" error, which also shows the partial plan warning. That degradation is safe, and the window is only the gap between the Vercel and Render deploys of one push.
-
-### Observability and counters
-
-Follows the module's established pattern: one column per outcome, additively migrated onto `BetaDailyUsageCounter`, still zero visitor content.
+Two new columns on `BetaDailyUsageCounter`, following the module's established pattern.
 
 | Column | Counts | Incremented from |
 |---|---|---|
-| `guardrailFlagCount` | shadow observations: an intervention that would have blocked, plus a mask that would have applied | standalone `safeIncrement`, swallowed and logged |
-| `guardrailBlockCount` | enforced clinical interventions, input and output alike | rides `refundGlobalSlot('guardrail')`'s atomic update, like the existing reasons |
-| `guardrailErrorCount` | fail open events on the clinical call | standalone `safeIncrement`, swallowed and logged |
+| `guardBlockCount` | coach outputs rejected, where the rendered fallback was shown instead | standalone `safeIncrement`, swallowed and logged |
+| `injectionBlockCount` | pre model injection blocks on `goals` | standalone `safeIncrement`, like `recordRedFlagBlock` |
 
-`guardrailErrorCount` earns its column because in a fail open design it is the only durable signal that the layer has silently stopped working, and Render's free tier logs do not persist.
+Neither is a refund reason. A guard failure still delivers a complete plan, so the request succeeded and `planCount` increments as normal, which is the correct reading of Beta's success only semantics. The injection block happens before a slot is reserved, so like the two existing hard blocks it never reaches the refund bookkeeping.
 
-Structured log line per clinical call, carrying no visitor text: `{ guardrail: 'input' | 'output', mode, segment, action, topPolicy, durationMs, outcome }`. `topPolicy` is a policy name such as `denied_topic:medication_and_dosage`, never the matched text.
-
-One new refund reason, `guardrail`, joining `error`, `red_flag`, and `refusal`.
+One structured log line on a guard firing, carrying the rule name and never the matched visitor or model text, mirroring `ownership-guard`'s `logger.warn` at its call site.
 
 ### Code shape
 
-- Beta stops constructor injecting the concrete `AnthropicService` and takes the `AiProvider` token instead, resolved by `AI_PROVIDER_BETA` with fallback to `AI_PROVIDER`. The `BETA_PROVIDER = 'anthropic'` constant in `beta.service.ts` becomes the resolved provider name and keeps feeding the per call log line's `provider` field.
-- A new `BetaGuardrailService` issues `ApplyGuardrailCommand` from `@aws-sdk/client-bedrock-runtime` (already a dependency of the classifier Lambda). It exposes `checkInput(goals)` and `checkSegment(text, stageJson | null, query)`, each returning `{ action: 'none' | 'mask' | 'block', maskedText?, policy? }` and each swallowing its own failures into `action: 'none'` plus the error tally.
-- `beta.service.ts` still contains no provider conditionals. The provider choice lives in the factory, and the guardrail service is mode aware internally.
-
-### Terraform and IAM
-
-New file `infra/guardrails.tf`:
-
-- `aws_bedrock_guardrail` `portfolio-baseline-guardrail` and `portfolio-beta-clinical-guardrail`, plus an `aws_bedrock_guardrail_version` for each. Versions are immutable, which is what makes pinning meaningful.
-- `aws_iam_policy` `portfolio-api-guardrail-apply`: one `bedrock:ApplyGuardrail` statement scoped to the **clinical** guardrail ARN, attached to the existing console created `portfolio-api` user that `infra/bedrock.tf` already reads with `data "aws_iam_user" "api"`. Kept separate from `portfolio-api-bedrock-invoke` so it can be detached alone.
-- The account enforced configuration for the baseline is **not** Terraform managed. The AWS provider appears not to expose the resource yet (provider issue 47400 open as of 2026-08), so it is a documented console or CLI step in `infra/README.md`, and it is the one exception to umbrella AC-1 that this child creates. Record it as an exception rather than pretending otherwise.
-
-Two ARN details that are easy to get wrong:
-
-- The `ApplyGuardrail` resource is `arn:aws:bedrock:us-east-2:<account>:guardrail/<id>` with **no region wildcard**, deliberately unlike the foundation model ARNs in `bedrock.tf` and `feedback.tf`. Those need a wildcard because a `us.` Geo inference profile requires the permission in every destination region. `ApplyGuardrail` is a single region call against a single region resource.
-- The `ApplyGuardrail` statement's resource is the **unversioned** guardrail ARN. The version is a request parameter, not part of the authorized resource, so version pinning is enforced by the boot guard, not by IAM.
-
-The verified account enforcement request shape, since the baseline depends on it:
-
-| Field | Required | Notes |
-|---|---|---|
-| `configId` | no | pattern `[a-z0-9]+` |
-| `guardrailInferenceConfig.guardrailIdentifier` | yes | id or guardrail ARN |
-| `guardrailInferenceConfig.guardrailVersion` | yes | pattern `[1-9][0-9]{0,7}`, so a published numeric version. **`DRAFT` is not accepted** |
-| `guardrailInferenceConfig.modelEnforcement` | no | `includedModels` and `excludedModels`; absent means all models |
-| `guardrailInferenceConfig.selectiveContentGuarding` | no | `system` and `messages`, each `SELECTIVE` or `COMPREHENSIVE`, both defaulting to `COMPREHENSIVE` |
-
-`modelEnforcement` exists but should not be relied on here. The documented pattern for both model lists allows exactly one dot (`[a-z0-9-]{1,63}[.][a-z0-9-]{1,63}` plus optional suffixes), while this account calls `us.` Geo inference profile ids, which carry two. Whether an inference profile id can be named in those lists at all is unverified, and the baseline is meant to apply everywhere anyway, so leave `modelEnforcement` absent.
-
-Also explicitly **not** created: Bedrock model invocation logging, and CloudTrail data events for Bedrock runtime. Both would put Beta visitor text at rest on AWS and break the amended clause 1. The AWS guardrails documentation actively recommends CloudTrail data events for reviewing `ApplyGuardrail` calls; this spec declines that diagnostic on purpose and accepts diagnosing permission problems from the api's own error tally instead. State both refusals as comments in the Terraform file.
-
-### Two things that must be proven before enforcement is switched on
-
-Both concern the baseline half, and both are cheap to test and expensive to discover in production.
-
-1. **Does an account enforced guardrail work at all against an Anthropic Messages shaped body?** The finding above shows that a *request level* guardrail on that path fails with HTTP 400 because the body lacks `amazon-bedrock-guardrailConfig`. It is not documented whether server side enforcement injects the guardrail without that requirement or applies the same validation. If it applies the same validation, **switching enforcement on breaks every Bedrock call in the account**, including the interview simulator that is live today. Test it on one throwaway call before touching anything else.
-2. **What does enforcement do to streaming?** `streamProcessingMode` is a request parameter with no equivalent in the enforcement configuration. If enforcement defaults to synchronous processing, the coach's stream and the interview simulator's stream would both buffer before delivery, which would be a visible regression on two surfaces.
-
-If either fails, the fallback is stated now so it is not invented under pressure: keep the split, and apply **both** guardrails from the api through `ApplyGuardrail`, with the baseline applied to every surface's calls in application code. That loses unbypassability and gains a small amount of latency, and it is still better than one blanket guardrail.
+- `apps/api/src/modules/beta/beta-output-guard.ts`: `evaluateCoachOutput`, the rule constants, and `renderPlanFallback(plan, input)`. Pure functions, no injection, no I/O, directly mirroring `ownership-guard.ts`.
+- `apps/api/src/modules/beta/beta.constants.ts`: the per injury vocabulary table with equipment and load class tags, the dose ceilings, and the injection blocklist.
+- `beta.service.ts`: builds the drafter schema per request, renders dose strings, buffers the coach, calls the guard, emits through `splitIntoChunks` imported from the conversation module (as the conversation service already does).
+- No new module, no new provider, no new dependency.
 
 ## Value sourcing
 
 | Action | Value produced | Source |
 |---|---|---|
-| Beta generation | provider | `AI_PROVIDER_BETA`, falling back to `AI_PROVIDER` |
-| Beta generation | model id | env `BEDROCK_MODEL_ID`, Sonnet 4.6 Geo profile |
-| Clinical input check | text sent | `input.goals` only, capped at 200 characters. Absent goals skips the call |
-| Clinical input check | masked text | `outputs[0].text` of the response, used only in `enforce` |
-| Clinical output check | text sent | one coach segment, split at `## ` line starts |
-| Clinical output check | grounding source | the matching drafter stage object from the parsed `DraftPlan`. Null for opening and closing |
-| Clinical output check | grounding query | synthesized from `injuryArea`, `onsetWeeksAgo`, `discipline`, `preInjuryGrade`, all constrained. No free text |
-| Clinical check | guardrail id and version | env `BEDROCK_CLINICAL_GUARDRAIL_ID`, `BEDROCK_CLINICAL_GUARDRAIL_VERSION` |
-| Baseline check | guardrail id and version | the account enforcement configuration, not a request parameter |
-| Both | region and credentials | env `AWS_REGION` and the `portfolio-api` user keys already in Render |
-| Clinical mode | mode | env `BETA_GUARDRAIL_MODE`, resolved once at construction |
-| Block response, input | visitor copy | existing `REFUSAL_MESSAGE` |
-| Block response, output | visitor copy | new `GUARDRAIL_OUTPUT_BLOCK_MESSAGE` |
+| Drafter schema | allowed exercise vocabulary | the constants table, filtered by `input.injuryArea` and `input.equipmentAccess` |
+| Drafter schema | dose ceilings | the constants table, derived from `drafter.md` |
+| Drafter schema | whether `overallCaution` is required | `input.painBehavior` at call time |
+| Coach input | dose prose | rendered by code from the structured dose object, never by the model |
+| Guard | expected stage count and per stage numbers | the parsed `DraftPlan` object |
+| Guard | whether R8 applies | `input.painBehavior` |
+| Fallback | plan text | `renderPlanFallback` over the validated `DraftPlan` |
+| Guard mode | off, shadow, or enforce | env `BETA_OUTPUT_GUARD_MODE` |
+| Injection block | visitor copy | existing `REFUSAL_MESSAGE` |
 
 ## Key invariants
 
-- Every invariant in the api's "Beta module invariants" gotcha holds unchanged. Both code enforced hard blocks still run before any model call and before any guardrail call. `planCount` is still success only. No visitor content is written or logged.
-- The clinical guardrail can never manufacture a clinical outcome. It can refuse and withhold; the red flag copy and referral advice remain human written constants reached only by the existing paths.
-- The clinical guardrail is additive and removable by one env var.
-- No clinical policy ever evaluates a non Beta surface.
-- No Beta content comes to rest on AWS.
-- **Withdrawn**: the previous invariant that Beta stays available when AWS is not. Beta now generates on Bedrock and depends on it.
+- Every invariant in the api's "Beta module invariants" gotcha holds unchanged. Both code enforced hard blocks still run first, `planCount` is still success only, no visitor content is written or logged.
+- **Cross child contract clause 1 holds unchanged.** Beta visitor content never leaves Render and the direct Anthropic API. This child adds nothing that crosses a boundary.
+- Beta stays available when AWS is not, because Beta does not use AWS.
+- The guard can never manufacture clinical content. It can only substitute the drafter's own validated plan, rendered by a fixed template.
+- A visitor never sees coach prose that has not been through the guard.
+- The safety critical copy stays human written and deterministic, as `beta.constants.ts` already establishes.
 
 ## Configuration required
 
-- `AI_PROVIDER_BETA`: `anthropic` (default) or `bedrock`. Implements the flag the provider swap child reserved.
-- `BETA_GUARDRAIL_MODE`: `off` (default), `shadow`, or `enforce`, governing the clinical guardrail only.
-- `BEDROCK_CLINICAL_GUARDRAIL_ID` and `BEDROCK_CLINICAL_GUARDRAIL_VERSION`: a numbered version; `DRAFT` and non numeric values rejected at boot.
-- Reuses `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `BEDROCK_MODEL_ID`.
-- New constant `GUARDRAIL_CALL_TIMEOUT_MS = 3_000` in `beta.constants.ts`, far below the model path's 60 second `AGENT_CALL_TIMEOUT_MS`, because this call sits inside the visible stream. No retry: retrying doubles visible latency for a layer allowed to fail.
-- Boot guard mirroring the provider swap's: when the clinical mode is not `off`, id and version must be present and valid, or boot fails with a clear message. No live AWS call at boot.
+- `BETA_OUTPUT_GUARD_MODE`: `off` (default), `shadow` (evaluate, count, log, but still show the coach's prose), or `enforce`. The only new configuration in this child.
+- Layer 1 has no flag. A schema is not shadowable at runtime, so it is calibrated before it ships (see the build plan) rather than gated behind a flag.
 
 ## Cost and latency
 
-**Billing**: per text unit of 1,000 characters, rounded up, minimum one unit per call. Contextual grounding is metered separately and bills the source as well as the response. Consumption counts **per guardrail ARN per request**, so Beta's generation calls pay the baseline once each, and Beta's clinical calls pay the clinical guardrail on top.
+**Cost**: zero. No new service, no new calls, no new billing surface. Layer 1 marginally reduces drafter output tokens by replacing free text exercise names and dose strings with enum values and integers.
 
-Per completed plan:
+**Latency**: layers 1 and 2 add no network calls. The guard is string matching over a few kilobytes, microseconds. The whole latency question is the buffering decision.
 
-| Payload | Calls | Text units |
-|---|---|---|
-| Baseline on three generation calls | 3 | roughly 4 to 6, mostly the drafter's large prompt |
-| Clinical input (goals, at most 200 characters) | 1 | 1 |
-| Clinical output segments (opening, 4 to 5 stages, closing) | 6 to 7 | about 7 on the standard meter |
-| Clinical grounding (per stage source plus segment) | included above | about 10 on the grounding meter |
+Time to the first visible plan text today is screener plus drafter plus the coach's first token. Buffering makes it screener plus drafter plus the coach's **complete** generation. The coach runs at `maxTokens: 4000`, so on a full plan the added wait is the coach's whole generation rather than its first token, which is the dominant cost of this design.
 
-Roughly 12 to 14 standard text units and 10 grounding units per plan, up from the 8 and 10 of the previous design, because the baseline now bills on generation too. At the hard cap of 40 plans per day every day, that is about 16,000 standard and 12,000 grounding units per month for Beta. The interview simulator and classifier also start paying the baseline on every call, which is new spend on surfaces that had none. At published 2026 rates the whole program stays in low single digit dollars per month at worst, but the number should be confirmed at build time and folded into the tag filtered budget rather than trusted from here.
+For scale, this is why the precedent does not feel slow: the conversation guard buffers a response capped at `maxTokens: 400`, ten times smaller. Beta is the harder case and the spec should not pretend otherwise.
 
-Worst case is bounded as before: the clinical input guard sits inside `reserveGlobalSlot()`, refused attempts refund the slot, so an abuser can drive guardrail calls exactly as far as they can already drive screener calls, which the 3 per hour per IP throttle bounds.
-
-**Latency**:
-- Baseline on generation: unknown until measured, and it is on the critical path of every call on every surface. Measure during the dry run.
-- Clinical input: one sequential round trip, roughly 100 to 300 milliseconds.
-- Clinical output in `shadow`: zero, the calls are not awaited.
-- Clinical output in `enforce`: roughly 150 to 300 milliseconds per segment, awaited. Time to first visible text rises by about half a second; the rest is felt as chunkier streaming.
+Two mitigations, neither requiring a weaker guard. The pipeline status chips (Screening, Drafting, Coaching) already tell the visitor work is happening, and the Coaching chip now genuinely covers the whole coach phase. And if measurement says the wait is unacceptable, the fix is to render the validated drafter plan as soon as the drafter returns and upgrade it to the coach's prose when the guard passes, which improves time to first text below today's. That is in Follow-up, not in this build.
 
 ## Critical test scenarios
 
-All mocked, no network, per the repo's convention.
+All mocked, no network, colocated `.spec.ts`, per the repo's convention. `beta-output-guard.spec.ts` mirrors the structure of the existing ownership guard tests.
 
-- `BedrockAnthropicService` unit tests, new: request shape including the `cache_control` block, `onToken` delivery, usage field extraction, timeout and retry option passing, for both `streamMessage` and `forceToolCall`. Verifies **AC-G2**.
-- Beta on Bedrock: full plan generated with `AI_PROVIDER_BETA=bedrock`, streamed in the browser; regression suite green with the flag unset. Verifies **AC-G1**.
-- Baseline dry run (manual): representative prompts from all three surfaces passed to the baseline policy through `ApplyGuardrail`, including each surface's full system prompt, with zero interventions required. Verifies **AC-G4**.
-- Clinical mode `off`: zero `ApplyGuardrail` calls on every path, existing beta specs untouched. Verifies **AC-G6**.
-- Shadow: calls fired but never awaited before an emit, nothing withheld, token order and shape unchanged, `guardrailFlagCount` increments. Verifies **AC-G7**.
-- Enforce, input block: screener, drafter, and coach mocks never called; emitted event is `error` with `REFUSAL_MESSAGE`; refund reason `guardrail`. Verifies **AC-G8**.
-- Enforce, output block on segment 3: segments 1 and 2 emitted, 3 and after not, `guardrail_block` emitted, slot refunded. Verifies **AC-G9**.
-- Precedence: screener `red_flag` plus a guardrail block yields the red flag card; repeated for the fail closed coercion. Verifies **AC-G10**.
-- Fail open, four ways: client throws, times out at 3 seconds, is throttled, credentials rejected. Plan completes normally, `guardrailErrorCount` increments once. Verifies **AC-G11**.
-- Mask versus block: `GUARDRAIL_INTERVENED` whose only assessment is a sensitive information `ANONYMIZE` proceeds with masked text, and the screener mock receives the masked string. Verifies **AC-G12**.
-- Payload discipline: assert exact strings passed to the guardrail client. Input carries only `goals`; output carries one segment with a grounding source only for `## Stage` segments. Verifies **AC-G14**.
-- Boot guard: clinical mode `shadow` with a missing id, and `enforce` with version `DRAFT`, each fail at construction. Verifies **AC-G15**.
-- Live corpus run (manual, in shadow): at least 30 realistic profiles including blunt injury description, profanity, constant pain wording, and ordinary goals. Zero interventions before `enforce`. Verifies **AC-G13**.
+- Layer 1 schema construction: the schema built for a `finger_pulley` request contains no full crimp entry; the schema for `equipmentAccess: ['none']` contains no hangboard or band entry; the schema for `painBehavior: 'constant_even_at_rest'` lists `overallCaution` in `required`. Verifies **AC-G2**, **AC-G3**, **AC-G5**.
+- Dose rendering: a structured dose becomes the expected prose string, and the string handed to the coach matches it exactly. Verifies **AC-G4**.
+- `parseDraftPlan`: rejects a half crimp isometric in stage 2, and rejects overlapping time windows.
+- Guard, one test per rule for what it catches, and one per rule for what it must not: the pain traffic light phrasing passes R1; "no crimping of any kind" and "half crimp" pass R2; the stage heading number passes R3; "climbers usually find" passes R7; the visitor's own injury label passes R6. Verifies **AC-G8**.
+- Guard failure path: a coach output tripping R1 results in the rendered fallback being emitted, `planCount` incremented, `guardBlockCount` incremented, and no error event. Verifies **AC-G7**, **AC-G11**.
+- Buffering: the coach's `onToken` never emits, and every `plan_delta` the client receives arrives after the guard ran. Verifies **AC-G6**.
+- Shadow mode: the guard evaluates and counts but the coach's prose is still shown. Mode `off`: the guard never runs and existing specs pass untouched. Verifies **AC-G12**.
+- Injection check: a `goals` value containing "ignore your instructions" produces `REFUSAL_MESSAGE` with zero model calls and no slot reserved. Verifies **AC-G10**.
+- Live corpus run (manual, in shadow): at least 30 realistic profiles across the three injury areas, including blunt injury description, profanity, and constant pain wording. Zero guard firings before `enforce`. Verifies **AC-G9**.
 
 ## Build plan
 
-Tracer Bullet ordering. Nothing a visitor sees changes until step 8, and the two riskiest steps (2 and 6) are gated by proof rather than by hope.
+Tracer Bullet ordering, prevention before detection, and nothing a visitor sees changes until step 6.
 
-1. `BedrockAnthropicService` unit tests for `streamMessage` and `forceToolCall`, closing review finding B-5 **before** the clinical surface depends on that class. Satisfies **AC-G2**.
-2. **Gate**: prove the two open questions about account enforcement on a throwaway call, before any other AWS change. Does enforcement work against an Anthropic Messages shaped body, and what does it do to streaming? If either fails, take the stated fallback and revise this plan. Satisfies **AC-G3** groundwork.
-3. Beta onto Bedrock: implement `AI_PROVIDER_BETA`, move Beta from the concrete `AnthropicService` to the token, make the `provider` log field reflect the resolved choice. Verified live with the flag on. Satisfies **AC-G1**.
-4. `BetaGuardrailService` skeleton: client, mode resolution, boot guard, timeout constant, hard no op at mode `off`. Fully mocked spec. Satisfies **AC-G6**, **AC-G11**, **AC-G15**.
-5. `infra/guardrails.tf`: both guardrails with minimal policies, first numbered versions, the `portfolio-api-guardrail-apply` policy and attachment, outputs for the ids. Tony sets the Render env vars. Satisfies **AC-G5**, **AC-G15**.
-6. Baseline dry run across all three surfaces, then enable account enforcement through the console or CLI, documented in `infra/README.md` as the AC-1 exception. Satisfies **AC-G3**, **AC-G4**.
-7. Prisma migration adding the three tally columns, the `guardrail` refund reason, the standalone increment paths. Satisfies **AC-G16**.
-8. Clinical input and output paths in `shadow`: guard `goals` before the screener, add the segment accumulator around the coach stream with per stage grounding sources, fire and forget, tokens still immediate. Satisfies **AC-G7**.
-9. Thicken the clinical policy to the full table, new numbered version, promoted by env flip. Then the corpus run and threshold tuning; zero false positives is the gate on proceeding. Satisfies **AC-G13**.
-10. Enforce path: precedence, input block through the existing refusal, output segment withholding, `guardrail_block` event and card, mask versus block handling and substitution, refund wiring, web client change in the same push. Satisfies **AC-G8**, **AC-G9**, **AC-G10**, **AC-G12**, **AC-G16**.
-11. Gate and ship: `/predeploy-audit` with the clinical safety auditor, since this is a health adjacent surface, step 3 changes which model reasons about injuries, and step 10 changes what an injured visitor sees. Deploy at `shadow`, promote to `enforce` after the soak as an env change.
+1. Layer 1 constants: the per injury vocabulary table with equipment and load class tags, the dose ceilings, the injection blocklist. Pure data plus unit tests. Satisfies **AC-G2** groundwork.
+2. **Calibration run for layer 1**, before it is enforced: generate a set of plans against the current loose schema across all three injury areas and every equipment combination, and check that the drafter never wants a value the new vocabulary lacks. A vocabulary that is too tight produces hard errors, so this is the gate. Widen the table if needed.
+3. Layer 1 in place: build the drafter schema per request, structure the dose, render dose prose in code, tighten the item counts, add `rationale`, add the conditional `overallCaution`, add the two `parseDraftPlan` checks. Satisfies **AC-G2**, **AC-G3**, **AC-G4**, **AC-G5**.
+4. `beta-output-guard.ts`: all eight rules plus `renderPlanFallback`, with the catch and non catch tests. No call site yet. Satisfies **AC-G8**.
+5. Migration adding `guardBlockCount` and `injectionBlockCount`, and the injection check at the top of `generatePlan`. Satisfies **AC-G10**, **AC-G11**.
+6. Wire the guard in at mode `shadow`: buffer the coach, evaluate, count, log, but still show the coach's prose. Satisfies **AC-G12**.
+7. The corpus run and rule tuning. Zero false positives is the gate on proceeding, not a nice to have. R6 is the rule most likely to need loosening. Satisfies **AC-G9**.
+8. Flip to `enforce`: the fallback renderer becomes live. Satisfies **AC-G6**, **AC-G7**.
+9. Gate and ship: `/predeploy-audit` with the clinical safety auditor, since this changes what an injured visitor reads and what the drafter is allowed to prescribe. Deploy at `shadow`, promote to `enforce` after the soak as an env change.
 
 ## Migration plan
 
-**Strategy**: feature flagged, four phases, no data migration beyond three additive counter columns defaulting to zero.
+**Strategy**: feature flagged for layer 2, calibrated for layer 1, no data migration beyond two additive counter columns defaulting to zero.
 
 **Phases**:
-1. Tests and the enforcement gate. No production change.
-2. Beta onto Bedrock behind `AI_PROVIDER_BETA`. **This is the phase that changes the clinical model** from Sonnet 5 to Sonnet 4.6, and it is worth pausing on rather than passing through.
-3. Baseline enforcement on, after the dry run. Affects all three surfaces at once.
-4. Clinical guardrail `off`, then `shadow`, then `enforce`.
+1. Layer 1 ships enforced, after its calibration run. It changes what the drafter can produce, so it is the phase to watch for hard errors.
+2. Layer 2 ships at `off`, then `shadow`, then `enforce`.
 
-**Rollback**: phase 4 by env var. Phase 3 by deleting the enforcement configuration in the console. Phase 2 by unsetting `AI_PROVIDER_BETA`, which returns Beta to Sonnet 5 on the direct API. Phases are independently reversible, which is the main reason for the ordering.
+**Rollback**: layer 2 by env var. Layer 1 has no flag, so its rollback is a revert; the calibration run in step 2 exists precisely to make that unlikely.
 
-**Risks**: phase 3 is the only one that changes three surfaces simultaneously and the only one not reversible by an env var, which is why the gate in step 2 and the dry run in step 6 both sit in front of it. Phase 4's flip changes blocking, masking, and stream pacing together; the soak measures the first two, so only pacing is unmeasured at flip time.
+**Risks**: a vocabulary that is too tight makes the drafter fail, and a drafter failure lands on the hard error path rather than the fallback renderer, because the fallback needs a valid plan to render. That is the one place where this design can make things worse rather than better, and it is why layer 1 is calibrated before it ships and why only two code level checks were added to `parseDraftPlan`.
 
 ## Consequences
 
 **Positive**:
-- Every AI surface runs on Bedrock, which is the consistency the engineer wants and a stronger claim than a partial migration.
-- An unbypassable floor (prompt attack, PII masking) now covers surfaces that had no guardrail at all, including the feedback classifier reading arbitrary visitor text.
-- The clinical depth lands only where it belongs, so the classifier's silent "unclassified" failure mode is never triggered by a policy meant for rehab prose.
-- Contextual grounding catches the one clinical failure a prompt cannot reliably prevent: the coach inventing content the drafter never drafted.
+- The clinical surface gains the output side check it did not have, closing a gap the work history chatbot had already closed.
+- Layer 1 is prevention, not detection. A full crimp prescription for a torn pulley, or a hangboard exercise for someone with no hangboard, stops being unlikely and becomes impossible.
+- The coach can no longer alter a dose number, because it never receives one as editable text.
+- The data boundary promise survives intact, Beta keeps Sonnet 5, and Beta stays up when AWS is down.
+- A guard failure now delivers a complete plan instead of an error, which is strictly better than the current partial plan behavior.
+- Zero cost, zero new dependencies, zero new infrastructure.
 
 **Negative and tradeoffs**:
-- **The clinical surface runs a weaker model.** Sonnet 5 returns 403 for this account on Bedrock, so Beta's drafter, the clinical reasoning core, drops to Sonnet 4.6. The health feature will reason about injuries with half a generation less capability than it does today, in exchange for consistency and guardrail coverage. This is the single most consequential line in this spec. **Falsifiable trigger for reversing it**: if Sonnet 5 becomes available on Bedrock for this account, phase 2 should be revisited immediately and the model restored. Until then, the clinical safety auditor should be told explicitly that the model changed.
-- **Beta now depends on AWS to function at all.** The previous posture, where an AWS problem could not touch Beta, is gone. Fail open on the guardrail no longer buys availability, only the narrower guarantee that a guardrail hiccup does not discard a plan that generated fine.
-- **The clinical guardrail is not unbypassable.** The SDK cannot carry a request level guardrail, so the api enforces it by reading a verdict. A future refactor that drops the call silently removes the layer, mitigated only by the module's invariants list and tests.
-- The umbrella's cleanest promise is withdrawn, not narrowed. All Beta visitor content now goes to AWS for generation.
-- `enforce` changes streaming from token by token to segment by segment, the most likely thing a visitor notices, paid for a net that fires rarely.
-- Account enforcement is the one resource this program cannot express in Terraform, so umbrella AC-1 gains a documented exception.
-- Three more columns on `BetaDailyUsageCounter`, a table spec 0004 already flagged as heading toward a generalized redesign.
-- A guardrail policy is a tuning artifact, not a build artifact. It needs revisiting whenever the coach's prompt changes, and nothing in the repo will remind anyone.
+- **Buffering the coach delays the plan.** The visitor waits for the coach's whole generation rather than its first token, on a model call capped at ten times the token budget the existing buffered guard handles. This is the real price of the design.
+- The rules are hand written and catch the phrasings they anticipate. `ownership-guard.ts` admits this about itself in a comment, and the same honesty applies here.
+- Layer 1 couples the schema to `drafter.md`. If the skill file's vocabulary changes and the table does not, the drafter starts failing, and nothing in the repo will point at the cause.
+- R6, the diagnosis rule, is the weakest and carries the highest false positive risk on a surface where a false positive means an injured person gets a plainer plan than they should have.
+- Two more columns on `BetaDailyUsageCounter`, a table spec 0004 already flagged as heading toward a generalized redesign.
+- The AWS learning goals of the umbrella get nothing from this child. That is the correct outcome for the product and a real cost against the certification track.
 
 **Neutral**:
-- `@aws-sdk/client-bedrock-runtime` becomes an api dependency; it is already used by the classifier Lambda, so it is new to this workspace only.
-- `AI_PROVIDER_BETA` stops being a reserved name and becomes real, as the provider swap child intended.
+- Beta becomes the only surface not on Bedrock, deliberately and for stated reasons.
+- `splitIntoChunks` gains a second consumer, which is mild evidence it belongs somewhere more common than the conversation module.
 
 ## Follow-up
 
-- [ ] **Ratify or reject the D5 amendment to cross child contract clause 1.** It is now a withdrawal, not a narrowing. Nothing else here can be built until it is settled.
-- [ ] **Run the step 2 gate before anything else.** If account enforcement cannot work against an Anthropic Messages shaped body, or forces synchronous streaming, option C's floor half is not deliverable as described and this spec needs revising, not patching.
-- [ ] Re check Sonnet 5's Bedrock availability whenever this is revisited. It is the trigger that would restore the clinical model.
-- [ ] Decide the self harm and crisis question: whether a visitor expressing genuine distress should be detected at all, and what the response is. A guardrail block is the wrong answer, so it may belong in the screener with its own human written referral copy.
-- [ ] Consider moving Beta to the raw `Converse` API if request level guardrails ever become important enough to justify splitting the provider abstraction. That is the only path to an inline, unbypassable clinical guardrail.
-- [ ] Confirm current Bedrock Guardrails per text unit pricing at build time and add it to the tag filtered `genai-infra` budget, including the new baseline spend on the interview simulator and classifier.
-- [ ] Confirm that `InvocationsIntervened` is published for standalone `ApplyGuardrail` calls before relying on a CloudWatch alarm; if not, the counters carry it alone.
-- [ ] Verify whether `us.` Geo inference profile ids can be named in `modelEnforcement.includedModels` or `excludedModels`. Not needed while the baseline applies everywhere, but load bearing if anyone ever scopes it.
-- [ ] The provider swap child still names Sonnet 5 as its Bedrock default, which is stale: the interview simulator is live on `us.anthropic.claude-sonnet-4-6`. That child needs a correction pass, independent of this one.
-- [ ] After shipping, add a line to the api's "Beta module invariants" gotcha recording that the clinical guardrail is additive, fail open, and flag removable, so a later change does not mistake it for a load bearing block.
+- [ ] Measure the real time to first plan text after buffering. If it is unacceptable, build the improvement rather than weakening the guard: render the validated drafter plan as soon as the drafter returns, and upgrade it to the coach's prose when the guard passes. That would put time to first text below today's.
+- [ ] Decide the self harm and crisis question: whether a visitor expressing genuine distress should be detected at all, and what the response is. Still a clinical judgement for a human, and it still belongs in the screener with its own human written referral copy, not in a blocklist.
+- [ ] The provider swap child names Sonnet 5 as its Bedrock default, which is stale: Sonnet 5 returns 403 for this account and the interview simulator is live on `us.anthropic.claude-sonnet-4-6`. That child needs a correction pass, independent of this one.
+- [ ] Consider a shadow LLM judge later, purely to find rules layer 2 is missing. Not a runtime gate.
+- [ ] Add a note to `drafter.md` and `coach.md` saying that the vocabulary table, the dose ceilings, and the guard rules are derived from them, so a future edit to either prompts a look at the constants.
+- [ ] After shipping, add a line to the api's "Beta module invariants" gotcha recording that the coach is buffered and guarded, and that a guard failure substitutes a rendered plan rather than an error.
 
 ## Inline rationale
 
-The engineer's intent settles the question the previous draft spent its length on: everything goes to Bedrock, Beta included. What remained was how to apply guardrails without applying them everywhere, and the answer that survives contact with the details is that "guardrail" is not one thing. Prompt attack filtering and PII masking are good on an interview transcript, a feedback message, and a rehab plan alike. Clinical denied topics and grounding against a drafted plan are good on exactly one of those and harmful on another, because the classifier's failure mode is silent. Splitting along that seam is what lets the floor be enforced account wide while the depth stays local.
+The decisive observation is that Beta has no output side check while `conversation` does. Once that is said out loud, the shape of the answer follows from the repo rather than from a product catalogue: there is already a guard that evaluates a complete model output against deterministic rules, substitutes safe copy on failure, and re chunks so the result still streams. Beta needs the same thing, and the reasons it is harder are specific and addressable.
 
-Two details did real work. The coach's output format, which contracts for headingless opening and closing paragraphs and `## Stage n:` headings, gives deterministic segmentation, a per stage grounding source from the drafter's own JSON, and a principled reason to exempt the two segments that are legitimately ungrounded; without it, contextual grounding would fire on every plan. And the DTO, which caps `goals` at 200 characters and constrains every other field to an enum or a regex, means the input guard has exactly one small payload to inspect.
+Layer 1 is where most of the value is, and it exists because of a detail in the current code: the drafter's schema is built inside `runDrafter`, where the request is in scope, so it can be built per request. That turns three prose rules in `drafter.md` into structural facts. No full crimp entry exists for a pulley injury. No hangboard entry exists for someone with no hangboard. The mandatory caution is a required field for the pain behavior that mandates it. None of that is detection, so none of it can be evaded by phrasing.
 
-The uncomfortable part is the model. Moving the clinical surface to Bedrock costs half a generation of capability on the agent that reasons about injuries, in exchange for consistency and coverage. That is a defensible trade and it is the engineer's to make, but it should be made with the sentence said out loud rather than discovered later in a diff.
+The second useful detail is that both skill files specify output formats precisely, which lets layer 2's rules be scoped to the region where they apply. That is what makes a full crimp rule safe: run over the whole document it would fire on the skill file's own safety language ("no crimping of any kind"), but scoped to prescription lines it fires only on a prescription.
+
+The uncomfortable part is buffering. Beta's plans are long and the wait is real, and the temptation is to stream segment by segment and guard each one. The reason not to is that Beta's UI already carries a warning about partial plans, written because partial plans are dangerous here. A design that makes the partial plan a routine state is moving the wrong way on a clinical surface, and the honest fix for the wait is a better first paint, not a weaker guard.
