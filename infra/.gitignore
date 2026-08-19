@@ -1,0 +1,26 @@
+# Local Terraform working state — never committed.
+.terraform/
+.terraform.lock.hcl
+
+# State files may contain resource attributes; never committed even though
+# this program keeps its authoritative state in the S3 backend.
+*.tfstate
+*.tfstate.*
+
+# Variable files may carry per-operator values; only the committed
+# .tfvars.example (if present) documents the shape.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Terraform crash/override artifacts.
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI config that may carry credentials/tokens.
+.terraformrc
+terraform.rc
