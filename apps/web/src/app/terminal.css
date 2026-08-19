@@ -416,10 +416,75 @@
     color var(--duration-instant) var(--ease-standard);
 }
 
+/* The CURRENT item wears the same block, permanently.                  */
+/*                                                                      */
+/* Hooked off [aria-current] rather than a class of its own, so the      */
+/* fill and the attribute cannot drift apart: there is no way to paint   */
+/* the block without also announcing "current" to a screen reader, and   */
+/* no way to mark an item current and forget to show it. The attribute   */
+/* stays the accessible signal; the block is the sighted one.            */
+/*                                                                      */
+/* Why a fill and not the brighter-text it used to be: active vs         */
+/* inactive was `ink` vs `muted`, which is 2.86:1 apart on the CRT but   */
+/* 1.77:1 apart on the printout — two dark inks on one light sheet, so   */
+/* light mode could not say which section you were in at all. Same       */
+/* reasoning as the hover rule above, same tokens, same measurements:    */
+/*   light  text #f8f2e2 on block #16304f  11.97:1                      */
+/*          block vs canvas #f2ead6 11.16:1, vs bar #d4debc 9.54:1      */
+/*   dark   text #0a0a0f on block #39ff14  14.57:1                      */
+/*          block vs canvas #0a0a0f 14.57:1                             */
+/* Not gated on (hover: hover): "which section am I in" is not pointer   */
+/* state, and a touch visitor needs it more than anyone.                 */
+/* ------------------------------------------------------------------ */
+.terminal-select[aria-current] {
+  background-color: var(--select-bg);
+  color: var(--select-fg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Hover, and how it stays distinguishable from "current".              */
+/*                                                                      */
+/* Once current is a persistent block, hover painting the SAME block    */
+/* means a pointed-at inactive item is momentarily indistinguishable    */
+/* from the one you are actually on. That is how a completion list      */
+/* behaves and it is defensible, but here the tell you would normally   */
+/* rely on — the pointer sitting on the item — is weak, because         */
+/* RetroCursor hides the native cursor and replaces it with a block     */
+/* that LAGS behind the real position. So hover gets one extra mark.    */
+/*                                                                      */
+/* The mark is an underline, on purpose:                                */
+/*   - it costs nothing in contrast. It is drawn in currentColor, i.e.  */
+/*     --select-fg on --select-bg, which is the 11.97:1 / 14.57:1 pair  */
+/*     already measured above. Nothing is dimmed, tinted or inset to    */
+/*     make room for it.                                                */
+/*   - text-decoration is not a layout property, so no reflow, and the  */
+/*     no-padding block above keeps its exact character cells.          */
+/*   - it is a fourth channel. Fill says "current", underline says      */
+/*     "pointer is here", outline says "keyboard is here", and          */
+/*     aria-current says it out loud. Four states, four channels, none  */
+/*     of them borrowed from another. design.md already names underline */
+/*     colour as the legitimate alternative channel for text that       */
+/*     cannot move on colour.                                           */
+/*                                                                      */
+/* It also answers what hovering the ALREADY-current item does, which   */
+/* would otherwise be a dead no-op: it gains the underline like any     */
+/* other item. Deliberately NOT un-inverting on hover — that would      */
+/* read as leaving the section you are standing in — and deliberately   */
+/* not a second, louder treatment either, because the honest message is */
+/* "yes, this is clickable, and it is also where you already are".      */
+/*                                                                      */
+/* Still gated on (hover: hover) so a tap does not strand an item       */
+/* underlined, and still transitions only the two colour channels; the  */
+/* underline snaps, so it adds nothing for prefers-reduced-motion to    */
+/* clamp beyond what the global block below already handles.            */
+/* ------------------------------------------------------------------ */
 @media (hover: hover) {
   .terminal-select:hover {
     background-color: var(--select-bg);
     color: var(--select-fg);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
   }
 }
 
