@@ -12,6 +12,8 @@ async function bootstrap() {
   // Render sits behind a proxy; trust its first hop so req.ip resolves the
   // real caller instead of the proxy, for the conversation endpoint's
   // hashedIp and rate limiting.
+  // This trust-topology fact also lives in apps/api/src/lib/auth.ts (better-auth's
+  // advanced.ipAddress.trustedProxies) — change both together.
   app.set('trust proxy', 1);
 
   app.useGlobalPipes(
