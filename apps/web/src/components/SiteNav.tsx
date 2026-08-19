@@ -23,10 +23,34 @@ function useActiveSection(): string | null {
     );
     if (sections.length === 0) return;
 
+    // Which sections are currently crossing the centre line, kept across
+    // callbacks. An IntersectionObserver batch only carries the sections
+    // whose state CHANGED, so a callback can be nothing but "#about just
+    // left" while "#projects" is still there from an earlier batch —
+    // reading the batch alone would clear a section that is still current.
+    // Tracking the set makes "nothing is intersecting" a real question we
+    // can answer, which is what the clear has to be gated on.
+    const intersecting = new Set<string>();
+
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries.find((entry) => entry.isIntersecting);
-        if (visible) setActiveId(visible.target.id);
+        for (const entry of entries) {
+          if (entry.isIntersecting) intersecting.add(entry.target.id);
+          else intersecting.delete(entry.target.id);
+        }
+        // The -50%/-50% rootMargin collapses the root to a single line, so
+        // at most one section can be on it — but there are real moments
+        // when NONE is: the hero above #about (which has no id and so is
+        // never observed), and the gaps at either end of the page. Those
+        // are exactly the moments the nav used to keep claiming you were
+        // in a section you had already scrolled out of, aria-current and
+        // all. Clearing only on an empty set means normal section-to-
+        // section scrolling — where the incoming section is added in the
+        // same batch the outgoing one is removed — never flickers through
+        // null. `find` over `sections` rather than the Set's own order so
+        // that if the line ever does hold two, document order decides.
+        const current = sections.find((section) => intersecting.has(section.id));
+        setActiveId(current ? current.id : null);
       },
       { rootMargin: '-50% 0px -50% 0px', threshold: 0 }
     );
