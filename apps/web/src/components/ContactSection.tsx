@@ -62,7 +62,10 @@ export function ContactSection() {
         </p>
         <button
           type="button"
-          onClick={reenter}
+          // Hands its own node to the provider so leaving the scene puts
+          // focus back here rather than at <body>. This control sits near
+          // the bottom of a very long single-page site.
+          onClick={(event) => reenter(event.currentTarget)}
           className="mt-3 text-term-sm text-term-ink transition-colors duration-term-instant hover:text-term-accent"
         >
           [ view the 3d desk ]
