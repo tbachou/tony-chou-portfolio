@@ -3,8 +3,28 @@
    admin) shares one identity. See apps/web/design.md for the art
    direction; this file is the token source of truth. */
 
-.terminal-theme {
-  /* Colors — contrast ratios verified against #0a0a0f canvas in design.md */
+/* ------------------------------------------------------------------ */
+/* Palette — three states: explicit light, explicit dark, and system.  */
+/*                                                                     */
+/* Colour tokens live on :root rather than .terminal-theme (which is   */
+/* on <body>) for two reasons: <html> can then paint the overscroll    */
+/* canvas from the same token, and the pre-paint init script in the    */
+/* root layout only ever has to stamp one element.                     */
+/*                                                                     */
+/* Resolution: the dark palette is the base. The system path is a      */
+/* prefers-color-scheme media query that deliberately skips            */
+/* [data-theme='dark'], so an explicit dark choice always beats a      */
+/* light OS setting. An explicit light choice is a plain attribute     */
+/* rule, so it beats a dark OS setting. No stamped attribute at all    */
+/* means "follow the system", which is also the never-chosen default.  */
+/*                                                                     */
+/* The literal values below are each written exactly once; the two     */
+/* light selectors share one mapping so the palettes cannot drift.     */
+/* ------------------------------------------------------------------ */
+
+:root {
+  /* Dark — the original CRT phosphor palette. Ratios against #0a0a0f
+     canvas are recorded in design.md. */
   --color-canvas: #0a0a0f;
   --color-surface: #10160f;
   --color-border: #458045;
@@ -15,7 +35,83 @@
   --color-on-accent: #0a0a0f;
   --color-success: #39ff14;
   --color-error: #ff3b3b;
+  /* The one deliberate exception to the single accent: the interview
+     transcript's dual-phosphor speaker pair (design.md). */
+  --color-interviewer: #39ff14;
+  --color-tony: #ffb000;
+  /* Decorative CRT textures — glow, scanlines, text bloom. Kept as an
+     rgb triple + alphas so the textures re-tint with the palette
+     instead of being hardcoded phosphor green. */
+  --texture-rgb: 57, 255, 20;
+  --texture-glow-alpha: 0.07;
+  --texture-scanline-alpha: 0.035;
+  --glow-alpha-near: 0.55;
+  --glow-alpha-far: 0.25;
+  color-scheme: dark;
 
+  /* Light — "paper terminal": the same single-hue discipline, read as a
+     line-printer page instead of a CRT (dark phosphor ink on warm
+     stock) rather than as a generic light UI. Ratios in design.md. */
+  --paper-canvas: #f2f1e7;
+  --paper-surface: #fcfbf5;
+  --paper-border: #6f8f6b;
+  --paper-muted: #4d6b4a;
+  --paper-body: #224820;
+  --paper-ink: #0f5510;
+  --paper-on-accent: #fcfbf5;
+  --paper-error: #a81b13;
+  --paper-tony: #6f4200;
+  --paper-texture-rgb: 15, 85, 16;
+}
+
+/* System default: no explicit choice stored, OS asks for light. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --color-canvas: var(--paper-canvas);
+    --color-surface: var(--paper-surface);
+    --color-border: var(--paper-border);
+    --color-muted: var(--paper-muted);
+    --color-body: var(--paper-body);
+    --color-ink: var(--paper-ink);
+    --color-accent: var(--paper-ink);
+    --color-on-accent: var(--paper-on-accent);
+    --color-success: var(--paper-ink);
+    --color-error: var(--paper-error);
+    --color-interviewer: var(--paper-ink);
+    --color-tony: var(--paper-tony);
+    --texture-rgb: var(--paper-texture-rgb);
+    --texture-glow-alpha: 0.05;
+    --texture-scanline-alpha: 0.028;
+    /* Ink on paper does not bloom; the CRT halo is a dark-only effect. */
+    --glow-alpha-near: 0;
+    --glow-alpha-far: 0;
+    color-scheme: light;
+  }
+}
+
+/* Explicit light choice — beats a dark OS setting. */
+:root[data-theme='light'] {
+  --color-canvas: var(--paper-canvas);
+  --color-surface: var(--paper-surface);
+  --color-border: var(--paper-border);
+  --color-muted: var(--paper-muted);
+  --color-body: var(--paper-body);
+  --color-ink: var(--paper-ink);
+  --color-accent: var(--paper-ink);
+  --color-on-accent: var(--paper-on-accent);
+  --color-success: var(--paper-ink);
+  --color-error: var(--paper-error);
+  --color-interviewer: var(--paper-ink);
+  --color-tony: var(--paper-tony);
+  --texture-rgb: var(--paper-texture-rgb);
+  --texture-glow-alpha: 0.05;
+  --texture-scanline-alpha: 0.028;
+  --glow-alpha-near: 0;
+  --glow-alpha-far: 0;
+  color-scheme: light;
+}
+
+.terminal-theme {
   /* Typography */
   --font-mono: var(--font-ibm-plex-mono), ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
   --text-xs: 0.6875rem; /* 11px */
@@ -75,7 +171,11 @@
   inset: 0;
   pointer-events: none;
   z-index: 1;
-  background: radial-gradient(120% 55% at 50% -10%, rgba(57, 255, 20, 0.07), transparent 65%);
+  background: radial-gradient(
+    120% 55% at 50% -10%,
+    rgba(var(--texture-rgb), var(--texture-glow-alpha)),
+    transparent 65%
+  );
 }
 
 /* Decorative scanline texture. Purely visual, never affects text contrast
@@ -87,8 +187,8 @@
   z-index: 50;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(57, 255, 20, 0.035) 0,
-    rgba(57, 255, 20, 0.035) 1px,
+    rgba(var(--texture-rgb), var(--texture-scanline-alpha)) 0,
+    rgba(var(--texture-rgb), var(--texture-scanline-alpha)) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -96,8 +196,8 @@
 
 .terminal-glow {
   text-shadow:
-    0 0 4px rgba(57, 255, 20, 0.55),
-    0 0 12px rgba(57, 255, 20, 0.25);
+    0 0 4px rgba(var(--texture-rgb), var(--glow-alpha-near)),
+    0 0 12px rgba(var(--texture-rgb), var(--glow-alpha-far));
 }
 
 .terminal-cursor {
