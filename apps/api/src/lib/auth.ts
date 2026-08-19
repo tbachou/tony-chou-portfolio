@@ -26,5 +26,23 @@ export const auth = betterAuth({
       process.env.NODE_ENV === 'production'
         ? { sameSite: 'none', secure: true }
         : {},
+    // Render appends the real client IP as the RIGHTMOST x-forwarded-for
+    // entry (same trust model as `trust proxy = 1` in main.ts). With
+    // trustedProxies set, better-auth walks the chain right-to-left, skips
+    // trusted hops, and returns the first untrusted entry - Render's
+    // appended one. The private/loopback ranges below can never match a
+    // real public client, so client-supplied leftmost entries are never
+    // reached. Without this, multi-entry chains resolve to null and every
+    // visitor shares one login rate-limit bucket (the production WARN).
+    ipAddress: {
+      trustedProxies: [
+        '127.0.0.1',
+        '::1',
+        '10.0.0.0/8',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+        'fc00::/7',
+      ],
+    },
   },
 });
