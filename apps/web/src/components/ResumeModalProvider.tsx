@@ -32,7 +32,7 @@ export function ResumeModalProvider({ children }: { children: React.ReactNode })
         ref={dialogRef}
         onClick={handleBackdropClick}
         aria-label="Résumé"
-        className="m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-0 backdrop:bg-term-canvas/85 open:flex open:items-start open:justify-center open:overflow-y-auto open:p-4 sm:open:items-center sm:open:p-8"
+        className="m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-0 backdrop:bg-[color:var(--scrim-bg)] open:flex open:items-start open:justify-center open:overflow-y-auto open:p-4 sm:open:items-center sm:open:p-8"
       >
         <TerminalWindow
           path="tonychou@portfolio:~/resume$"
