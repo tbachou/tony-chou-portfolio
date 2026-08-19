@@ -154,9 +154,10 @@ export default function BetaProjectPage() {
               cat why.txt
             </h2>
             <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
-              Before engineering, Tony spent 6+ years as an Occupational Therapist — staged,
-              criteria-based rehab progressions were his day job. He&apos;s also a climber, so
-              this is a domain he rehabs in himself. Beta ties those two threads together, and
+              Before engineering, Tony spent 6 years as an Occupational Therapist — he no longer
+              practices, but staged, criteria-based rehab progressions were his day job.
+              He&apos;s also a climber, so this is a domain he rehabs in himself. Beta ties those
+              two threads together, and
               adds something Panel and Carryover can&apos;t: a zero-friction live demo. No
               download, no Gatekeeper — just open it in the browser.
             </p>

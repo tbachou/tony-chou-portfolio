@@ -148,10 +148,10 @@ export default function CarryoverProjectPage() {
               cat why.txt
             </h2>
             <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
-              Before engineering, Tony spent 6+ years as an Occupational Therapist in neuro rehab
-              and skilled nursing — C/NDT certified, M.S. in Occupational Therapy from Ohio State.
-              Carryover comes directly out of that background: home exercise program handouts are
-              a real, recurring drafting task in OT/PT practice.
+              Before engineering, Tony spent 6 years as an Occupational Therapist in neuro rehab
+              and skilled nursing — M.S. in Occupational Therapy from Ohio State, no longer in
+              clinical practice. Carryover comes directly out of that background: home exercise
+              program handouts are a real, recurring drafting task in OT/PT practice.
             </p>
           </section>
 
