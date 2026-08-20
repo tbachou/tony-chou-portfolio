@@ -42,6 +42,26 @@ import { splitIntoChunks } from '../conversation/ownership-guard';
 
 export type EmitFn = (event: string, data: unknown) => void;
 
+/**
+ * A drafted plan rejected by layer 1's CLINICAL rules, as opposed to its
+ * shape checks. The distinction decides whether a redraft is appropriate.
+ *
+ * A shape failure (no stages, a malformed stage) is model noise: the plan
+ * was never expressed, and a second sample usually succeeds. A clinical
+ * rejection means the model DID express a plan and it named something
+ * `drafter.md` forbids. Redrafting that blind, with no feedback about what
+ * was wrong, hands the same prompt a second chance to produce something the
+ * same narrow lexical check may not catch, so it is not retried (clinical
+ * audit finding). The visitor gets the friendly error, which is what
+ * happened before the retry existed.
+ */
+export class ClinicalRejectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ClinicalRejectionError';
+  }
+}
+
 type ScreeningResult = {
   verdict: 'clear' | 'red_flag' | 'off_topic';
   category?: RedFlagCategory;
@@ -235,53 +255,57 @@ export class BetaService {
   private async runDrafter(
     input: BetaPlanRequestDto,
   ): Promise<{ plan: DraftPlan; tokens: number }> {
+    // One params object, used by both the first attempt and the redraft: two
+    // copies would drift the moment anyone changed the model or maxTokens.
+    const drafterParams = {
+      model: DRAFTER_MODEL,
+      system: loadBetaSkill('drafter'),
+      userMessage: buildVisitorProfile(input),
+      maxTokens: 4000,
+      toolName: 'submit_plan',
+      toolDescription:
+        'Submit the staged return-to-climbing plan as structured JSON.',
+      // Layer 1: built per request, so several of drafter.md's prose rules
+      // become structural facts the model cannot drift past.
+      inputSchema: buildDrafterSchema(input),
+      timeoutMs: AGENT_CALL_TIMEOUT_MS,
+      maxRetries: 0,
+    };
     const result = await this.timedAgentCall('drafter', DRAFTER_MODEL, () =>
-      this.anthropic.forceToolCall({
-        model: DRAFTER_MODEL,
-        system: loadBetaSkill('drafter'),
-        userMessage: buildVisitorProfile(input),
-        maxTokens: 4000,
-        toolName: 'submit_plan',
-        toolDescription:
-          'Submit the staged return-to-climbing plan as structured JSON.',
-        // Layer 1: built per request, so several of drafter.md's prose rules
-        // become structural facts the model cannot drift past.
-        inputSchema: buildDrafterSchema(input),
-        timeoutMs: AGENT_CALL_TIMEOUT_MS,
-        maxRetries: 0,
-      }),
+      this.anthropic.forceToolCall(drafterParams),
     );
 
     try {
       const plan = parseDraftPlan(result.input, input);
       return { plan, tokens: result.inputTokens + result.outputTokens };
     } catch (error) {
-      // The schema's `required`/`minItems` are requests to the model, not
-      // guarantees: the drafter occasionally returns an empty stages array
-      // (1/35 and 2/27 in the AC-G9 corpus runs), and layer 1's own checks
-      // can reject a plan. Both are nondeterministic, and the spec's failure
-      // note already leans on that: "the refund plus the drafter's
-      // nondeterminism mean a retry usually succeeds". Retry the DRAFTER
-      // once on a parse rejection, so the visitor gets a plan instead of
-      // FRIENDLY_ERROR_MESSAGE. `timedAgentCall` cannot own this retry: its
+      // A CLINICAL rejection is never retried. Redrafting blind gives the
+      // same prompt another chance at a plan the same narrow lexical check
+      // might miss the second time, and before the retry existed this path
+      // failed safe. Rethrow so the visitor gets FRIENDLY_ERROR_MESSAGE.
+      if (error instanceof ClinicalRejectionError) {
+        // Logged distinctly so the rate stays visible: a rising count here
+        // means drafter.md or the model drifted, and a retry would have
+        // hidden it behind a successful second attempt.
+        this.logger.error(
+          `Beta drafter plan rejected on clinical grounds: ${error.message}`,
+        );
+        await this.usage.recordGuardBlock();
+        throw error;
+      }
+      // Shape failures ARE retried. The schema's `required`/`minItems` are
+      // requests to the model, not guarantees: the drafter occasionally
+      // returns an empty stages array (1/35 and 2/27 in the AC-G9 corpus
+      // runs). That is nondeterministic noise, and the spec's failure note
+      // leans on it: "the refund plus the drafter's nondeterminism mean a
+      // retry usually succeeds". `timedAgentCall` cannot own this retry: its
       // retry wraps the HTTP call, and a parse rejection happens after that
       // call already logged `outcome: 'ok'`.
       this.logger.warn(
-        `Beta drafter output rejected (${this.describeError(error)}); redrafting once`,
+        `Beta drafter output malformed (${this.describeError(error)}); redrafting once`,
       );
       const retry = await this.timedAgentCall('drafter', DRAFTER_MODEL, () =>
-        this.anthropic.forceToolCall({
-          model: DRAFTER_MODEL,
-          system: loadBetaSkill('drafter'),
-          userMessage: buildVisitorProfile(input),
-          maxTokens: 4000,
-          toolName: 'submit_plan',
-          toolDescription:
-            'Submit the staged return-to-climbing plan as structured JSON.',
-          inputSchema: buildDrafterSchema(input),
-          timeoutMs: AGENT_CALL_TIMEOUT_MS,
-          maxRetries: 0,
-        }),
+        this.anthropic.forceToolCall(drafterParams),
       );
       const plan = parseDraftPlan(retry.input, input);
       // Both calls' tokens count: the visitor's plan cost both.
@@ -711,7 +735,7 @@ function assertExplicitProhibitions(
         // for the same reason the stage-1 check is: the drafter is primed on
         // this exact wording, so "(no full crimping)" is likely output.
         if (namePrescribesFullCrimp(name)) {
-          throw new Error(
+          throw new ClinicalRejectionError(
             'Drafter named a full-crimp exercise in a finger_pulley plan',
           );
         }
@@ -723,7 +747,7 @@ function assertExplicitProhibitions(
         // this exact prohibition, so "…(no crimping)" is the drafter obeying
         // it, not violating it. See `namePrescribesCrimping`.
         if (index === 0 && namePrescribesCrimping(name)) {
-          throw new Error(
+          throw new ClinicalRejectionError(
             'Drafter named a crimping exercise in stage 1 of a finger_pulley plan',
           );
         }
