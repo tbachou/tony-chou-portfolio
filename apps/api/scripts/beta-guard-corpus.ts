@@ -313,13 +313,11 @@ async function main(): Promise<void> {
   const dumpText = process.argv.includes('--dump-text');
   const outPath =
     arg('out') ??
-    path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      'docs/specs/_root/0005-aws-genai-integration/ac-g9-corpus-run.json',
-    );
+    // Defaults OUTSIDE version control. With --dump-text a run holds several
+    // thousand words of model prose per profile, and a default that wrote into
+    // the repo is one `git add -A` away from committing all of it. Pass --out
+    // explicitly to place an artifact you actually mean to keep.
+    path.resolve(__dirname, '..', '.corpus', 'ac-g9-corpus-run.json');
 
   let profiles = CORPUS;
   if (only) profiles = profiles.filter((p) => p.id === only);

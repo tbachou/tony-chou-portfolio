@@ -792,6 +792,40 @@ describe('R7 recovery promised as fact', () => {
   });
 });
 
+describe('R7 recovery promised as fact, in the voice a coach actually writes', () => {
+  // The blocklist is written in full English — "you will be back" — but
+  // coach.md tells the coach to write warmly, and warm English contracts.
+  // "you'll be back to V5 climbing soon" was written by the live coach and
+  // walked straight through the rule that exists to stop it, because nothing
+  // expanded the contraction before matching.
+  it.each([
+    "Otherwise, stick with this, trust the stages, and you'll be back to V5 climbing soon.",
+    "Stay patient \u2014 you'll be climbing again before you know it.",
+    "Follow this and you\u2019ll be back on the wall.",
+  ])('CATCHES the contracted promise: %s', (closing) => {
+    const result = evaluateCoachOutput(
+      coachOutput(PULLEY_PLAN, { closing }),
+      PULLEY_PLAN,
+      PULLEY_INPUT,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R7/);
+  });
+
+  it('still does NOT catch the hedged phrasing coach.md asks for', () => {
+    expect(
+      evaluateCoachOutput(
+        coachOutput(PULLEY_PLAN, {
+          closing:
+            "Climbers usually find they're back on the wall around this timeline, though it varies.",
+        }),
+        PULLEY_PLAN,
+        PULLEY_INPUT,
+      ),
+    ).toEqual({ ok: true });
+  });
+});
+
 describe('R8 mandatory caution carried into the closing', () => {
   const caution =
     'Pain that stays constant at rest and does not improve within a couple of weeks deserves a professional assessment.';
@@ -880,8 +914,11 @@ describe('R8 mandatory caution carried into the closing', () => {
   // three are correct copy and must pass.
   it.each([
     [
+      // Verbatim apart from the closing clause, which was "and you'll be back
+      // to V5 climbing soon" — a real R7 promise once contractions expand, and
+      // this case is about R8's carry check, not R7.
       'omits "professional", scored 0.47 under the old ratio',
-      "You're working with a solid timeline and a proven path back. If your rest pain hasn't clearly improved by about three weeks from now, that's the moment to see a hand therapist or sports medicine doctor—they can rule out anything that needs their hands-on eye. Otherwise, stick with this, trust the stages, and you'll be back to V5 climbing soon.",
+      "You're working with a solid timeline and a proven path back. If your rest pain hasn't clearly improved by about three weeks from now, that's the moment to see a hand therapist or sports medicine doctor—they can rule out anything that needs their hands-on eye. Otherwise, stick with this and trust the stages.",
     ],
     [
       'says "constant pain" rather than naming rest',
