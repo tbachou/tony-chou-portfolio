@@ -405,6 +405,12 @@ export function BetaPlanner() {
           case 'plan_delta':
             setPlanText((prev) => prev + sse.text);
             break;
+          case 'plan_replace':
+            // The coach's prose passed the guard and replaces the rendering
+            // already on screen. Not announced to screen readers: the plan
+            // is unchanged in substance, so re-reading it would be noise.
+            setPlanText('');
+            break;
           case 'red_flag':
             terminal = true;
             setPhase('red_flag');

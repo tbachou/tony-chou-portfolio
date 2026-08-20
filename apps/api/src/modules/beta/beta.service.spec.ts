@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { BetaService, parseDraftPlan, __testing } from './beta.service';
+import { renderPlanFallback } from './beta-output-guard';
 import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
 import {
   CONSTANT_REST_PAIN_MESSAGE,
@@ -87,8 +88,11 @@ const screenerClear = {
   inputTokens: 10,
   outputTokens: 5,
 };
+/** The plan `drafterOk` returns, named so tests can render it themselves. */
+const DRAFT_PLAN = { stages: [1, 2, 3, 4].map(makeStage) };
+
 const drafterOk = {
-  input: { stages: [1, 2, 3, 4].map(makeStage) },
+  input: DRAFT_PLAN,
   inputTokens: 100,
   outputTokens: 200,
 };
@@ -1091,11 +1095,18 @@ describe('BetaService.generatePlan', () => {
       };
     }
 
+    /**
+     * What the visitor is actually looking at: deltas accumulate, and a
+     * `plan_replace` clears the area so the deltas after it replace the
+     * early deterministic paint.
+     */
     function planText(events: EmittedEvent[]): string {
-      return events
-        .filter(([name]) => name === 'plan_delta')
-        .map(([, data]) => (data as { text: string }).text)
-        .join('');
+      let text = '';
+      for (const [name, data] of events) {
+        if (name === 'plan_replace') text = '';
+        else if (name === 'plan_delta') text += (data as { text: string }).text;
+      }
+      return text;
     }
 
     async function run(
@@ -1161,14 +1172,12 @@ describe('BetaService.generatePlan', () => {
           .mockResolvedValueOnce(screenerClear)
           .mockResolvedValueOnce(drafterOk);
 
-        const eventCountsDuringStream: number[] = [];
+        const textDuringStream: string[] = [];
         h.anthropic.streamMessage.mockImplementation(
           (params: StreamMessageParams) => {
             for (const piece of ['alpha ', 'beta ', 'gamma']) {
               params.onToken(piece);
-              eventCountsDuringStream.push(
-                h.events.filter(([name]) => name === 'plan_delta').length,
-              );
+              textDuringStream.push(planText(h.events));
             }
             return Promise.resolve({
               text: conformantCoachText(),
@@ -1184,16 +1193,74 @@ describe('BetaService.generatePlan', () => {
           emit: h.emit,
         });
 
-        // Not one plan_delta existed while the model was still streaming.
-        expect(eventCountsDuringStream).toEqual([0, 0, 0]);
-        expect(planText(h.events).length).toBeGreaterThan(0);
+        // What is on screen while the coach streams is the DETERMINISTIC
+        // rendering of the already-validated plan, painted so the visitor
+        // does not stare at nothing for the whole generation. Not one token
+        // the coach produced ('alpha ', 'beta ', 'gamma') reached them: the
+        // AC-G6 invariant is about unguarded MODEL output, and code-rendered
+        // text from a schema-validated plan is not that.
+        const expected = renderPlanFallback(DRAFT_PLAN);
+        expect(textDuringStream).toEqual([expected, expected, expected]);
+        for (const piece of ['alpha', 'beta', 'gamma']) {
+          expect(textDuringStream.join('')).not.toContain(piece);
+        }
+      });
+
+      it('withholds the early paint when the PLAN\'s own content is bad', async () => {
+        // renderPlanFallback prints the drafter's free text verbatim, and a
+        // `source: 'plan'` violation lives in exactly those strings. Painting
+        // early would show the visitor the offending sentence that the hard
+        // error path exists to withhold.
+        const h = makeHarness();
+        const medicated = {
+          stages: [1, 2, 3, 4].map(makeStage),
+          overallCaution: 'Take ibuprofen twice daily until this settles.',
+        };
+        process.env.BETA_OUTPUT_GUARD_MODE = 'enforce';
+        h.anthropic.forceToolCall
+          .mockResolvedValueOnce(screenerClear)
+          .mockResolvedValueOnce({
+            input: medicated,
+            inputTokens: 100,
+            outputTokens: 200,
+          });
+        h.anthropic.streamMessage.mockResolvedValue({
+          text: conformantCoachText(),
+          inputTokens: 50,
+          outputTokens: 150,
+        });
+
+        await h.service.generatePlan({
+          input: makeInput(),
+          hashedIp: 'hashed-ip',
+          emit: h.emit,
+        });
+
+        expect(planText(h.events)).toBe('');
+        expect(h.events[h.events.length - 1]).toEqual([
+          'error',
+          { message: FRIENDLY_ERROR_MESSAGE },
+        ]);
       });
 
       it('re-chunks the shown text into multiple plan_delta events', async () => {
         const h = await run('shadow', conformantCoachText());
         const deltas = h.events.filter(([name]) => name === 'plan_delta');
         expect(deltas.length).toBeGreaterThan(10);
+        // planText() honours plan_replace, so this is what the visitor is
+        // left looking at: the coach's prose, having replaced the early
+        // deterministic paint.
         expect(planText(h.events)).toBe(conformantCoachText());
+      });
+
+      it('replaces the early paint exactly once, and only after the guard ran', async () => {
+        const h = await run('shadow', conformantCoachText());
+        const names = h.events.map(([name]) => name);
+        expect(names.filter((n) => n === 'plan_replace')).toHaveLength(1);
+        // Deltas both before (the early paint) and after (the upgrade).
+        const replaceAt = names.indexOf('plan_replace');
+        expect(names.slice(0, replaceAt)).toContain('plan_delta');
+        expect(names.slice(replaceAt)).toContain('plan_delta');
       });
     });
 
