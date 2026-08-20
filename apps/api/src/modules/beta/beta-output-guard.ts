@@ -402,6 +402,84 @@ const CAUTION_CARRY_CONCEPTS: readonly { name: string; pattern: RegExp }[] = [
   },
 ];
 
+/**
+ * Fidelity floor, ANDed with the concepts above.
+ *
+ * The concepts alone check that the caution's TOPICS appear, not that the
+ * closing still says the same thing. A clinical audit found a closing that
+ * satisfies all three while inverting the instruction: "your pain was
+ * constant at rest, and that is common and nothing to worry about ... fully
+ * back to normal by month six ... any doctor can take a quick look
+ * sometime". Topic present, meaning reversed, urgency gone.
+ *
+ * A faithful rephrasing keeps several of the caution's own distinctive
+ * words; the adversarial reframings carry one or two.
+ *
+ * A COUNT, deliberately not a ratio. The rule this replaced divided by the
+ * drafter's own term count, so a more thorough caution made a false positive
+ * MORE likely, and a ratio floor reproduces that: a faithful closing that
+ * tightens the deadline ("not clearly improved within two weeks, see a hand
+ * therapist") carries 4 of a verbose 17 term caution and would fail at 0.3
+ * while being both faithful and safer. Measured over the captured closings,
+ * a count separates cleanly: adversarial reframings scored 1, 1 and 2,
+ * faithful ones 4 and up.
+ */
+const CAUTION_MIN_TERMS = 3;
+const CAUTION_TERM_PREFIX = 5;
+
+/** Common words the fidelity floor should not treat as distinctive. */
+const CAUTION_STOPWORDS = new Set([
+  'about', 'after', 'again', 'alone', 'along', 'anything', 'because', 'been',
+  'before', 'being', 'between', 'could', 'does', 'doing', 'during', 'every',
+  'from', 'have', 'having', 'into', 'itself', 'might', 'other', 'over',
+  'really', 'should', 'since', 'some', 'still', 'such', 'than', 'that',
+  'their', 'them', 'then', 'there', 'these', 'they', 'thing', 'this',
+  'those', 'through', 'under', 'until', 'very', 'what', 'when', 'where',
+  'which', 'while', 'will', 'with', 'within', 'without', 'would', 'your',
+  'yours',
+]);
+
+function cautionKeyTerms(caution: string): string[] {
+  return Array.from(
+    new Set(
+      normalizeForMatch(caution)
+        .split(' ')
+        .map((word) => word.replace(/[^a-z0-9]/g, ''))
+        .filter((word) => word.length >= 5 && !CAUTION_STOPWORDS.has(word)),
+    ),
+  );
+}
+
+/** Every `<number> <unit>` pair in text, normalized to days for comparison. */
+const DURATION_WORDS: Readonly<Record<string, number>> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
+  nine: 9, ten: 10, couple: 2, few: 3, several: 3,
+};
+const UNIT_DAYS: Readonly<Record<string, number>> = {
+  day: 1, week: 7, month: 30,
+};
+
+/**
+ * The longest duration named in `text`, in days, or null if none.
+ *
+ * R8's time-bound concept accepts any duration, which let a closing stretch
+ * a three week checkpoint out to "a few months" and still pass. The drafted
+ * caution carries the figure the product actually stands behind, so the
+ * closing's bound is compared against it rather than accepted blindly.
+ */
+export function longestDurationDays(text: string): number | null {
+  const pattern =
+    /(\d+|one|two|three|four|five|six|seven|eight|nine|ten|several|couple|few)[\s-]+(?:of[\s-]+)?(day|week|month)s?/g;
+  let longest: number | null = null;
+  for (const match of text.matchAll(pattern)) {
+    const count = DURATION_WORDS[match[1]] ?? Number(match[1]);
+    if (!Number.isFinite(count)) continue;
+    const days = count * UNIT_DAYS[match[2]];
+    if (longest === null || days > longest) longest = days;
+  }
+  return longest;
+}
+
 export type CoachSections = {
   /** Lines before the first stage heading. Not checked by R3 or R4. */
   opening: string[];
@@ -735,12 +813,40 @@ export function evaluateCoachOutput(
       };
     }
     // The plan HAS the caution; the question is whether the coach's closing
-    // still says it. Checked as concepts rather than shared vocabulary — see
-    // CAUTION_CARRY_CONCEPTS for why the previous overlap ratio was unsound.
+    // still says the same thing. Three checks, ANDed, because each alone
+    // fails in a direction the others cover:
+    //   concepts   - the caution's elements are present at all
+    //   fidelity   - enough of its own words survive that the meaning was
+    //                rephrased rather than reversed
+    //   magnitude  - the closing's deadline is not later than the drafted one
     const closing = normalizeForMatch(sections.closing.join(' '));
-    const missing = CAUTION_CARRY_CONCEPTS.filter(
+    const missing: { name: string }[] = CAUTION_CARRY_CONCEPTS.filter(
       (concept) => !concept.pattern.test(closing),
+    ).map((concept) => ({ name: concept.name }));
+
+    // Fidelity floor. Guards the inversion case the concepts cannot see.
+    const terms = cautionKeyTerms(caution);
+    const carried = terms.filter((term) =>
+      closing.includes(term.slice(0, CAUTION_TERM_PREFIX)),
     );
+    if (carried.length < Math.min(CAUTION_MIN_TERMS, terms.length)) {
+      missing.push({ name: 'faithful wording' });
+    }
+
+    // Magnitude. A closing may tighten the deadline but never loosen it:
+    // sliding a three week checkpoint to "a few months" delays exactly the
+    // assessment this caution exists to prompt. Runs independently of the
+    // checks above so it reports its own reason.
+    const draftedDays = longestDurationDays(normalizeForMatch(caution));
+    const closingDays = longestDurationDays(closing);
+    if (
+      draftedDays !== null &&
+      closingDays !== null &&
+      closingDays > draftedDays
+    ) {
+      missing.push({ name: 'deadline not extended' });
+    }
+
     if (missing.length > 0) {
       // `source: 'coach'`: the plan HAS the caution, so re-rendering it
       // deterministically puts the caution back. The fallback repairs this.
