@@ -135,15 +135,51 @@ export function normalizeForMatch(text: string): string {
 export const FULL_CRIMP_PATTERN = 'full crimp';
 
 /**
- * Transcribes drafter.md, finger_pulley section, "Early:" bullet:
+ * Transcribes drafter.md, finger_pulley section, "Early:" bullet (line 38):
  *   "No crimping of any kind."
  * Applied to exercise names in STAGE 1 ONLY of a `finger_pulley` plan.
  * The skill file's three phases (early / middle / later) do not map onto
  * four or five stages without a judgement call, so only the part that
  * transcribes cleanly — the earliest stage — is enforced (spec: an earlier
  * draft's "stages 1 or 2" was narrowed for exactly this reason).
+ *
+ * The bare token. Do not test it with `includes()` — use
+ * `namePrescribesCrimping()` below, which is what the prohibition means.
  */
 export const ANY_CRIMP_PATTERN = 'crimp';
+
+/**
+ * The same drafter.md line 38 that this check transcribes is also the line
+ * the drafter READS, which makes it likely to name a stage 1 exercise
+ * defensively: "Open-hand tendon glides (no crimping)", "Non-crimp finger
+ * extensions", "Rice bucket work — avoid crimping". A bare substring match
+ * throws on all three, so the drafter obeying the safety instruction was the
+ * thing that cost an A2-pulley visitor their plan.
+ *
+ * The prohibition is on PRESCRIBING crimping, not on the letters appearing.
+ * So negated mentions are stripped before the token is looked for. What
+ * survives stripping is an affirmative crimp instruction and still fires:
+ * "Half-crimp isometric holds" in stage 1 throws exactly as before, and so
+ * does a mixed name like "Open-hand glides (no crimping), then half-crimp".
+ *
+ * Note `open hand` is drafter.md's affirmative opposite (line 38's own
+ * prescription, "gentle open-hand putty or rice-bucket work"), but it is
+ * deliberately NOT treated as a blanket exemption: "Open-hand into half-crimp
+ * transition" is a real stage 1 violation that such an exemption would miss.
+ */
+const CRIMP_NEGATION_PATTERN =
+  /\b(?:no|non|not|never|without|avoid(?:s|ing)?|excluding)\s*(?:any\s+)?(?:kind\s+of\s+)?crimp\w*/g;
+
+/**
+ * True when a normalized exercise name programs crimping, as opposed to
+ * merely mentioning it in order to rule it out. Input must already have been
+ * through `normalizeForMatch`.
+ */
+export function namePrescribesCrimping(normalizedName: string): boolean {
+  return normalizedName
+    .replace(CRIMP_NEGATION_PATTERN, ' ')
+    .includes(ANY_CRIMP_PATTERN);
+}
 
 /**
  * Dose field bounds for the drafter's structured `dose` object.
