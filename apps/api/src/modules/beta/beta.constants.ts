@@ -84,7 +84,8 @@ export const RED_FLAG_MESSAGES: Record<RedFlagCategory, string> = {
  * pain at rest.
  */
 export const MANDATORY_REST_PAIN_CAUTION =
-  'Pain at rest that does not improve within a couple of weeks deserves a professional assessment.';
+  'Pain that stays constant even at rest, and has not clearly improved by about ' +
+  'three weeks from when it started, deserves a professional assessment.';
 
 export const CONSTANT_REST_PAIN_MESSAGE =
   'Pain that stays constant even at rest — this long after the injury, or together with swelling or weakness — can point beyond a simple strain, and that is worth ruling out properly. Please see a physician or physical therapist before starting any loading program. Once they have cleared it, a staged return to climbing is a great goal.';
@@ -183,7 +184,7 @@ export const ANY_CRIMP_PATTERN = 'crimp';
  * transition" is a real stage 1 violation that such an exemption would miss.
  */
 const CRIMP_NEGATION_PATTERN =
-  /\b(?:no|non|not|never|without|avoid(?:s|ing)?|excluding)\s*(?:any\s+)?(?:kind\s+of\s+)?crimp\w*/g;
+  /\b(?:no|non|not|never|without|avoid(?:s|ing)?|excluding|instead\s+of|rather\s+than|stop|limit(?:ing)?|minimi[sz]e|reduce|refrain\s+from)\s*(?:any\s+)?(?:kind\s+of\s+)?crimp\w*/g;
 
 /**
  * True when a normalized exercise name programs crimping, as opposed to
