@@ -153,6 +153,13 @@ export type GuardResult =
 
 const STAGE_HEADING = /^##\s+Stage\s+(\d+)\s*:/i;
 
+/**
+ * A `stage <n>` cross-reference inside coach prose ("move on to stage 3").
+ * R3 strips these before tokenizing so a stage ordinal is never scored as a
+ * drafted number, without exempting the digit itself anywhere else.
+ */
+const STAGE_CROSS_REFERENCE = /\bstage\s+\d+/gi;
+
 const COACH_LABELS = [
   '**When:**',
   '**Climbing:**',
@@ -183,19 +190,40 @@ const COACH_LABELS = [
  * object. "push through" is kept in its bare-object form ("push through it")
  * because in this register it carries the contraindicated sense on its own —
  * there is no benign "push through it" in a rehab plan.
+ *
+ * The objects are listed BOTH bare and article-prefixed. A re-audit found the
+ * first version of the cross product carried only the "the" forms, so it
+ * matched "push through the pain" but not "push through pain", "power
+ * through soreness", or "work through pain in the first two weeks" — and
+ * rehab prose reaches for the bare noun at least as often as the definite
+ * article. Two phrases ("power through", "work through it") had been blocked
+ * outright before the cross product existed, so that omission moved them from
+ * caught to allowed. Bare objects are safe to add because the VERB is what
+ * killed the original false positives: "you rebuild power through progressive
+ * loading" and "work through it one stage at a time" name no pain object at
+ * all, in either form.
  */
 const PUSH_PAST_VERBS = [
   'push through',
   'work through',
   'power through',
   'fight through',
+  // "train through the pain" reached a visitor past the first cross product:
+  // the object was listed but this verb was not. It has no benign sense in
+  // front of a pain object, so it belongs here rather than as a bare phrase.
+  'train through',
 ] as const;
 
 const PAIN_OBJECTS = [
+  'pain',
   'the pain',
+  'ache',
   'the ache',
+  'aching',
   'the aching',
+  'soreness',
   'the soreness',
+  'discomfort',
   'the discomfort',
 ] as const;
 
@@ -250,10 +278,42 @@ export const MEDICATION_NAMES = [
  * torn", "you tore") or an explicit certainty adverb ("definitely",
  * "clearly"). The honest cost is that a bare assertion with neither marker
  * ("the pulley is torn") passes; that is the price of not firing on teaching.
+ *
+ * The bare "you have a grade" was narrowed to the injury-grading sense after
+ * a re-audit caught it firing on "once you have a grade you can climb
+ * comfortably" — which is what a legitimate `advanceWhen` criterion looks
+ * like. "Grade" is the most common noun in climbing, and drafter.md asks for
+ * it by name: `allowedClimbing` is "phrased relative to the visitor's own
+ * `pre_injury_grade`" (line 18) and finger_pulley progression runs "several
+ * number grades below their max" (line 41). The phrase only ever meant the
+ * clinical grading of a sprain, which always carries its ordinal, so the
+ * ordinal is now required. Climbing grades in this product are never written
+ * that way — they are "5.11a", "V4", "5.8" — so the two senses separate
+ * cleanly on the ordinal.
+ *
+ * The narrowing is preferred over dropping R6 from `evaluatePlanContent`:
+ * the surface is not what was wrong. R6's other entries ("you have torn",
+ * "diagnosed with") are exactly what must not reach a visitor through
+ * `renderPlanFallback`, which prints drafter free text verbatim, so exempting
+ * the whole rule plan-side to fix one phrase would reopen a real hole. It
+ * would also leave the same false positive live on the coach side, where the
+ * coach is instructed to restate `allowedClimbing` with "the same meaning and
+ * limits" (coach.md line 26) — grade and all.
+ *
+ * Both notations of the clinical ordinal are listed, because "grade II" is as
+ * standard in sprain grading as "grade 2". "you have a grade iii" needs no
+ * entry of its own — it contains the "ii" one. Roman grade I is the only gap,
+ * and it is deliberate: "you have a grade i" is a prefix of any word starting
+ * with i ("you have a grade in mind"), so it would reintroduce the exact
+ * false positive this narrowing exists to remove. The digit form covers
+ * "grade 1".
  */
 export const DIAGNOSIS_PHRASES = [
   'you have torn',
-  'you have a grade',
+  'you have a grade 1',
+  'you have a grade 2',
+  'you have a grade 3',
+  'you have a grade ii',
   'you have ruptured',
   'you have a tear',
   'you tore',
@@ -617,13 +677,21 @@ export function evaluateCoachOutput(
   // writes came from the drafter, so it is present in the allowed set by
   // construction.
   //
-  // Stage ordinals are allowed DOCUMENT-WIDE rather than only in their own
-  // section. They are not drafted numbers at all: they come from coach.md's
-  // own output format (`## Stage {n}:`), so the coach is entitled to name any
-  // of them anywhere. An audit caught the per-stage version rejecting "move
-  // on to stage 3" written inside stage 2 — a cross-reference the format
-  // invites, scored as if the coach had invented a dose.
-  const stageOrdinals = coachPlan.stages.map((_, index) => String(index + 1));
+  // `stage <n>` cross-references are STRIPPED from the scanned text rather
+  // than added to the allowed set. An audit caught this rule rejecting "move
+  // on to stage 3" written inside stage 2 — a cross-reference coach.md's own
+  // `## Stage {n}:` format invites, scored as if the coach had invented a
+  // dose. The first fix for that added every stage ordinal to every stage's
+  // allowed set, which silently gutted the rule: with 4-5 stages that admits
+  // "1".."5" document-wide, and rehab dose integers live almost entirely in
+  // that range. A drafter prescribing 3 sets of 10 twice a week could then be
+  // coached as "4 times a week" and pass. Removing the phrase exempts the
+  // cross-reference without exempting the digit: the "3" in "stage 3" is
+  // never tokenized, while the "4" in "4 times a week" still is.
+  //
+  // The synthetic heading prepended below passes through the same strip, so
+  // it contributes no tokens. Heading numbering is unaffected: R4 reads
+  // `section.number`, parsed from the real heading by `splitCoachSections`.
   for (let i = 0; i < sections.stages.length; i += 1) {
     const allowed = new Set<string>([
       ...numericTokens(JSON.stringify(coachPlan.stages[i])),
@@ -639,12 +707,10 @@ export function evaluateCoachOutput(
           .filter((value): value is number => value !== undefined)
           .map(String),
       ),
-      ...stageOrdinals,
     ]);
-    const scanned = [
-      `## Stage ${i + 1}:`,
-      ...sections.stages[i].lines,
-    ].join('\n');
+    const scanned = [`## Stage ${i + 1}:`, ...sections.stages[i].lines]
+      .join('\n')
+      .replace(STAGE_CROSS_REFERENCE, ' ');
     for (const token of numericTokens(scanned)) {
       if (!allowed.has(token)) {
         return {
@@ -735,8 +801,13 @@ export function evaluateCoachOutput(
  */
 export function renderPlanFallback(plan: DraftPlan): string {
   const parts: string[] = [
-    // Deliberately avoids "work through it": that is an R1 blocklist phrase,
-    // and the fallback must never trip the guard it exists to satisfy.
+    // Phrased to keep well clear of R1: the fallback must never trip the
+    // guard it exists to satisfy. "work through it" is no longer an R1 phrase
+    // — R1 requires a push-past verb AND a pain object, and that bare
+    // substring was dropped for firing on "work through it one stage at a
+    // time" — so this wording is not forced any more. It is kept because it
+    // reads well and because the constraint it was chosen under still holds
+    // in spirit: no push-past-pain framing anywhere in substituted copy.
     'Here is your staged plan. Take it one stage at a time, and let the "move on when" points decide when you are ready for the next one.',
   ];
 

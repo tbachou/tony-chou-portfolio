@@ -273,9 +273,32 @@ describe('R1 contraindicated pain phrasing', () => {
     expect(result.ok === false && result.reason).toMatch(/^R1/);
   });
 
+  // ---- The regression the verb x object cross product introduced. ----
+  // Its first version listed only article-prefixed objects ("the pain"), so
+  // it matched "push through THE pain" and nothing else. Rehab prose reaches
+  // for the bare noun at least as often, and two of these ("power through",
+  // "work through it") were blocked outright before the cross product
+  // existed — so the rewrite moved them from caught to allowed.
+  it.each([
+    'Power through soreness and keep loading.',
+    'Work through pain in the first two weeks.',
+    'Push through pain on the hangboard.',
+    // The object was listed but the verb was not.
+    'Train through the pain.',
+    'Fight through discomfort and it will settle.',
+    // Control: already covered by the article-prefixed form.
+    'Work through the ache rather than resting it.',
+  ])('CATCHES the bare-object form in %j', (closing) => {
+    const result = evaluate(coachOutput(PULLEY_PLAN, { closing }));
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R1/);
+  });
+
   // The two false positives an audit found in the bare-substring version.
   // Both are ordinary, correct rehab prose; a guard that rejected them would
-  // hand a plainer plan to a visitor whose coach did everything right.
+  // hand a plainer plan to a visitor whose coach did everything right. They
+  // are also what makes the bare objects above safe: the VERB is doing the
+  // work, and neither of these names a pain object in any form.
   it.each([
     'You rebuild power through progressive loading, not through big jumps.',
     'Take your time and work through it one stage at a time.',
@@ -400,12 +423,12 @@ describe('R3 numeric fidelity', () => {
     expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
   });
 
-  it('does NOT catch a cross-reference to another stage number', () => {
-    // The false positive an audit found: the allowed set was per stage, so a
+  it('does NOT catch a forward cross-reference to another stage number', () => {
+    // The false positive an audit found: the allowed set is per stage, so a
     // coach pointing forward from one stage to another tripped numeric
     // fidelity. Stage 3's own numbers are 1, 2, 3, 5, 6, 8 and 12 — 4 appears
-    // nowhere in it — so this line only passes because stage ordinals are
-    // allowed document-wide.
+    // nowhere in it — so this line passes only because the `stage 4` phrase
+    // is stripped before tokenizing.
     const result = evaluate(
       coachOutput(PULLEY_PLAN, {
         mutateStage: (lines, index) =>
@@ -417,9 +440,72 @@ describe('R3 numeric fidelity', () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it('does NOT catch a backward cross-reference to another stage number', () => {
+    // Stage 4's own numbers are 1, 2, 5, 9, 10, 12 and 20 — 3 appears nowhere
+    // in it, so "stage 3" here is only tolerated by the strip.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 3
+            ? [
+                ...lines,
+                '',
+                'If it flares, drop back and move on to stage 3 again when it settles.',
+              ]
+            : lines,
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  // ---- The regression the stage-ordinal loosening introduced. ----
+  // Exempting the cross-reference by adding every ordinal to every stage's
+  // allowed set put "1".."4" beyond this rule's reach document-wide, and
+  // rehab dose integers live almost entirely in that range. These cases are
+  // small integers that are ALSO stage ordinals of this four-stage plan, so
+  // each of them passed under that version while the drafter's real dose
+  // said something else. They are the point of the strip.
+
+  it('CATCHES a fabricated frequency whose digit is also a stage ordinal', () => {
+    // The auditor's case exactly: the drafter prescribed `frequencyPerWeek: 2`
+    // for stage 4's second exercise, rendered by code as "twice a week", and
+    // the coach doubled it. 4 is a stage ordinal here and nothing in stage 4.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 3
+            ? lines.map((line) =>
+                line.replace(
+                  '2 sets of 20, twice a week',
+                  '2 sets of 20, 4 times a week',
+                ),
+              )
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R3/);
+  });
+
+  it('CATCHES a fabricated set count whose digit is also a stage ordinal', () => {
+    // Stage 3 was drafted "3 sets of 12"; 4 is a stage ordinal and appears
+    // nowhere in stage 3.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 2
+            ? lines.map((line) => line.replace('3 sets of 12', '4 sets of 12'))
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R3/);
+  });
+
   it('still CATCHES a number that is neither drafted nor a stage ordinal', () => {
-    // The loosening above must not become "any small integer is fine": 9 is
-    // not a stage ordinal in a four-stage plan and stage 3 never drafted it.
+    // 9 is not a stage ordinal in a four-stage plan and stage 3 never drafted
+    // it. Kept alongside the two above, which are the stronger cases: this
+    // one passed even under the version that admitted every ordinal.
     const result = evaluate(
       coachOutput(PULLEY_PLAN, {
         mutateStage: (lines, index) =>
@@ -545,6 +631,10 @@ describe('R6 diagnosis asserted as fact', () => {
   it.each([
     'From what you describe, you have torn the pulley.',
     'You have a grade II injury here.',
+    // Both notations of the clinical ordinal, which is what separates the
+    // injury sense of "grade" from the climbing one.
+    'You have a grade 2 pulley strain.',
+    'You have a grade III tear of the A2.',
     'It sounds like you have ruptured it.',
     'You have a tear in the A2.',
     'You tore it when you heard the pop.',
@@ -580,6 +670,18 @@ describe('R6 diagnosis asserted as fact', () => {
   it('does NOT catch general education about the injury type', () => {
     const closing =
       'Pulley strains usually settle with graded loading, and this kind of injury often feels worse before it feels better.';
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('does NOT catch the climbing sense of "grade"', () => {
+    // "Grade" is the most common noun in climbing, and drafter.md asks for it
+    // by name: `allowedClimbing` is phrased relative to `pre_injury_grade`
+    // (line 18) and progression runs "several number grades below their max"
+    // (line 41). The unqualified "you have a grade" entry fired on this.
+    const closing =
+      'Once you have a grade you can climb comfortably, stay there for a few sessions before pushing up.';
     expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
       ok: true,
     });
@@ -806,6 +908,39 @@ describe('drafter free text is held to the same content rules (R1/R5/R6/R7)', ()
 
   it('passes a realistic plan whose free text is ordinary rehab prose', () => {
     expect(evaluatePlanContent(PULLEY_PLAN)).toEqual({ ok: true });
+  });
+
+  it('does NOT fire R6 on the climbing sense of "grade" in the fields drafter.md puts it in', () => {
+    // The surface where this regression actually bit. R6 was calibrated as a
+    // coach-prose rule, where a hit costs the warmth of the plan and the
+    // fallback still ships. Applied here it costs the visitor the whole plan
+    // — `source: 'plan'` is a hard error — and "once you have a grade you can
+    // climb comfortably" is what a legitimate `advanceWhen` criterion looks
+    // like. drafter.md line 18 requires `allowedClimbing` to be phrased in
+    // the visitor's own grade, so this vocabulary is mandated, not incidental.
+    const graded = planWith((plan) => {
+      plan.stages[2].advanceWhen = [
+        'Once you have a grade you can climb comfortably, you are ready',
+        'Full pain-free range in the finger',
+      ];
+      plan.stages[3].allowedClimbing =
+        'Cautious return to normal bouldering, several number grades below your max.';
+    });
+    expect(evaluatePlanContent(graded)).toEqual({ ok: true });
+  });
+
+  it('still CATCHES the clinical grading sense in a plan field', () => {
+    // Narrowing the phrase must not disarm it: this is the assertion R6 was
+    // written for, and it must not reach a visitor through the fallback.
+    const result = evaluatePlanContent(
+      planWith((plan) => {
+        plan.stages[0].exercises[0].notes =
+          'You have a grade 2 strain, so keep the load light.';
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R6/);
+    expect(result.ok === false && result.source).toBe('plan');
   });
 
   it('does NOT fire on the traffic-light and safety language the drafter is told to write', () => {

@@ -539,8 +539,15 @@ function buildDrafterSchema(
             title: { type: 'string' },
             timeWindow: {
               type: 'string',
+              // drafter.md line 16, in full. The "must not overlap and must
+              // increase across stages" nudge that used to sit here outlived
+              // the check that enforced it: that check was removed as
+              // unsupported (see parseDraftPlan), because the same line calls
+              // windows guidance and says stages may need repeating. Asking
+              // the model for a property the code deliberately does not
+              // require left the prompt arguing against its own rationale.
               description:
-                'A concrete range, e.g. "Weeks 1-2". Windows must not overlap and must increase across stages.',
+                'A concrete range, e.g. "Weeks 1-2". Windows are guidance, not promises; the advanceWhen criteria are what actually gate progression, and stages may need repeating.',
             },
             exercises: {
               type: 'array',
