@@ -31,6 +31,14 @@ const PROJECTS: Project[] = [
     pitch: 'A drafting aid for OT/PT clinicians building home exercise program handouts.',
     status: 'in progress',
     href: '/projects/carryover'
+  },
+  {
+    slug: 'aws-genai',
+    name: 'aws-genai/',
+    pitch:
+      'The event-driven GenAI infrastructure behind this site - Terraform, SNS, Lambda, Bedrock, SES.',
+    status: 'live',
+    href: '/projects/aws-genai'
   }
 ];
 
