@@ -102,11 +102,11 @@ export const REFUSAL_MESSAGE =
 export const FRIENDLY_ERROR_MESSAGE =
   'Something went wrong on our side while drafting your plan. Nothing you entered was stored. This attempt did not count against your daily limit, so please try again in a moment.';
 
-export const BETA_GLOBAL_DAILY_CAP = 40;
+export const BETA_GLOBAL_DAILY_CAP = 50;
 export const BETA_IP_DAILY_CAP = 6;
 
 export const DEMO_BUDGET_MESSAGE =
-  "Today's demo budget is used up. Beta caps itself at 40 plans a day so a portfolio project never runs away with the AI bill. The cap resets at midnight UTC, so please come back then. You can still browse the page and see how it works.";
+  `Today's demo budget is used up. Beta caps itself at ${BETA_GLOBAL_DAILY_CAP} plans a day so a portfolio project never runs away with the AI bill. The cap resets at midnight UTC, so please come back then. You can still browse the page and see how it works.`;
 
 export const IP_LIMIT_MESSAGE =
   'You have reached the daily limit of 6 plans. The cap keeps this free demo available for everyone. It resets at midnight UTC.';
