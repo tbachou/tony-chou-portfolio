@@ -153,6 +153,13 @@ export type GuardResult =
 
 const STAGE_HEADING = /^##\s+Stage\s+(\d+)\s*:/i;
 
+/**
+ * A `stage <n>` cross-reference inside coach prose ("move on to stage 3").
+ * R3 strips these before tokenizing so a stage ordinal is never scored as a
+ * drafted number, without exempting the digit itself anywhere else.
+ */
+const STAGE_CROSS_REFERENCE = /\bstage\s+\d+/gi;
+
 const COACH_LABELS = [
   '**When:**',
   '**Climbing:**',
@@ -617,13 +624,21 @@ export function evaluateCoachOutput(
   // writes came from the drafter, so it is present in the allowed set by
   // construction.
   //
-  // Stage ordinals are allowed DOCUMENT-WIDE rather than only in their own
-  // section. They are not drafted numbers at all: they come from coach.md's
-  // own output format (`## Stage {n}:`), so the coach is entitled to name any
-  // of them anywhere. An audit caught the per-stage version rejecting "move
-  // on to stage 3" written inside stage 2 — a cross-reference the format
-  // invites, scored as if the coach had invented a dose.
-  const stageOrdinals = coachPlan.stages.map((_, index) => String(index + 1));
+  // `stage <n>` cross-references are STRIPPED from the scanned text rather
+  // than added to the allowed set. An audit caught this rule rejecting "move
+  // on to stage 3" written inside stage 2 — a cross-reference coach.md's own
+  // `## Stage {n}:` format invites, scored as if the coach had invented a
+  // dose. The first fix for that added every stage ordinal to every stage's
+  // allowed set, which silently gutted the rule: with 4-5 stages that admits
+  // "1".."5" document-wide, and rehab dose integers live almost entirely in
+  // that range. A drafter prescribing 3 sets of 10 twice a week could then be
+  // coached as "4 times a week" and pass. Removing the phrase exempts the
+  // cross-reference without exempting the digit: the "3" in "stage 3" is
+  // never tokenized, while the "4" in "4 times a week" still is.
+  //
+  // The synthetic heading prepended below passes through the same strip, so
+  // it contributes no tokens. Heading numbering is unaffected: R4 reads
+  // `section.number`, parsed from the real heading by `splitCoachSections`.
   for (let i = 0; i < sections.stages.length; i += 1) {
     const allowed = new Set<string>([
       ...numericTokens(JSON.stringify(coachPlan.stages[i])),
@@ -639,12 +654,10 @@ export function evaluateCoachOutput(
           .filter((value): value is number => value !== undefined)
           .map(String),
       ),
-      ...stageOrdinals,
     ]);
-    const scanned = [
-      `## Stage ${i + 1}:`,
-      ...sections.stages[i].lines,
-    ].join('\n');
+    const scanned = [`## Stage ${i + 1}:`, ...sections.stages[i].lines]
+      .join('\n')
+      .replace(STAGE_CROSS_REFERENCE, ' ');
     for (const token of numericTokens(scanned)) {
       if (!allowed.has(token)) {
         return {
