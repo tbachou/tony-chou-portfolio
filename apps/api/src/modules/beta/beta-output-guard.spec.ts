@@ -258,7 +258,10 @@ describe('the guard passes a conformant coach output', () => {
 describe('R1 contraindicated pain phrasing', () => {
   it.each([
     'Some days you just have to push through the pain.',
-    'It will ache at first — work through it.',
+    'It will ache at first — work through the pain.',
+    'Just power through the soreness for a fortnight.',
+    'Fight through the discomfort and it will settle.',
+    'Push through it even on the bad days.',
     'No pain no gain applies here.',
     'Ignore the pain in the first week.',
     'Tough it out for the first fortnight.',
@@ -267,6 +270,18 @@ describe('R1 contraindicated pain phrasing', () => {
     const result = evaluate(coachOutput(PULLEY_PLAN, { closing: sentence }));
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.reason).toMatch(/^R1/);
+  });
+
+  // The two false positives an audit found in the bare-substring version.
+  // Both are ordinary, correct rehab prose; a guard that rejected them would
+  // hand a plainer plan to a visitor whose coach did everything right.
+  it.each([
+    'You rebuild power through progressive loading, not through big jumps.',
+    'Take your time and work through it one stage at a time.',
+  ])('does NOT catch the benign verb sense in %j', (closing) => {
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
   });
 
   it('does NOT catch the pain traffic-light language the skill files mandate', () => {
@@ -382,6 +397,36 @@ describe('R3 numeric fidelity', () => {
     // "## Stage 4:" is the only place 4 appears in that section — its time
     // window is Weeks 9-12 — so the exclusion is what keeps this passing.
     expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
+  });
+
+  it('does NOT catch a cross-reference to another stage number', () => {
+    // The false positive an audit found: the allowed set was per stage, so a
+    // coach pointing forward from one stage to another tripped numeric
+    // fidelity. Stage 3's own numbers are 1, 2, 3, 5, 6, 8 and 12 — 4 appears
+    // nowhere in it — so this line only passes because stage ordinals are
+    // allowed document-wide.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 2
+            ? [...lines, '', 'Stage 4 builds directly on this one.']
+            : lines,
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('still CATCHES a number that is neither drafted nor a stage ordinal', () => {
+    // The loosening above must not become "any small integer is fine": 9 is
+    // not a stage ordinal in a four-stage plan and stage 3 never drafted it.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 2 ? [...lines, '', 'Give this about 9 sessions.'] : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R3/);
   });
 
   it('does NOT scan the opening or closing paragraphs', () => {
@@ -500,13 +545,27 @@ describe('R6 diagnosis asserted as fact', () => {
     'From what you describe, you have torn the pulley.',
     'You have a grade II injury here.',
     'It sounds like you have ruptured it.',
-    'The pulley is torn, so take it slowly.',
+    'You have a tear in the A2.',
+    'You tore it when you heard the pop.',
+    'The pulley is definitely torn, so take it slowly.',
+    'The pulley is clearly torn.',
     'People diagnosed with this do well.',
     'This is definitely a pulley problem.',
   ])('CATCHES %j', (closing) => {
     const result = evaluate(coachOutput(PULLEY_PLAN, { closing }));
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.reason).toMatch(/^R6/);
+  });
+
+  it('does NOT catch hypothetical education framed as a conditional', () => {
+    // The false positive an audit found in the bare "is torn" substring.
+    // Teaching what a torn pulley feels like is the opposite of asserting
+    // that this visitor has one.
+    const closing =
+      'If a pulley is torn, you would usually feel a pop at the time, which is not what you described.';
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
   });
 
   it("does NOT catch the visitor's own injury label", () => {
@@ -531,7 +590,9 @@ describe('R7 recovery promised as fact', () => {
     'You will be back on your projects by spring.',
     'You will be climbing again in eight weeks.',
     'You will fully recover from this.',
-    'A full return is guaranteed if you follow the plan.',
+    'Follow this and you are guaranteed to be back on your projects.',
+    'Guaranteed recovery if you keep to the doses.',
+    'You are guaranteed to heal by the end of it.',
     'By the end of this you will be healed.',
   ])('CATCHES %j', (closing) => {
     const result = evaluate(coachOutput(PULLEY_PLAN, { closing }));
@@ -542,6 +603,17 @@ describe('R7 recovery promised as fact', () => {
   it('does NOT catch the hedged language coach.md asks for', () => {
     const closing =
       'Climbers usually find this settles; most climbers typically notice the change first on easy ground. You will feel it warm up, and you will notice the stiffness fade.';
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('does NOT catch a negated "guaranteed", which IS the under-promising', () => {
+    // The false positive an audit found in the bare "guaranteed" substring.
+    // These are the exact sentences coach.md's "confidence without promises"
+    // asks for, and the old rule rejected them.
+    const closing =
+      'No timeline here is guaranteed, and nothing about recovery is guaranteed either — the criteria are what decide, not the calendar.';
     expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
       ok: true,
     });
