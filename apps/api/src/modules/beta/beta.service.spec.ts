@@ -927,10 +927,46 @@ describe('BetaService.generatePlan', () => {
   });
 
   describe('drafter output validation', () => {
-    it('treats a 3-stage plan as a failure: friendly error, refund, no counters', async () => {
+    it('redrafts once when the first plan is rejected, and succeeds on the retry', async () => {
+      // Seen live in both AC-G9 corpus runs: the drafter occasionally
+      // returns an empty stages array (the schema's minItems is a request to
+      // the model, not a guarantee). One redraft usually succeeds, so the
+      // visitor gets a plan instead of FRIENDLY_ERROR_MESSAGE.
       const h = makeHarness();
       h.anthropic.forceToolCall
         .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce({ input: { stages: [] }, inputTokens: 100, outputTokens: 5 })
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      // screener + first drafter + redraft
+      expect(h.anthropic.forceToolCall).toHaveBeenCalledTimes(3);
+      expect(h.events[h.events.length - 1]).toEqual(['done', {}]);
+      expect(h.events).not.toContainEqual([
+        'error',
+        { message: FRIENDLY_ERROR_MESSAGE },
+      ]);
+      // Success accounting, not the refund path: the failed draft's tokens
+      // still count toward the total the visitor's plan cost.
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalled();
+      expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a rejected plan on BOTH attempts as a failure: friendly error, refund, no counters', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce({
+          input: { stages: [1, 2, 3].map(makeStage) },
+          inputTokens: 100,
+          outputTokens: 200,
+        })
         .mockResolvedValueOnce({
           input: { stages: [1, 2, 3].map(makeStage) },
           inputTokens: 100,

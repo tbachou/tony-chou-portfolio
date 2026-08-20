@@ -252,8 +252,48 @@ export class BetaService {
       }),
     );
 
-    const plan = parseDraftPlan(result.input, input);
-    return { plan, tokens: result.inputTokens + result.outputTokens };
+    try {
+      const plan = parseDraftPlan(result.input, input);
+      return { plan, tokens: result.inputTokens + result.outputTokens };
+    } catch (error) {
+      // The schema's `required`/`minItems` are requests to the model, not
+      // guarantees: the drafter occasionally returns an empty stages array
+      // (1/35 and 2/27 in the AC-G9 corpus runs), and layer 1's own checks
+      // can reject a plan. Both are nondeterministic, and the spec's failure
+      // note already leans on that: "the refund plus the drafter's
+      // nondeterminism mean a retry usually succeeds". Retry the DRAFTER
+      // once on a parse rejection, so the visitor gets a plan instead of
+      // FRIENDLY_ERROR_MESSAGE. `timedAgentCall` cannot own this retry: its
+      // retry wraps the HTTP call, and a parse rejection happens after that
+      // call already logged `outcome: 'ok'`.
+      this.logger.warn(
+        `Beta drafter output rejected (${this.describeError(error)}); redrafting once`,
+      );
+      const retry = await this.timedAgentCall('drafter', DRAFTER_MODEL, () =>
+        this.anthropic.forceToolCall({
+          model: DRAFTER_MODEL,
+          system: loadBetaSkill('drafter'),
+          userMessage: buildVisitorProfile(input),
+          maxTokens: 4000,
+          toolName: 'submit_plan',
+          toolDescription:
+            'Submit the staged return-to-climbing plan as structured JSON.',
+          inputSchema: buildDrafterSchema(input),
+          timeoutMs: AGENT_CALL_TIMEOUT_MS,
+          maxRetries: 0,
+        }),
+      );
+      const plan = parseDraftPlan(retry.input, input);
+      // Both calls' tokens count: the visitor's plan cost both.
+      return {
+        plan,
+        tokens:
+          result.inputTokens +
+          result.outputTokens +
+          retry.inputTokens +
+          retry.outputTokens,
+      };
+    }
   }
 
   /**
