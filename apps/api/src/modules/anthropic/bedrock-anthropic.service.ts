@@ -73,6 +73,17 @@ export class BedrockAnthropicService implements AiProvider {
   async forceToolCall(
     params: ForceToolCallParams,
   ): Promise<ForceToolCallResult> {
+    // Bedrock's Anthropic surface takes image bytes, not URL sources. Rather
+    // than silently dropping the image and returning a confident answer about
+    // a photo it never saw, this fails loudly. The one caller that passes an
+    // image (spec 0006's Grade Guesser) treats a throw as a failed vision call
+    // and degrades gracefully, so this costs a null analysis, not an error page.
+    if (params.imageUrl) {
+      throw new Error(
+        'BedrockAnthropicService does not support URL image sources; set AI_PROVIDER=anthropic for vision calls',
+      );
+    }
+
     const message = await this.getClient().messages.create(
       {
         model: params.model,

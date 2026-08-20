@@ -94,7 +94,23 @@ export class AnthropicService implements AiProvider {
             cache_control: { type: 'ephemeral' },
           },
         ],
-        messages: [{ role: 'user', content: params.userMessage }],
+        messages: [
+          {
+            role: 'user',
+            content: params.imageUrl
+              ? // Image first, then the instruction: the API's own guidance
+                // for single-image prompts, and the order the grader skill
+                // is written against.
+                [
+                  {
+                    type: 'image' as const,
+                    source: { type: 'url' as const, url: params.imageUrl },
+                  },
+                  { type: 'text' as const, text: params.userMessage },
+                ]
+              : params.userMessage,
+          },
+        ],
         tools: [
           {
             name: params.toolName,
