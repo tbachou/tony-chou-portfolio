@@ -1,4 +1,5 @@
 import {
+  MANDATORY_REST_PAIN_CAUTION,
   ANY_CRIMP_PATTERN,
   CONSTANT_REST_PAIN_MESSAGE,
   DOSE_MIN,
@@ -114,6 +115,19 @@ describe('injection blocklist', () => {
  * test is where it has to be made deliberately.
  */
 describe('audited clinical safety copy is unchanged', () => {
+    it('pins MANDATORY_REST_PAIN_CAUTION byte for byte', () => {
+      // Added after this string was edited in a working tree and shipped
+      // past 261 green tests unnoticed. It is read by an injured visitor
+      // who sits UNDER the onsetWeeksAgo >= 3 hard block, and it names the
+      // threshold they act on, so it must not change without a deliberate
+      // edit here. Three weeks, anchored to onset, matches beta.service.ts's
+      // own escalation and drafter.md:27.
+      expect(MANDATORY_REST_PAIN_CAUTION).toBe(
+        'Pain that stays constant even at rest, and has not clearly improved by about ' +
+          'three weeks from when it started, deserves a professional assessment.',
+      );
+    });
+
   it('pins RED_FLAG_MESSAGES byte for byte', () => {
     expect(RED_FLAG_MESSAGES).toEqual({
       sudden_pop_with_swelling:

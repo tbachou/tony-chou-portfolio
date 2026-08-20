@@ -74,8 +74,11 @@ export const RED_FLAG_MESSAGES: Record<RedFlagCategory, string> = {
 /**
  * Substituted into a plan when the drafter omits the caution `drafter.md:27`
  * calls MANDATORY for `constant_even_at_rest`. Transcribes that line's own
- * wording ("pain at rest which does not improve within a couple of weeks
- * deserves a professional assessment").
+ * wording, which is anchored to ONSET and matched to the api's own
+ * escalation threshold: the constant-rest-pain hard block fires at
+ * `onsetWeeksAgo >= 3`, so this sentence must not point a visitor past
+ * the point the product itself stops planning. An earlier version said
+ * "a couple of weeks" from reading time, which did exactly that.
  *
  * This is NOT the hard-block refusal — CONSTANT_REST_PAIN_MESSAGE below is
  * what a visitor sees when the escalation fires and no plan is drafted at
@@ -184,13 +187,26 @@ export const ANY_CRIMP_PATTERN = 'crimp';
  * transition" is a real stage 1 violation that such an exemption would miss.
  */
 const CRIMP_NEGATION_PATTERN =
-  /\b(?:no|non|not|never|without|avoid(?:s|ing)?|excluding|instead\s+of|rather\s+than|stop|limit(?:ing)?|minimi[sz]e|reduce|refrain\s+from)\s*(?:any\s+)?(?:kind\s+of\s+)?crimp\w*/g;
+  /\b(?:no|non|not|never|without|avoid(?:s|ing)?|excluding|instead\s+of|rather\s+than|stop|limit(?:ing)?|minimi[sz]e|reduce|refrain\s+from)\s*(?:any\s+)?(?:kind\s+of\s+)?(?:full[\s-]+|half[\s-]+|open[\s-]+)?crimp\w*/g;
 
 /**
  * True when a normalized exercise name programs crimping, as opposed to
  * merely mentioning it in order to rule it out. Input must already have been
  * through `normalizeForMatch`.
  */
+/**
+ * Full-crimp counterpart of `namePrescribesCrimping`. Same reason it exists:
+ * `drafter.md:42` ("Never program full-crimp training") is the line the
+ * drafter is most heavily primed on, so a defensively named exercise --
+ * "Open-hand hangs (no full crimping)" -- is likely output, and a bare
+ * substring test threw the whole plan away for obeying the instruction.
+ */
+export function namePrescribesFullCrimp(normalizedName: string): boolean {
+  return normalizedName
+    .replace(CRIMP_NEGATION_PATTERN, ' ')
+    .includes(FULL_CRIMP_PATTERN);
+}
+
 export function namePrescribesCrimping(normalizedName: string): boolean {
   return normalizedName
     .replace(CRIMP_NEGATION_PATTERN, ' ')

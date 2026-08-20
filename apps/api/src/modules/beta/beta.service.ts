@@ -13,8 +13,8 @@ import {
   DRAFTER_MODEL,
   EQUIPMENT_ACCESS,
   FRIENDLY_ERROR_MESSAGE,
-  FULL_CRIMP_PATTERN,
   MANDATORY_REST_PAIN_CAUTION,
+  namePrescribesFullCrimp,
   RATIONALE_MAX_LENGTH,
   RED_FLAG_CATEGORIES,
   RED_FLAG_FALLBACK_MESSAGE,
@@ -660,8 +660,10 @@ function assertExplicitProhibitions(
     stages.forEach((stage, index) => {
       for (const exercise of stage.exercises) {
         const name = normalizeForMatch(exercise.name);
-        // "Never program full-crimp training." — every stage.
-        if (name.includes(FULL_CRIMP_PATTERN)) {
+        // "Never program full-crimp training." — every stage. Negation-aware
+        // for the same reason the stage-1 check is: the drafter is primed on
+        // this exact wording, so "(no full crimping)" is likely output.
+        if (namePrescribesFullCrimp(name)) {
           throw new Error(
             'Drafter named a full-crimp exercise in a finger_pulley plan',
           );
