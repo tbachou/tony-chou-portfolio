@@ -149,6 +149,15 @@ export const AGENT_CALL_TIMEOUT_MS = 60_000;
  * A fixed list, deliberately never a generic `'s -> is` rule, which would
  * mangle every possessive ("the climber's finger" is not "the climber is
  * finger"). Anything not listed here is left exactly as written.
+ *
+ * Applied to MODEL OUTPUT, not to visitor input. The injection blocklist
+ * opts out (`expandContractions: false`): it holds the phrase "you are now",
+ * so expanding turned an ordinary sentence like "my gym changed hands and
+ * you're now looking at a different wall set" into a refusal, the same false
+ * refusal class as the old substring match on "act as" firing on "react as".
+ * The coverage given up is negligible, since a real injection carries other
+ * markers the blocklist still matches and the screener reads the language
+ * itself, while a wrongly refused visitor loses the whole form they filled in.
  */
 const CONTRACTIONS: Readonly<Record<string, string>> = {
   "you'll": 'you will',
@@ -196,14 +205,21 @@ const CONTRACTION_PATTERN = new RegExp(
   'g',
 );
 
-export function normalizeForMatch(text: string): string {
-  return text
+export function normalizeForMatch(
+  text: string,
+  { expandContractions = true }: { expandContractions?: boolean } = {},
+): string {
+  const folded = text
     .toLowerCase()
     // Curly and modifier apostrophes folded onto the straight one FIRST. A
     // model that emits "you\u2019ll" would otherwise slip past the expansion
     // below and silently defeat every rule that depends on it.
-    .replace(/[\u2018\u2019\u02BC\u02B9]/g, "'")
-    .replace(CONTRACTION_PATTERN, (match) => CONTRACTIONS[match] ?? match)
+    .replace(/[\u2018\u2019\u02BC\u02B9]/g, "'");
+  return (
+    expandContractions
+      ? folded.replace(CONTRACTION_PATTERN, (match) => CONTRACTIONS[match] ?? match)
+      : folded
+  )
     .replace(/[-_]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

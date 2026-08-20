@@ -576,6 +576,12 @@ describe('BetaService.generatePlan', () => {
       'I want my finger to react as it used to',
       'get back to contact as soon as',
       'Climb the exact as before',
+      // Contractions are expanded before matching, so second-person phrasing
+      // now reaches the blocklist in its full form. "you are now" IS a
+      // blocklist phrase, so an ordinary sentence contracting it must still
+      // pass; this is the same false-refusal class as the "react as" cases.
+      "my gym changed hands and you're now looking at a different wall set",
+      "you'd think a tweaked pulley would heal faster than this",
     ])('lets the ordinary goal %j straight through', async (goals) => {
       const h = makeHarness();
       h.anthropic.forceToolCall

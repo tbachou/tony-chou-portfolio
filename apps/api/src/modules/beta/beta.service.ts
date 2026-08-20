@@ -541,7 +541,11 @@ function buildVisitorProfile(input: BetaPlanRequestDto): string {
  */
 export function containsInjectionAttempt(goals: string | undefined): boolean {
   if (!goals) return false;
-  return matchesInjectionBlocklist(normalizeForMatch(goals));
+  // Contractions deliberately NOT expanded here; see CONTRACTIONS in
+  // beta.constants.ts for why visitor input opts out.
+  return matchesInjectionBlocklist(
+    normalizeForMatch(goals, { expandContractions: false }),
+  );
 }
 
 /**
