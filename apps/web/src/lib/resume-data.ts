@@ -101,7 +101,7 @@ export const experience: ResumeEntry[] = [
     dates: '2022 – 2024',
     context: 'Part-time venture, run alongside consulting work.',
     bullets: [
-      'Co-founded an AI creative platform integrating DALL·E and Stable Diffusion image generation models, built full-stack on AWS, reaching 500+ users; owned all engineering decisions end-to-end, from infrastructure to product prioritization.'
+      'Co-founded an AI creative platform integrating DALL·E and Stable Diffusion image generation models, built full-stack on AWS and shipped to public users; owned every engineering decision end-to-end, from infrastructure and model integration to product prioritization.'
     ]
   }
 ];
