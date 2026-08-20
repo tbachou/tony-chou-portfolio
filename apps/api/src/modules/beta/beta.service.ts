@@ -70,19 +70,6 @@ export class BetaService {
   }): Promise<void> {
     const { input, hashedIp, emit } = params;
 
-    // Deterministic prompt-attack check over `goals`, the only untrusted
-    // free text in the request (spec 0005 guardrails child, AC-G10). Runs
-    // before any model call and before reserveGlobalSlot(), like the two
-    // hard blocks below, so a blatant injection costs no spend and no slot.
-    // It does not replace the screener's off_topic verdict, which stays as
-    // the layer that understands language rather than matching strings.
-    if (containsInjectionAttempt(input.goals)) {
-      emit('status', { stage: 'screening' });
-      emit('error', { message: REFUSAL_MESSAGE });
-      await this.usage.recordInjectionBlock();
-      return;
-    }
-
     // Code-enforced red-flag gate (clinical audit MUST-FIX): a checked
     // red-flag box blocks deterministically, before any model call — free
     // text can never talk a model out of it, and it costs zero API spend.
@@ -114,6 +101,28 @@ export class BetaService {
       emit('red_flag', { category: null, message: CONSTANT_REST_PAIN_MESSAGE });
       // Pre-reserve block, same bookkeeping as the checked-symptom gate.
       await this.usage.recordRedFlagBlock();
+      return;
+    }
+
+    // Deterministic prompt-attack check over `goals`, the only untrusted
+    // free text in the request (spec 0005 guardrails child, AC-G10). Still
+    // ahead of every model call and of reserveGlobalSlot(), so a blatant
+    // injection costs no spend and no slot — which is all AC-G10 asks.
+    //
+    // Deliberately BELOW both code-enforced hard blocks. A refusal must
+    // never be able to displace a red-flag warning: a visitor who checks a
+    // red-flag box and happens to write goals that trip the blocklist needs
+    // the clinical message telling them who to see, not a generic "cannot
+    // help with that request". The key invariant reads "Both code enforced
+    // hard blocks still run first", and a hard block is terminal, so an
+    // injection on a blocked request is moot — the plan was never drafted.
+    //
+    // It does not replace the screener's off_topic verdict, which stays as
+    // the layer that understands language rather than matching strings.
+    if (containsInjectionAttempt(input.goals)) {
+      emit('status', { stage: 'screening' });
+      emit('error', { message: REFUSAL_MESSAGE });
+      await this.usage.recordInjectionBlock();
       return;
     }
 
