@@ -78,18 +78,27 @@ class CachingProvider implements AiProvider {
     private readonly mode: 'live' | 'record' | 'replay',
   ) {}
 
-  /** The drafter's raw tool input from the most recent call — the plan object. */
-  lastDrafterInput: unknown = null;
+  // The drafted plan is written into the per-run AsyncLocalStorage store, not
+  // a field on this provider. A single field is clobbered the moment two
+  // profiles run concurrently: the first full --concurrency 3 run captured
+  // only 15 plans out of 29, and recorded `null` for a profile whose firing
+  // proved its caution was non-empty.
 
   async forceToolCall(params: ForceToolCallParams): Promise<ForceToolCallResult> {
     const role = params.model === DRAFTER_MODEL ? 'drafter' : 'screener';
     const cached = this.cache[role];
     if (this.mode === 'replay' && cached) {
-      if (role === 'drafter') this.lastDrafterInput = cached.input;
+      if (role === 'drafter') {
+        const store = runStore.getStore();
+        if (store) store.drafterInput = cached.input;
+      }
       return cached;
     }
     const result = await this.real.forceToolCall(params);
-    if (role === 'drafter') this.lastDrafterInput = result.input;
+    if (role === 'drafter') {
+      const store = runStore.getStore();
+      if (store) store.drafterInput = result.input;
+    }
     if (this.mode === 'record') this.cache[role] = result;
     return result;
   }
@@ -156,7 +165,11 @@ type ProfileResult = {
  * array by index: with --concurrency > 1 several profiles interleave their
  * log writes, and index ranges would mix one profile's firings into another's.
  */
-const logStore = new AsyncLocalStorage<{ level: string; message: string }[]>();
+type RunStore = {
+  lines: { level: string; message: string }[];
+  drafterInput: unknown;
+};
+const runStore = new AsyncLocalStorage<RunStore>();
 
 function installLogCapture(): void {
   for (const level of ['log', 'warn', 'error'] as const) {
@@ -166,7 +179,7 @@ function installLogCapture(): void {
       message: unknown,
       ...rest: unknown[]
     ) {
-      logStore.getStore()?.push({ level, message: String(message) });
+      runStore.getStore()?.lines.push({ level, message: String(message) });
       return original.call(this, message, ...rest);
     } as typeof original;
   }
@@ -229,11 +242,11 @@ async function runProfile(
   service: BetaService,
   profile: CorpusProfile,
   dumpText: boolean,
-  provider: CachingProvider,
+  _provider: CachingProvider,
   label = profile.id,
 ): Promise<ProfileResult> {
-  provider.lastDrafterInput = null;
-  const lines: { level: string; message: string }[] = [];
+  const store: RunStore = { lines: [], drafterInput: null };
+  const lines = store.lines;
   let planText = '';
   // Held on an object: the assignments below happen inside a callback, and
   // control-flow narrowing on a plain `let` would type it as 'unknown' here.
@@ -241,7 +254,7 @@ async function runProfile(
     terminatedBy: 'unknown',
   };
 
-  await logStore.run(lines, () =>
+  await runStore.run(store, () =>
     service.generatePlan({
       input: profile.request,
       hashedIp: `corpus-${profile.id}`,
@@ -276,9 +289,7 @@ async function runProfile(
     state.terminatedBy = failure ? 'pipeline_error' : 'refusal';
   }
 
-  const drafted = provider.lastDrafterInput as
-    | { overallCaution?: string }
-    | null;
+  const drafted = store.drafterInput as { overallCaution?: string } | null;
 
   return {
     id: label,
