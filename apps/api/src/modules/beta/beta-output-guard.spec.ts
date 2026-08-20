@@ -400,12 +400,12 @@ describe('R3 numeric fidelity', () => {
     expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
   });
 
-  it('does NOT catch a cross-reference to another stage number', () => {
-    // The false positive an audit found: the allowed set was per stage, so a
+  it('does NOT catch a forward cross-reference to another stage number', () => {
+    // The false positive an audit found: the allowed set is per stage, so a
     // coach pointing forward from one stage to another tripped numeric
     // fidelity. Stage 3's own numbers are 1, 2, 3, 5, 6, 8 and 12 — 4 appears
-    // nowhere in it — so this line only passes because stage ordinals are
-    // allowed document-wide.
+    // nowhere in it — so this line passes only because the `stage 4` phrase
+    // is stripped before tokenizing.
     const result = evaluate(
       coachOutput(PULLEY_PLAN, {
         mutateStage: (lines, index) =>
@@ -417,9 +417,72 @@ describe('R3 numeric fidelity', () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it('does NOT catch a backward cross-reference to another stage number', () => {
+    // Stage 4's own numbers are 1, 2, 5, 9, 10, 12 and 20 — 3 appears nowhere
+    // in it, so "stage 3" here is only tolerated by the strip.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 3
+            ? [
+                ...lines,
+                '',
+                'If it flares, drop back and move on to stage 3 again when it settles.',
+              ]
+            : lines,
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  // ---- The regression the stage-ordinal loosening introduced. ----
+  // Exempting the cross-reference by adding every ordinal to every stage's
+  // allowed set put "1".."4" beyond this rule's reach document-wide, and
+  // rehab dose integers live almost entirely in that range. These cases are
+  // small integers that are ALSO stage ordinals of this four-stage plan, so
+  // each of them passed under that version while the drafter's real dose
+  // said something else. They are the point of the strip.
+
+  it('CATCHES a fabricated frequency whose digit is also a stage ordinal', () => {
+    // The auditor's case exactly: the drafter prescribed `frequencyPerWeek: 2`
+    // for stage 4's second exercise, rendered by code as "twice a week", and
+    // the coach doubled it. 4 is a stage ordinal here and nothing in stage 4.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 3
+            ? lines.map((line) =>
+                line.replace(
+                  '2 sets of 20, twice a week',
+                  '2 sets of 20, 4 times a week',
+                ),
+              )
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R3/);
+  });
+
+  it('CATCHES a fabricated set count whose digit is also a stage ordinal', () => {
+    // Stage 3 was drafted "3 sets of 12"; 4 is a stage ordinal and appears
+    // nowhere in stage 3.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 2
+            ? lines.map((line) => line.replace('3 sets of 12', '4 sets of 12'))
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R3/);
+  });
+
   it('still CATCHES a number that is neither drafted nor a stage ordinal', () => {
-    // The loosening above must not become "any small integer is fine": 9 is
-    // not a stage ordinal in a four-stage plan and stage 3 never drafted it.
+    // 9 is not a stage ordinal in a four-stage plan and stage 3 never drafted
+    // it. Kept alongside the two above, which are the stronger cases: this
+    // one passed even under the version that admitted every ordinal.
     const result = evaluate(
       coachOutput(PULLEY_PLAN, {
         mutateStage: (lines, index) =>
