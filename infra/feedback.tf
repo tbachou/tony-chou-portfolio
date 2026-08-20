@@ -237,9 +237,29 @@ resource "aws_cloudwatch_metric_alarm" "feedback_classifier_errors" {
 # them. This budget notifies; reserved_concurrent_executions above is what
 # actually limits the rate.
 #
-# NOTE: the Service cost filter must match Cost Explorer's own service name
-# exactly or the budget silently tracks $0 forever. Verify once real Bedrock
-# spend appears (Billing -> Budgets -> this budget shows non-zero actual).
+# The Service cost filter must match Cost Explorer's own service name EXACTLY
+# or the budget silently tracks $0 forever, which is worse than no budget.
+#
+# It did exactly that until 2026-08-20. The filter said "Amazon Bedrock";
+# Cost Explorer bills model usage under a name PER MODEL, in this account
+# "Claude Haiku 4.5 (Amazon Bedrock Edition)". The budget read $0.00 while
+# real invocations were being charged.
+#
+# This list is therefore fragile by construction: a model this account has
+# not billed yet has a service name nobody can predict, and adding one (the
+# interview simulator moving to Sonnet on Bedrock, say) silently escapes the
+# budget again. Tag based filtering is NOT an alternative, checked the same
+# day: Bedrock model spend carries no resource tags at all, so it groups
+# under an empty `project` value.
+#
+# The durable fix is a Cost Category matching every Bedrock service name by
+# pattern, with the budget filtering on that category instead. Recorded as a
+# follow-up rather than built here, because it needs its own verification
+# against real billing data.
+#
+# To re-check the names this account actually bills under:
+#   aws ce get-dimension-values --dimension SERVICE \
+#     --time-period Start=<month-start>,End=<today> --region us-east-1
 
 resource "aws_budgets_budget" "bedrock_monthly" {
   name         = "portfolio-bedrock-monthly"
@@ -249,8 +269,14 @@ resource "aws_budgets_budget" "bedrock_monthly" {
   time_unit    = "MONTHLY"
 
   cost_filter {
-    name   = "Service"
-    values = ["Amazon Bedrock"]
+    name = "Service"
+    values = [
+      # The per-model name this account is actually billed under today.
+      "Claude Haiku 4.5 (Amazon Bedrock Edition)",
+      # Kept in case AWS ever bills under the plain service name too; a value
+      # matching nothing costs nothing.
+      "Amazon Bedrock",
+    ]
   }
 
   notification {
