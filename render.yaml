@@ -34,6 +34,22 @@ services:
         value: claude-sonnet-5
       - key: IP_HASH_SALT
         sync: false
+      # Beta's in-process output guard (spec 0005 guardrails child).
+      # 'off' | 'shadow' | 'enforce'; anything else resolves to 'off'.
+      # QUOTED deliberately: unquoted `off` is boolean false in YAML, which
+      # would hand the process the string "false" instead.
+      #   off     - layer 2 never runs; the coach streams live. Layer 1's
+      #             drafter schema and prohibition checks run regardless.
+      #   shadow  - buffers the coach, evaluates, counts and logs, but shows
+      #             the coach's prose unchanged. Gate on enforce (AC-G9).
+      #   enforce - substitutes a plan rendered from the drafter object when
+      #             the coach's prose fires a rule.
+      # Shadow and enforce both BUFFER, so the plan arrives after the coach
+      # finishes rather than streaming. The follow-up that removes that cost
+      # (render the validated drafter plan immediately, upgrade to prose on
+      # pass) is specced but not built.
+      - key: BETA_OUTPUT_GUARD_MODE
+        value: 'off'
       - key: TURN_PAIR_CAP
         value: '5'
       - key: DAILY_TURN_CAP
