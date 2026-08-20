@@ -428,7 +428,7 @@ const CAUTION_TERM_PREFIX = 5;
 export type CoachSections = {
   /** Lines before the first stage heading. Not checked by R3 or R4. */
   opening: string[];
-  stages: { number: number | null; lines: string[] }[];
+  stages: { number: number | null; heading: string; lines: string[] }[];
   /** Trailing headingless lines of the final stage section. */
   closing: string[];
 };
@@ -440,12 +440,23 @@ export type CoachSections = {
  */
 export function splitCoachSections(text: string): CoachSections {
   const opening: string[] = [];
-  const stages: { number: number | null; lines: string[] }[] = [];
+  const stages: { number: number | null; heading: string; lines: string[] }[] =
+    [];
 
   for (const line of text.split('\n')) {
     if (line.trimStart().startsWith('## ')) {
-      const heading = STAGE_HEADING.exec(line.trim());
-      stages.push({ number: heading ? Number(heading[1]) : null, lines: [] });
+      const trimmedHeading = line.trim();
+      const heading = STAGE_HEADING.exec(trimmedHeading);
+      // Keep the heading TEXT, not just its ordinal. PlanDisplay renders it
+      // as the stage card's title, so it is visitor-facing prose and has to
+      // be scanned like any other line — a fabricated dose written into the
+      // heading ("## Stage 2: hang for 99 seconds daily") reached the page
+      // unchecked while only `number` survived here.
+      stages.push({
+        number: heading ? Number(heading[1]) : null,
+        heading: trimmedHeading,
+        lines: [],
+      });
     } else if (stages.length === 0) {
       opening.push(line);
     } else {
@@ -708,7 +719,7 @@ export function evaluateCoachOutput(
           .map(String),
       ),
     ]);
-    const scanned = [`## Stage ${i + 1}:`, ...sections.stages[i].lines]
+    const scanned = [sections.stages[i].heading, ...sections.stages[i].lines]
       .join('\n')
       .replace(STAGE_CROSS_REFERENCE, ' ');
     for (const token of numericTokens(scanned)) {

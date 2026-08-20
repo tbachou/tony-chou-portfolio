@@ -466,6 +466,41 @@ describe('R3 numeric fidelity', () => {
   // each of them passed under that version while the drafter's real dose
   // said something else. They are the point of the strip.
 
+  it('CATCHES a fabricated number written into the stage HEADING', () => {
+    // The heading is visitor-facing: PlanDisplay renders it as the stage
+    // card's title. splitCoachSections used to keep only the parsed ordinal
+    // and discard the text, and R3 scanned a SYNTHETIC heading instead, so a
+    // dose invented here reached the page having passed numeric fidelity.
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 1
+            ? lines.map((line, i) =>
+                i === 0 ? `${line} — hang for 99 seconds daily` : line,
+              )
+            : lines,
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R3/);
+  });
+
+  it('does NOT fire on a heading carrying a number the drafter did draft', () => {
+    // Guards the fix against over-correction: scanning the heading must not
+    // reject a title that legitimately restates one of the stage's own values.
+    const drafted = PULLEY_PLAN.stages[1].timeWindow.match(/\d+/)?.[0];
+    expect(drafted).toBeDefined();
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 1
+            ? lines.map((line, i) => (i === 0 ? `${line} (week ${drafted})` : line))
+            : lines,
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
   it('CATCHES a fabricated frequency whose digit is also a stage ordinal', () => {
     // The auditor's case exactly: the drafter prescribed `frequencyPerWeek: 2`
     // for stage 4's second exercise, rendered by code as "twice a week", and
