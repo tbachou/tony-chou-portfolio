@@ -278,10 +278,42 @@ export const MEDICATION_NAMES = [
  * torn", "you tore") or an explicit certainty adverb ("definitely",
  * "clearly"). The honest cost is that a bare assertion with neither marker
  * ("the pulley is torn") passes; that is the price of not firing on teaching.
+ *
+ * The bare "you have a grade" was narrowed to the injury-grading sense after
+ * a re-audit caught it firing on "once you have a grade you can climb
+ * comfortably" — which is what a legitimate `advanceWhen` criterion looks
+ * like. "Grade" is the most common noun in climbing, and drafter.md asks for
+ * it by name: `allowedClimbing` is "phrased relative to the visitor's own
+ * `pre_injury_grade`" (line 18) and finger_pulley progression runs "several
+ * number grades below their max" (line 41). The phrase only ever meant the
+ * clinical grading of a sprain, which always carries its ordinal, so the
+ * ordinal is now required. Climbing grades in this product are never written
+ * that way — they are "5.11a", "V4", "5.8" — so the two senses separate
+ * cleanly on the ordinal.
+ *
+ * The narrowing is preferred over dropping R6 from `evaluatePlanContent`:
+ * the surface is not what was wrong. R6's other entries ("you have torn",
+ * "diagnosed with") are exactly what must not reach a visitor through
+ * `renderPlanFallback`, which prints drafter free text verbatim, so exempting
+ * the whole rule plan-side to fix one phrase would reopen a real hole. It
+ * would also leave the same false positive live on the coach side, where the
+ * coach is instructed to restate `allowedClimbing` with "the same meaning and
+ * limits" (coach.md line 26) — grade and all.
+ *
+ * Both notations of the clinical ordinal are listed, because "grade II" is as
+ * standard in sprain grading as "grade 2". "you have a grade iii" needs no
+ * entry of its own — it contains the "ii" one. Roman grade I is the only gap,
+ * and it is deliberate: "you have a grade i" is a prefix of any word starting
+ * with i ("you have a grade in mind"), so it would reintroduce the exact
+ * false positive this narrowing exists to remove. The digit form covers
+ * "grade 1".
  */
 export const DIAGNOSIS_PHRASES = [
   'you have torn',
-  'you have a grade',
+  'you have a grade 1',
+  'you have a grade 2',
+  'you have a grade 3',
+  'you have a grade ii',
   'you have ruptured',
   'you have a tear',
   'you tore',
