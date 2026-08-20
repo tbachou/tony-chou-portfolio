@@ -56,7 +56,14 @@ export function ProjectsSection() {
 
         <ul className="mt-4 space-y-4">
           {PROJECTS.map((project) => (
-            <li key={project.slug} className="border border-term-border p-4 sm:p-5">
+            // The whole card is the click target, but only the link below is a
+            // real link: its ::after stretches over the card. Wrapping the card
+            // in an anchor instead would give it one accessible name made of
+            // the title, status, pitch and label read as a single run.
+            <li
+              key={project.slug}
+              className="relative border border-term-border p-4 transition-colors duration-term-instant hover:border-term-accent has-[a:focus-visible]:border-term-accent sm:p-5"
+            >
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <h3 className="text-term-base font-bold text-term-ink">{project.name}</h3>
                 <span className="text-term-xs uppercase tracking-wide text-term-muted">
@@ -66,9 +73,13 @@ export function ProjectsSection() {
               <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
                 {project.pitch}
               </p>
+              {/* hover:text-term-accent was a no-op: --color-accent aliases
+                  --color-ink, so this text hovered to the colour it already
+                  had. Underline is the channel the nav settled on for the
+                  same reason. */}
               <Link
                 href={project.href}
-                className="mt-4 inline-flex text-term-sm text-term-ink transition-colors duration-term-instant hover:text-term-accent"
+                className="mt-4 inline-flex text-term-sm text-term-ink underline-offset-4 after:absolute after:inset-0 after:content-[''] hover:underline"
               >
                 [ view case study → ]
               </Link>
