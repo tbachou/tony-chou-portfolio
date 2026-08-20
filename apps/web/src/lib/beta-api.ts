@@ -78,6 +78,13 @@ export type BetaSseEvent =
   | { type: 'status'; stage: BetaStage }
   | { type: 'red_flag'; category: string | null; message: string }
   | { type: 'plan_delta'; text: string }
+  // Clears the plan area so the deltas that follow replace what is shown.
+  // Sent once, when the guard has passed the coach's prose and it upgrades
+  // the deterministic rendering the api emitted as soon as the plan was
+  // validated. Both renderings are the same plan: the guard's numeric and
+  // structural rules have already proven the coach changed no number, dose,
+  // stage, or ordering, so this swaps wording, never facts.
+  | { type: 'plan_replace' }
   | { type: 'done' }
   | { type: 'error'; message: string };
 

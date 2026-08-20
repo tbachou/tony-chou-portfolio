@@ -28,6 +28,7 @@ import {
 } from './beta.constants';
 import {
   evaluateCoachOutput,
+  evaluatePlanContent,
   renderPlanFallback,
   resolveGuardMode,
   toCoachPlan,
@@ -330,11 +331,27 @@ export class BetaService {
    * through `splitIntoChunks`. A visitor never sees an unguarded token, and
    * never sees a plan that is not complete.
    *
-   * The honest cost is a longer wait before the plan area fills: the visitor
-   * waits for the coach's whole generation rather than its first token. That
-   * is deliberate. Beta's UI already warns about partial plans because
-   * partial plans are dangerous here, so making the partial plan a routine
-   * state would be moving the wrong way on a clinical surface.
+   * Buffering used to cost the visitor the coach's whole generation before
+   * anything appeared: `status: coaching` fired and then nothing happened
+   * for a measured p50 of 8.5s (p90 11.5s), on top of the ~25s the drafter
+   * already took. Silence after a progress indicator reads as broken, not
+   * slow, so the wait was paid at the worst possible moment.
+   *
+   * So the validated plan is rendered and emitted the moment the drafter
+   * returns (spec 0005 follow-up: "render the validated drafter plan as soon
+   * as the drafter returns, and upgrade it to the coach's prose when the
+   * guard passes"). Time to first plan text goes back to today's, and
+   * `enforce` stops costing anything.
+   *
+   * The swap is safe to show mid-read because R3 and R4 have already
+   * guaranteed the coach changed no number, dose, stage, or ordering: the
+   * two renderings are provably the same plan, one deterministic and one
+   * warm. The reader sees wording change, never facts. And a plan that FAILS
+   * the guard needs no substitution any more, because the deterministic
+   * rendering is already on screen.
+   *
+   * Still never a PARTIAL plan: what is emitted early is a complete plan
+   * rendered from the validated drafter object, not a half-streamed one.
    */
   private async runCoach(
     input: BetaPlanRequestDto,
@@ -343,6 +360,25 @@ export class BetaService {
   ): Promise<number> {
     const mode = resolveGuardMode();
     const buffered = mode !== 'off';
+
+    // First paint: the complete, validated plan, rendered deterministically.
+    // Only when buffering — at `off` the coach streams live and there is
+    // nothing to cover.
+    //
+    // Gated on the plan's OWN content passing first. `renderPlanFallback`
+    // prints the drafter's free text verbatim, and the guard's `source:
+    // 'plan'` rules run over exactly those strings. Painting before that
+    // check would put text on screen that the hard-error path exists to
+    // withhold — a visitor would read the offending sentence and only then
+    // have the request fail. When the plan's own content is bad there is no
+    // early paint at all, and the existing post-coach logic decides what
+    // happens, exactly as before this optimisation.
+    const planContentOk = evaluatePlanContent(plan).ok;
+    if (buffered && planContentOk) {
+      for (const chunk of splitIntoChunks(renderPlanFallback(plan))) {
+        emit('plan_delta', { text: chunk });
+      }
+    }
 
     // Only retry the stream if nothing has reached the client yet; a retry
     // after partial output would duplicate visible text. When buffering,
@@ -378,7 +414,9 @@ export class BetaService {
     );
 
     if (buffered) {
-      let text = result.text;
+      const text = result.text;
+      // Whether the coach's prose replaces the rendering already on screen.
+      let upgradeToCoachProse = true;
       const verdict = evaluateCoachOutput(result.text, plan, input);
       if (!verdict.ok) {
         // A `plan`-source failure is in the DRAFTER's own free text, which
@@ -410,15 +448,23 @@ export class BetaService {
             // content a rule just rejected.
             throw new Error('Beta output guard rejected the drafted plan');
           }
-          // Discard the coach's prose and render the plan deterministically
-          // from the validated drafter object. The visitor still gets a
+          // Keep the deterministic rendering already on screen rather than
+          // upgrading to prose a rule just rejected. The visitor still has a
           // complete plan, no spend is wasted, and the request counts as the
           // success it was — only the warmth is lost. Silent by design.
-          text = renderPlanFallback(plan);
+          upgradeToCoachProse = false;
         }
       }
-      for (const chunk of splitIntoChunks(text)) {
-        emit('plan_delta', { text: chunk });
+      // Upgrade the plan already on screen to the coach's prose. On a guard
+      // failure under `enforce` there is nothing to upgrade TO: the rendered
+      // plan is what the fallback would have substituted, and it is already
+      // shown, so the request simply ends with it in place.
+      if (upgradeToCoachProse) {
+        // Only a replace when something was actually painted early.
+        if (planContentOk) emit('plan_replace', {});
+        for (const chunk of splitIntoChunks(text)) {
+          emit('plan_delta', { text: chunk });
+        }
       }
     }
 
