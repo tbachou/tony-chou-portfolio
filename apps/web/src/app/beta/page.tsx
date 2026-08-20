@@ -56,7 +56,7 @@ const FAQ_ITEMS = [
   {
     question: 'Why is there a daily cap?',
     answer:
-      'Beta is a live portfolio demo with real AI costs, so it carries real cost controls: 40 plans per day globally, 6 per visitor, and 3 attempts per hour. When the daily budget is spent the form stays browsable and tells you so honestly. The caps reset at midnight UTC.',
+      'Beta is a live portfolio demo with real AI costs, so it carries real cost controls: 20 plans per day globally, 6 per visitor, and 3 attempts per hour. When the daily budget is spent the form stays browsable and tells you so honestly. The caps reset at midnight UTC.',
   },
 ];
 
