@@ -69,7 +69,18 @@ type ProfileResult = {
   tags: string[];
   /** Did the request actually reach the guard? Only these count toward AC-G9. */
   reachedGuard: boolean;
-  terminatedBy: 'plan' | 'red_flag' | 'refusal' | 'error' | 'unknown';
+  // `error` is the transient the emit callback sets; it is resolved into
+  // `refusal` or `pipeline_error` below, and only survives if the harness
+  // itself threw outside generatePlan.
+  terminatedBy:
+    | 'plan'
+    | 'red_flag'
+    | 'refusal'
+    | 'pipeline_error'
+    | 'error'
+    | 'unknown';
+  /** Present when the pipeline threw: BetaService's own failure description. */
+  pipelineError?: string;
   firings: GuardFiring[];
   calls: AgentCall[];
   planChars: number;
@@ -188,8 +199,15 @@ async function runProfile(
   const firings = parseLines<GuardFiring>(lines, (v) => v.guard === 'beta-output');
   const calls = parseLines<AgentCall>(lines, (v) => typeof v.agent === 'string');
 
-  if (state.terminatedBy === 'error' && calls.every((c) => c.outcome === 'ok')) {
-    state.terminatedBy = 'refusal';
+  // Both a screener refusal and a pipeline throw surface as an `error` event,
+  // and agent-call outcomes do not separate them: a throw in parseDraftPlan
+  // happens AFTER the drafter call logged `outcome: 'ok'`. The catch block's
+  // own line is the only thing that distinguishes them.
+  const failure = lines.find((l) =>
+    l.message.startsWith('Beta pipeline failed:'),
+  );
+  if (state.terminatedBy === 'error') {
+    state.terminatedBy = failure ? 'pipeline_error' : 'refusal';
   }
 
   return {
@@ -200,6 +218,7 @@ async function runProfile(
     firings,
     calls,
     planChars: planText.length,
+    ...(failure ? { pipelineError: failure.message } : {}),
     ...(dumpText ? { planText } : {}),
   };
 }
@@ -268,7 +287,8 @@ async function main(): Promise<void> {
             `${result.planChars} chars` +
             (result.firings.length
               ? `  FIRED: ${result.firings.map((f) => `${f.rule}/${f.source}`).join(', ')}`
-              : ''),
+              : '') +
+            (result.pipelineError ? `  ${result.pipelineError}` : ''),
         );
       } catch (error) {
         console.log(`💥 ${profile.id} threw: ${String(error)}`);
@@ -310,6 +330,21 @@ async function main(): Promise<void> {
         console.log(`  ${r.id}  rule=${f.rule}  source=${f.source}  tags=[${r.tags.join(',')}]`);
       }
     }
+  }
+  const broke = results.filter((r) => r.terminatedBy === 'pipeline_error');
+  if (broke.length) {
+    console.log(
+      `\nPipeline errors (${broke.length}) — visitor sees FRIENDLY_ERROR_MESSAGE and no plan:`,
+    );
+    for (const r of broke) console.log(`  ${r.id}  ${r.pipelineError}`);
+  }
+  const screened = results.filter(
+    (r) => r.terminatedBy === 'red_flag' || r.terminatedBy === 'refusal',
+  );
+  if (screened.length) {
+    console.log(`\nScreened out before the guard (${screened.length}):`);
+    for (const r of screened)
+      console.log(`  ${r.id.padEnd(28)} ${r.terminatedBy}  tags=[${r.tags.join(',')}]`);
   }
   console.log('\n──────── coach durationMs (the buffering question) ────────');
   console.log(
