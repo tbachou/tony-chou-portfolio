@@ -12,16 +12,16 @@
 /* ------------------------------------------------------------------ */
 
 body:has(.beta-theme) .terminal-phosphor-glow,
-body:has(.beta-theme) .terminal-scanlines,
-body:has(.beta-theme) .retro-cursor { display: none; }
-/* The terminal theme hides the native cursor in favor of its phosphor
-   block; restore native semantics here — auto on the page, pointer on
-   interactive elements (auto would beat .beta-btn's own cursor rule). */
-body.retro-cursor-active:has(.beta-theme) { cursor: auto; }
-body.retro-cursor-active:has(.beta-theme) a,
-body.retro-cursor-active:has(.beta-theme) button:not(:disabled),
-body.retro-cursor-active:has(.beta-theme) [role='button'],
-body.retro-cursor-active:has(.beta-theme) summary { cursor: pointer; }
+body:has(.beta-theme) .terminal-scanlines { display: none; }
+/* These used to be gated on the terminal's custom cursor, which hid the
+   native pointer and needed native semantics restored here. That cursor
+   is gone, but the pointer on non-anchor controls is worth keeping on its
+   own merits: a browser gives <a href> a pointer by default and a <button>
+   a default arrow, and this surface is mostly buttons and radio cards. */
+.beta-theme a,
+.beta-theme button:not(:disabled),
+.beta-theme [role='button'],
+.beta-theme summary { cursor: pointer; }
 body:has(.beta-theme) { background: var(--beta-canvas); }
 
 /* Overscroll behind the page should be chalk, not CRT black. */

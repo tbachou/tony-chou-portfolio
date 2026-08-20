@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { IBM_Plex_Mono } from 'next/font/google';
-import { RetroCursor } from '@/components/RetroCursor';
 import { siteDescription, siteName, siteUrl } from '@/lib/site';
 import { THEME_INIT_SCRIPT } from '@/lib/theme';
 import './globals.css';
@@ -63,7 +62,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`terminal-theme ${ibmPlexMono.variable}`}>
         <div className="terminal-phosphor-glow" aria-hidden="true" />
         <div className="terminal-scanlines" aria-hidden="true" />
-        <RetroCursor />
         {children}
       </body>
     </html>
