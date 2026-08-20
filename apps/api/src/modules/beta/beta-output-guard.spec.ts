@@ -1,5 +1,6 @@
 import {
   evaluateCoachOutput,
+  evaluatePlanContent,
   renderDose,
   renderPlanFallback,
   resolveGuardMode,
@@ -670,6 +671,145 @@ describe('R8 mandatory caution carried into the closing', () => {
       PULLEY_INPUT,
     );
     expect(result).toEqual({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The content rules over the DRAFTER's own free text.
+//
+// The spec's key invariant: "The guard fallback is only safe because the
+// drafter side checks run first. Any rule that protects the plan's content
+// must sit on the drafter's output, never only on the coach's." R1, R5, R6
+// and R7 used to run only over the coach's prose, so in `enforce` mode a
+// violation that originated in the plan object was laundered: the coach's
+// hedged sentence was discarded and the drafter's raw field was rendered in
+// its place, by the fallback, verbatim.
+// ---------------------------------------------------------------------------
+
+describe('drafter free text is held to the same content rules (R1/R5/R6/R7)', () => {
+  /** Returns a copy of PULLEY_PLAN with one drafter field rewritten. */
+  function planWith(mutate: (plan: DraftPlan) => void): DraftPlan {
+    const plan: DraftPlan = JSON.parse(
+      JSON.stringify(PULLEY_PLAN),
+    ) as DraftPlan;
+    mutate(plan);
+    return plan;
+  }
+
+  const MEDICATED_NOTE = 'take ibuprofen if it flares up';
+  const medicatedPlan = planWith((plan) => {
+    plan.stages[0].exercises[0].notes = MEDICATED_NOTE;
+  });
+
+  it('CATCHES a medication name in an exercise note (R5)', () => {
+    const result = evaluatePlanContent(medicatedPlan);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R5/);
+    expect(result.ok === false && result.source).toBe('plan');
+  });
+
+  it.each([
+    [
+      'overallCaution carrying a diagnosis (R6)',
+      /^R6/,
+      planWith((plan) => {
+        plan.overallCaution = 'You have torn the pulley, so see someone.';
+      }),
+    ],
+    [
+      'allowedClimbing carrying a promise (R7)',
+      /^R7/,
+      planWith((plan) => {
+        plan.stages[3].allowedClimbing =
+          'Back to normal bouldering — you will be back on your projects.';
+      }),
+    ],
+    [
+      'advanceWhen carrying contraindicated pain advice (R1)',
+      /^R1/,
+      planWith((plan) => {
+        plan.stages[1].advanceWhen = ['You can push through the pain for a set'];
+      }),
+    ],
+    [
+      'an exercise name carrying a promise (R7)',
+      /^R7/,
+      planWith((plan) => {
+        plan.stages[2].exercises[0].name = 'Guaranteed recovery hangs';
+      }),
+    ],
+    [
+      'a stage title carrying a diagnosis (R6)',
+      /^R6/,
+      planWith((plan) => {
+        plan.stages[0].title = 'You have a grade II strain';
+      }),
+    ],
+  ])('CATCHES %s', (_label, rule, plan) => {
+    const result = evaluatePlanContent(plan);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(rule);
+    expect(result.ok === false && result.source).toBe('plan');
+  });
+
+  it('passes a realistic plan whose free text is ordinary rehab prose', () => {
+    expect(evaluatePlanContent(PULLEY_PLAN)).toEqual({ ok: true });
+  });
+
+  it('does NOT fire on the traffic-light and safety language the drafter is told to write', () => {
+    // drafter.md's own words, in the fields it writes them in. A rule that
+    // rejected these would reject the plans that followed the prompt.
+    const conformant = planWith((plan) => {
+      plan.stages[0].allowedClimbing = 'No climbing yet, and no crimping of any kind.';
+      plan.stages[1].advanceWhen = [
+        'Pain during activity no more than about 3 out of 10, settling by the next morning',
+        'Take your time and work through it one stage at a time',
+      ];
+      plan.stages[2].exercises[0].notes =
+        'You rebuild power through progressive loading, not through big jumps.';
+      plan.overallCaution =
+        'Pain at rest that does not improve within a couple of weeks deserves a professional assessment; no timeline here is guaranteed.';
+    });
+    expect(evaluatePlanContent(conformant)).toEqual({ ok: true });
+  });
+
+  it('is reached by evaluateCoachOutput before any coach-side rule', () => {
+    const result = evaluateCoachOutput(
+      coachOutput(medicatedPlan),
+      medicatedPlan,
+      PULLEY_INPUT,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.source).toBe('plan');
+  });
+
+  it('CATCHES it even when the coach quietly dropped the offending note', () => {
+    // coachOutput never renders `notes`, so this document is clean prose.
+    // A coach-only rule set would pass it and ship the plan — and the
+    // fallback would still have been holding the medication advice.
+    const text = coachOutput(medicatedPlan);
+    expect(text).not.toContain('ibuprofen');
+    const result = evaluateCoachOutput(text, medicatedPlan, PULLEY_INPUT);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R5/);
+  });
+
+  it('marks a coach-only violation as repairable, so the fallback still runs', () => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        closing: 'Take ibuprofen for the first few days.',
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.source).toBe('coach');
+  });
+
+  it('proves why the source matters: the fallback would re-ship the text', () => {
+    // This is the laundering the invariant forbids, demonstrated rather than
+    // asserted. renderPlanFallback prints drafter fields verbatim, so a
+    // caller answering a `plan`-source failure with it would hand the visitor
+    // the medication advice — without even the coach's hedging.
+    expect(renderPlanFallback(medicatedPlan)).toContain(MEDICATED_NOTE);
   });
 });
 
