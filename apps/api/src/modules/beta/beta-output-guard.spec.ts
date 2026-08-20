@@ -872,6 +872,40 @@ describe('R8 mandatory caution carried into the closing', () => {
     ).toEqual({ ok: true });
   });
 
+  // Real coach closings, captured from live shadow runs on the AC-G9 corpus.
+  // The first FIRED under the previous key-term overlap rule while carrying
+  // every clinical element, which is what sent that rule to be replaced; the
+  // other two fired under the first attempt at a replacement, because the
+  // coach drops "at rest" as implied and says "constant pain" instead. All
+  // three are correct copy and must pass.
+  it.each([
+    [
+      'omits "professional", scored 0.47 under the old ratio',
+      "You're working with a solid timeline and a proven path back. If your rest pain hasn't clearly improved by about three weeks from now, that's the moment to see a hand therapist or sports medicine doctor—they can rule out anything that needs their hands-on eye. Otherwise, stick with this, trust the stages, and you'll be back to V5 climbing soon.",
+    ],
+    [
+      'says "constant pain" rather than naming rest',
+      "You're coming back from early, constant pain, so patience in the first few weeks pays off later. If pain hasn't clearly improved in about three weeks, a hand therapist or sports medicine doctor should take a look before you load the finger any more.",
+    ],
+    [
+      'says "pain stays constant"',
+      'This is a steady return. Most climbers find that the first three weeks are the hardest — just letting it settle — and then the steps back to the wall feel quick. If pain stays constant through week three or gets worse instead of better, a hand therapist or sports medicine doctor can give you a clearer picture and get you back faster.',
+    ],
+  ])('does NOT catch a real coach closing that %s', (_label, closing) => {
+    expect(evaluateRestPain(closing)).toEqual({ ok: true });
+  });
+
+  it.each([
+    ['no time bound', 'If your pain stays constant at rest, see a hand therapist.'],
+    ['no referral', 'If your pain stays constant at rest for three weeks, ease off.'],
+    ['no pain condition', 'If things have not improved in three weeks, see a doctor.'],
+  ])('still CATCHES a closing missing the %s', (_label, closing) => {
+    const result = evaluateRestPain(closing);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R8/);
+    expect(result.ok === false && result.source).toBe('coach');
+  });
+
   it('does NOT catch a rephrasing, which the coach is supposed to do', () => {
     const result = evaluateRestPain(
       'Because your pain is constant even at rest, keep an eye on it: if it does not improve over the next couple of weeks, a professional assessment is worth getting.',
