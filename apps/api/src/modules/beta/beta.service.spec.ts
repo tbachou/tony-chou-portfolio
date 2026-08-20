@@ -1141,6 +1141,60 @@ describe('BetaService.generatePlan', () => {
         expect(h.usage.recordGuardBlock).not.toHaveBeenCalled();
       });
 
+      // The fallback renders drafter free text verbatim, so answering a
+      // violation that ORIGINATED in the plan object with the fallback would
+      // re-ship the offending text — without even the coach's hedging. On
+      // that class of failure enforce would be worse than shadow.
+      it('does NOT substitute when the violation is in the drafter\'s own free text', async () => {
+        process.env.BETA_OUTPUT_GUARD_MODE = 'enforce';
+        const h = makeHarness();
+        const medicatedStages = [1, 2, 3, 4].map((n) => {
+          const stage = makeStage(n);
+          return n === 1
+            ? {
+                ...stage,
+                exercises: [
+                  { ...stage.exercises[0], notes: 'take ibuprofen if it flares up' },
+                  stage.exercises[1],
+                ],
+              }
+            : stage;
+        });
+        h.anthropic.forceToolCall
+          .mockResolvedValueOnce(screenerClear)
+          .mockResolvedValueOnce({
+            input: { stages: medicatedStages },
+            inputTokens: 100,
+            outputTokens: 200,
+          });
+        // The coach faithfully wove the note in, and the guard would have
+        // caught it there too — the point is what happens next.
+        h.anthropic.streamMessage.mockImplementation(
+          bufferedCoach(
+            conformantCoachText(
+              'If it flares up, take ibuprofen for a day or two.',
+            ),
+          ),
+        );
+
+        await h.service.generatePlan({
+          input: makeInput(),
+          hashedIp: 'hashed-ip',
+          emit: h.emit,
+        });
+
+        // No plan at all, and above all no laundered medication advice.
+        expect(planText(h.events)).toBe('');
+        expect(JSON.stringify(h.events)).not.toContain('ibuprofen');
+        expect(h.events[h.events.length - 1]).toEqual([
+          'error',
+          { message: FRIENDLY_ERROR_MESSAGE },
+        ]);
+        expect(h.usage.recordGuardBlock).toHaveBeenCalledTimes(1);
+        expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('error');
+        expect(h.prisma.$transaction).not.toHaveBeenCalled();
+      });
+
       it('never lets a failed counter write disturb the plan', async () => {
         process.env.BETA_OUTPUT_GUARD_MODE = 'enforce';
         const h = makeHarness();

@@ -132,7 +132,24 @@ export function toCoachPlan(plan: DraftPlan): CoachPlan {
 // safety language ("No crimping of any kind").
 // ---------------------------------------------------------------------------
 
-export type GuardResult = { ok: true } | { ok: false; reason: string };
+/**
+ * Where a failure lives, and therefore whether `renderPlanFallback` can
+ * repair it.
+ *
+ * `coach` — the drafted plan is clean and only the coach's prose broke a
+ * rule. Re-rendering the plan deterministically fixes it, which is what the
+ * fallback is for.
+ *
+ * `plan` — the drafter's OWN free text broke a content rule. The fallback
+ * renders those fields verbatim, so substituting it would re-ship the exact
+ * text that tripped the guard, only without the coach's hedging. A `plan`
+ * failure means the plan must not ship at all.
+ */
+export type GuardFailureSource = 'coach' | 'plan';
+
+export type GuardResult =
+  | { ok: true }
+  | { ok: false; reason: string; source: GuardFailureSource };
 
 const STAGE_HEADING = /^##\s+Stage\s+(\d+)\s*:/i;
 
@@ -157,16 +174,39 @@ const COACH_LABELS = [
  * the mandated traffic-light language through: "no more than about 3 out of
  * 10", "settling by the next morning", "some discomfort is normal and
  * expected", "'no pain' is not required".
+ *
+ * The verb-plus-object cross product below replaced two bare substrings that
+ * an audit caught matching ordinary rehab prose: "power through" fired on
+ * "you rebuild power through progressive loading", and "work through it"
+ * fired on "take your time and work through it one stage at a time". Both
+ * verbs have a common benign sense, so both now require an explicit pain
+ * object. "push through" is kept in its bare-object form ("push through it")
+ * because in this register it carries the contraindicated sense on its own —
+ * there is no benign "push through it" in a rehab plan.
  */
+const PUSH_PAST_VERBS = [
+  'push through',
+  'work through',
+  'power through',
+  'fight through',
+] as const;
+
+const PAIN_OBJECTS = [
+  'the pain',
+  'the ache',
+  'the aching',
+  'the soreness',
+  'the discomfort',
+] as const;
+
 export const CONTRAINDICATED_PAIN_PHRASES = [
-  'push through the pain',
+  ...PUSH_PAST_VERBS.flatMap((verb) =>
+    PAIN_OBJECTS.map((object) => `${verb} ${object}`),
+  ),
   'push through it',
-  'work through the pain',
-  'work through it',
   'no pain no gain',
   'ignore the pain',
   'tough it out',
-  'power through',
   'pain is nothing to worry about',
 ] as const;
 
@@ -199,12 +239,27 @@ export const MEDICATION_NAMES = [
  * pulley strain", "climber's elbow") and general education ("pulley strains
  * usually", "this kind of injury often") all pass. The weakest rule in the
  * table and the one most likely to need loosening once a corpus run exists.
+ *
+ * The bare "is torn" was dropped after an audit caught it firing on
+ * hypothetical education — "if a pulley is torn, you would usually feel a pop
+ * at the time" — which is the opposite of a diagnosis. What separates that
+ * sentence from an assertion is the conditional frame, not any word near
+ * "torn", so no substring can tell them apart; detecting it would need clause
+ * parsing, which this file deliberately does not do. Every entry therefore
+ * now carries its own assertion marker: a second-person subject ("you have
+ * torn", "you tore") or an explicit certainty adverb ("definitely",
+ * "clearly"). The honest cost is that a bare assertion with neither marker
+ * ("the pulley is torn") passes; that is the price of not firing on teaching.
  */
 export const DIAGNOSIS_PHRASES = [
   'you have torn',
   'you have a grade',
   'you have ruptured',
-  'is torn',
+  'you have a tear',
+  'you tore',
+  'you ruptured',
+  'is definitely torn',
+  'is clearly torn',
   'diagnosed with',
   'this is definitely a',
 ] as const;
@@ -215,13 +270,29 @@ export const DIAGNOSIS_PHRASES = [
  * rather than 'you will'". Keyed to the promise constructions only, so the
  * stage time windows (explicitly guidance), "climbers usually find", "most
  * climbers", "typically", "you will feel" and "you will notice" all pass.
+ *
+ * The bare "guaranteed" was dropped after an audit caught it firing on
+ * "no timeline here is guaranteed" — which is precisely the under-promising
+ * coach.md asks for. Only the forward promise construction is matched now
+ * ("guaranteed to ...", "guaranteed recovery"). The passive "X is guaranteed"
+ * is deliberately NOT matched, because every negated hedge a coach should be
+ * writing contains it as a substring ("no timeline here is guaranteed",
+ * "nothing about recovery is guaranteed"). The cost is that an unhedged
+ * passive promise ("a full return is guaranteed") passes; on this surface a
+ * rule that punishes correct hedging is the worse failure.
  */
 export const RECOVERY_PROMISE_PHRASES = [
   'you will be back',
   'you will be climbing again',
   'you will fully recover',
-  'guaranteed',
   'you will be healed',
+  'guaranteed to recover',
+  'guaranteed to heal',
+  'guaranteed to be back',
+  'guaranteed to be climbing',
+  'guaranteed recovery',
+  'guaranteed full recovery',
+  'guaranteed return',
 ] as const;
 
 /** Common words R8's key-term check should not treat as distinctive. */
@@ -367,6 +438,85 @@ function cautionKeyTerms(caution: string): string[] {
   );
 }
 
+/**
+ * The four content rules that are about WHAT is said rather than about the
+ * shape of the coach's document, so they apply to any prose a visitor could
+ * end up reading — the coach's or the drafter's.
+ */
+const CONTENT_BLOCKLISTS = [
+  ['R1 contraindicated pain phrasing', CONTRAINDICATED_PAIN_PHRASES],
+  ['R5 medication naming', MEDICATION_NAMES],
+  ['R6 diagnosis asserted as fact', DIAGNOSIS_PHRASES],
+  ['R7 recovery promised as fact', RECOVERY_PROMISE_PHRASES],
+] as const;
+
+function matchContentBlocklists(
+  text: string,
+  source: GuardFailureSource,
+): GuardResult {
+  const normalized = normalizeForMatch(text);
+  for (const [rule, phrases] of CONTENT_BLOCKLISTS) {
+    for (const phrase of phrases) {
+      if (normalized.includes(phrase)) {
+        return { ok: false, reason: `${rule}: "${phrase}"`, source };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Every drafter-authored string that `renderPlanFallback` renders verbatim.
+ *
+ * That list is the definition, not a convenience: the fallback is the exact
+ * mechanism by which drafter text reaches a visitor unmediated, so anything
+ * it prints is content the content rules must have seen. `rationale` and
+ * `equipmentUsed` are excluded because neither is ever rendered or sent to
+ * the coach — checking them would add false-positive risk with no reachable
+ * text behind it.
+ */
+function planFreeText(plan: DraftPlan): string[] {
+  const fields: string[] = [];
+  for (const stage of plan.stages) {
+    fields.push(stage.title, stage.timeWindow, stage.allowedClimbing);
+    fields.push(...stage.advanceWhen);
+    for (const exercise of stage.exercises) {
+      fields.push(exercise.name);
+      if (exercise.notes !== undefined) fields.push(exercise.notes);
+    }
+  }
+  if (plan.overallCaution !== undefined) fields.push(plan.overallCaution);
+  return fields;
+}
+
+/**
+ * R1 / R5 / R6 / R7 over the DRAFTER's own free text.
+ *
+ * This closes the hole the spec's key invariant names: "The guard fallback is
+ * only safe because the drafter side checks run first. Any rule that protects
+ * the plan's content must sit on the drafter's output, never only on the
+ * coach's." Before this ran, a drafter emitting `notes: "take ibuprofen if it
+ * flares up"` produced a coach bullet that R5 caught, and then `enforce` mode
+ * substituted `renderPlanFallback`, which printed the same sentence verbatim
+ * and without the coach's hedging. The counter incremented, no error
+ * surfaced, and the visitor read the medication advice anyway — enforce being
+ * strictly worse than shadow.
+ *
+ * Its failures carry `source: 'plan'` so the caller knows the fallback cannot
+ * repair them and the plan must not ship.
+ *
+ * R2 (full crimp) is NOT repeated here: layer 1's `assertExplicitProhibitions`
+ * already rejects a drafter plan naming full crimp, on the hard-error path,
+ * before the coach ever runs.
+ */
+export function evaluatePlanContent(plan: DraftPlan): GuardResult {
+  for (const field of planFreeText(plan)) {
+    const verdict = matchContentBlocklists(field, 'plan');
+    if (!verdict.ok) return verdict;
+  }
+  return { ok: true };
+}
+
 /** The parts of a request the guard needs; a DTO satisfies it structurally. */
 export type GuardInput = { injuryArea: string; painBehavior: string };
 
@@ -377,30 +527,27 @@ export type GuardInput = { injuryArea: string; painBehavior: string };
  * `reason` names the rule and, where a blocklist matched, the blocklist phrase
  * — which is one of our own constants, never visitor or model text. Nothing
  * here returns matched output to a caller that logs it.
+ *
+ * The plan's own free text is evaluated FIRST, and its failures are marked
+ * `source: 'plan'`: a caller in `enforce` mode must not answer those with
+ * `renderPlanFallback`, which would print the offending text again.
  */
 export function evaluateCoachOutput(
   text: string,
   plan: DraftPlan,
   input: GuardInput,
 ): GuardResult {
-  const normalized = normalizeForMatch(text);
   const sections = splitCoachSections(text);
   const coachPlan = toCoachPlan(plan);
 
-  // R1 / R5 / R6 / R7: blocklists over the whole document.
-  const blocklists = [
-    ['R1 contraindicated pain phrasing', CONTRAINDICATED_PAIN_PHRASES],
-    ['R5 medication naming', MEDICATION_NAMES],
-    ['R6 diagnosis asserted as fact', DIAGNOSIS_PHRASES],
-    ['R7 recovery promised as fact', RECOVERY_PROMISE_PHRASES],
-  ] as const;
-  for (const [rule, phrases] of blocklists) {
-    for (const phrase of phrases) {
-      if (normalized.includes(phrase)) {
-        return { ok: false, reason: `${rule}: "${phrase}"` };
-      }
-    }
-  }
+  // R1 / R5 / R6 / R7 over the drafter's own strings, before anything the
+  // coach wrote. A violation here is not something the fallback can fix.
+  const planContent = evaluatePlanContent(plan);
+  if (!planContent.ok) return planContent;
+
+  // R1 / R5 / R6 / R7 over the coach's whole document.
+  const coachContent = matchContentBlocklists(text, 'coach');
+  if (!coachContent.ok) return coachContent;
 
   // R2: full-crimp programming, scoped to `**Do this:**` bullets. Scoped to
   // finger_pulley as well, because "Never program full-crimp training" lives
@@ -415,6 +562,7 @@ export function evaluateCoachOutput(
           return {
             ok: false,
             reason: 'R2 full-crimp programming in a prescription line',
+            source: 'coach',
           };
         }
       }
@@ -429,6 +577,7 @@ export function evaluateCoachOutput(
     return {
       ok: false,
       reason: `R4 stage count: ${sections.stages.length} headings for ${coachPlan.stages.length} stages`,
+      source: 'coach',
     };
   }
   for (let i = 0; i < sections.stages.length; i += 1) {
@@ -437,12 +586,17 @@ export function evaluateCoachOutput(
       return {
         ok: false,
         reason: `R4 stage order: heading ${section.number ?? 'unnumbered'} at position ${i + 1}`,
+        source: 'coach',
       };
     }
     const body = section.lines.join('\n');
     for (const label of COACH_LABELS) {
       if (!body.includes(label)) {
-        return { ok: false, reason: `R4 missing ${label} in stage ${i + 1}` };
+        return {
+          ok: false,
+          reason: `R4 missing ${label} in stage ${i + 1}`,
+          source: 'coach',
+        };
       }
     }
     const bullets = prescriptionLines(section.lines);
@@ -451,6 +605,7 @@ export function evaluateCoachOutput(
       return {
         ok: false,
         reason: `R4 exercise count: ${bullets.length} bullets for ${expected} exercises in stage ${i + 1}`,
+        source: 'coach',
       };
     }
   }
@@ -458,9 +613,17 @@ export function evaluateCoachOutput(
   // R3: numeric fidelity. Transcribes coach.md's "Keep every number exactly
   // as drafted: sets, reps, weeks, grades, frequencies. Never change, round,
   // or omit one." Scoped per stage section; the opening and closing
-  // paragraphs are not checked, and the stage heading's own number is allowed
-  // by construction. Every other number the coach legitimately writes came
-  // from the drafter, so it is present in the allowed set by construction.
+  // paragraphs are not checked. Every other number the coach legitimately
+  // writes came from the drafter, so it is present in the allowed set by
+  // construction.
+  //
+  // Stage ordinals are allowed DOCUMENT-WIDE rather than only in their own
+  // section. They are not drafted numbers at all: they come from coach.md's
+  // own output format (`## Stage {n}:`), so the coach is entitled to name any
+  // of them anywhere. An audit caught the per-stage version rejecting "move
+  // on to stage 3" written inside stage 2 — a cross-reference the format
+  // invites, scored as if the coach had invented a dose.
+  const stageOrdinals = coachPlan.stages.map((_, index) => String(index + 1));
   for (let i = 0; i < sections.stages.length; i += 1) {
     const allowed = new Set<string>([
       ...numericTokens(JSON.stringify(coachPlan.stages[i])),
@@ -476,7 +639,7 @@ export function evaluateCoachOutput(
           .filter((value): value is number => value !== undefined)
           .map(String),
       ),
-      String(i + 1),
+      ...stageOrdinals,
     ]);
     const scanned = [
       `## Stage ${i + 1}:`,
@@ -487,27 +650,53 @@ export function evaluateCoachOutput(
         return {
           ok: false,
           reason: `R3 numeric fidelity: stage ${i + 1} carries a number the drafter did not`,
+          source: 'coach',
         };
       }
     }
   }
 
   // R8: the caution drafter.md calls MANDATORY for this pain behavior must
-  // survive into the closing ("a MANDATORY `overallCaution` (never omit it
-  // for this pain behavior)"; coach.md's closing carries "the drafted
-  // `overallCaution` if present"). Checks the caution's distinctive terms,
-  // not an exact string, because the coach is supposed to rephrase.
-  if (input.painBehavior === 'constant_even_at_rest' && plan.overallCaution) {
-    const terms = cautionKeyTerms(plan.overallCaution);
+  // exist and must survive into the closing ("a MANDATORY `overallCaution`
+  // (never omit it for this pain behavior)"; coach.md's closing carries "the
+  // drafted `overallCaution` if present").
+  //
+  // The rule used to be written `painBehavior === '...' && plan.overallCaution`,
+  // which made it fail OPEN on the one case it exists for: a drafter that
+  // omitted the caution entirely could not trip it. Nothing else caught that
+  // — the JSON schema's `required` is a request to the model, not a
+  // guarantee, and `parseDraftPlan` validates every other field but not this
+  // one — so a visitor with constant rest pain could receive a confident
+  // staged plan with no caution anywhere, in any mode. The presence check is
+  // now its own branch.
+  if (input.painBehavior === 'constant_even_at_rest') {
+    const caution = plan.overallCaution?.trim() ?? '';
+    if (caution.length === 0) {
+      // `source: 'plan'`, not 'coach': the fallback's closing is conditional
+      // on the same field, so substituting it would ship a plan with no
+      // caution either. Failing closed is the only honest answer here until
+      // the drafter side substitutes a fixed caution (see parseDraftPlan).
+      return {
+        ok: false,
+        reason: 'R8 mandatory caution absent from the drafted plan',
+        source: 'plan',
+      };
+    }
+    // Checks the caution's distinctive terms, not an exact string, because
+    // the coach is supposed to rephrase.
+    const terms = cautionKeyTerms(caution);
     if (terms.length > 0) {
       const closing = normalizeForMatch(sections.closing.join(' '));
       const carried = terms.filter((term) =>
         closing.includes(term.slice(0, CAUTION_TERM_PREFIX)),
       );
       if (carried.length / terms.length < CAUTION_TERM_THRESHOLD) {
+        // `source: 'coach'`: the plan HAS the caution, so re-rendering it
+        // deterministically puts the caution back. The fallback repairs this.
         return {
           ok: false,
           reason: 'R8 mandatory caution not carried into the closing',
+          source: 'coach',
         };
       }
     }
@@ -522,10 +711,17 @@ export function evaluateCoachOutput(
 
 /**
  * Renders the plan deterministically when the guard rejects the coach's
- * prose. Only safe because layer 1's checks ran on the drafter's output
- * first: the plan object was schema-constrained and validated, so the
- * fallback ships content that already passed every prohibition. Only the
+ * prose. Only safe because the drafter's own output was checked first: the
+ * plan object was schema-constrained, validated by `parseDraftPlan`, and its
+ * free text was run through the content rules by `evaluatePlanContent`, so
+ * the fallback ships content that already passed every prohibition. Only the
  * warmth is lost.
+ *
+ * That is a precondition, not a property of this function. It renders
+ * `notes`, `overallCaution`, `allowedClimbing`, `advanceWhen`, `title` and
+ * `timeWindow` VERBATIM, so calling it to answer a `source: 'plan'` failure
+ * would re-ship the exact text that tripped the guard. Callers must only
+ * reach it for `source: 'coach'`.
  *
  * It manufactures no clinical content. The only sentences not drawn from the
  * plan object are connective, and the closing's referral line transcribes
