@@ -59,6 +59,10 @@
      palette has to answer this question differently — see there for why
      it trades the solid fill for a hollow ring. */
   --cursor-blend: difference;
+  /* The printed area's own ground. Transparent on the CRT: there is
+     no sheet behind it to hide, and a fill would change the dark
+     surface that is already correct. */
+  --card-bg: transparent;
   --cursor-fill: var(--color-accent);
   --cursor-stroke-width: 0px;
   --cursor-glow: 0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);
@@ -267,6 +271,10 @@
        Paper does not glow, so the halo goes with the fill (the same call
        the scanline and bloom alphas above already make). */
     --cursor-blend: normal;
+    /* Flat manila under body copy. The bars stay in the margins, where
+       they read as the sheet's pre-printed ruling, but text no longer
+       crosses a band boundary mid-line. */
+    --card-bg: var(--paper-canvas);
     --cursor-fill: transparent;
     --cursor-stroke-width: 2px;
     --cursor-glow: none;
@@ -309,6 +317,10 @@
   --glow-blur-far: 1px;
   /* See the note in the prefers-color-scheme block above. */
   --cursor-blend: normal;
+  /* Flat manila under body copy. The bars stay in the margins, where
+     they read as the sheet's pre-printed ruling, but text no longer
+     crosses a band boundary mid-line. */
+  --card-bg: var(--paper-canvas);
   --cursor-fill: transparent;
   --cursor-stroke-width: 2px;
   --cursor-glow: none;
