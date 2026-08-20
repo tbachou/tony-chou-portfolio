@@ -517,4 +517,39 @@ export const CORPUS: CorpusProfile[] = [
       discipline: 'bouldering',
     },
   },
+  // ---- constant-pain screener probes (added after the first full run) ----
+  // All three constant-pain profiles above were red-flagged by the screener
+  // before reaching the guard, leaving the layer 1 required-`overallCaution`
+  // path with zero coverage. The screener sees `pain_behavior` as a structured
+  // line AND the free text, so these two isolate which one triggers the block:
+  // identical structured fields to fp-04, varying only `goals`.
+  {
+    id: 'probe-constant-bland-text',
+    tags: ['constant-pain-wording', 'screener-probe'],
+    request: {
+      injuryArea: 'finger_pulley',
+      onsetWeeksAgo: 1,
+      symptoms: ['pain_with_specific_holds_or_moves'],
+      painBehavior: 'constant_even_at_rest',
+      preInjuryGrade: 'V5',
+      discipline: 'bouldering',
+      goals: 'Would like to get back to my usual sessions when it is sensible.',
+      sessionsPerWeek: 3,
+      equipmentAccess: ['climbing_gym'],
+    },
+  },
+  {
+    id: 'probe-constant-no-goals',
+    tags: ['constant-pain-wording', 'screener-probe'],
+    request: {
+      injuryArea: 'finger_pulley',
+      onsetWeeksAgo: 1,
+      symptoms: ['pain_with_specific_holds_or_moves'],
+      painBehavior: 'constant_even_at_rest',
+      preInjuryGrade: 'V5',
+      discipline: 'bouldering',
+      sessionsPerWeek: 3,
+      equipmentAccess: ['climbing_gym'],
+    },
+  },
 ];
