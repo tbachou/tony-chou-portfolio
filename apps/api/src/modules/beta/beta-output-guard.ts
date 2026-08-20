@@ -355,75 +355,52 @@ export const RECOVERY_PROMISE_PHRASES = [
   'guaranteed return',
 ] as const;
 
-/** Common words R8's key-term check should not treat as distinctive. */
-const CAUTION_STOPWORDS = new Set([
-  'about',
-  'after',
-  'again',
-  'alone',
-  'along',
-  'anything',
-  'because',
-  'been',
-  'before',
-  'being',
-  'between',
-  'could',
-  'does',
-  'doing',
-  'during',
-  'every',
-  'from',
-  'have',
-  'having',
-  'into',
-  'itself',
-  'might',
-  'other',
-  'over',
-  'really',
-  'should',
-  'since',
-  'some',
-  'still',
-  'such',
-  'than',
-  'that',
-  'their',
-  'them',
-  'then',
-  'there',
-  'these',
-  'they',
-  'thing',
-  'this',
-  'those',
-  'through',
-  'under',
-  'until',
-  'very',
-  'what',
-  'when',
-  'where',
-  'which',
-  'while',
-  'will',
-  'with',
-  'within',
-  'without',
-  'would',
-  'your',
-  'yours',
-]);
-
 /**
  * Fraction of a caution's distinctive terms that must survive into the
  * closing for R8 to pass. A mechanical allowance for rephrasing — which the
  * coach is supposed to do — not a judgement about wording. Terms match on a
  * five-character prefix so "assessment" also matches "assessed".
  */
-const CAUTION_TERM_THRESHOLD = 0.5;
-const CAUTION_TERM_PREFIX = 5;
+/**
+ * R8's carry check. The MANDATORY caution for `constant_even_at_rest` is a
+ * fixed clinical statement — rest pain, a roughly three week bound, and a
+ * referral — so the closing must carry those three CONCEPTS, each satisfiable
+ * by any wording a coach would plausibly use.
+ *
+ * This replaced a key-term overlap ratio between the drafter's caution and the
+ * coach's paraphrase, which measured vocabulary coincidence rather than whether
+ * the caution survived. Measured over 12 live coach outputs against one fixed
+ * plan, that ratio ranged 0.47 to 0.94 with the 0.5 threshold sitting inside
+ * the spread: the run at 0.47 fired while carrying every clinical element, and
+ * a run at 0.53 passed saying the same thing in different words. It was also
+ * backwards — the denominator was the drafter's own term count, so a MORE
+ * thorough caution made a false positive MORE likely.
+ */
+const CAUTION_CARRY_CONCEPTS: readonly { name: string; pattern: RegExp }[] = [
+  // The coach routinely drops "at rest" as implied and writes "constant pain"
+  // or "pain stays constant"; both were observed carrying the caution fully.
+  {
+    name: 'pain condition',
+    pattern:
+      /at rest|rest pain|constant pain|pain (?:that )?(?:stays|remains|is still|is) constant/,
+  },
+  // ANY time bound, not the canonical three weeks. The drafter writes this
+  // field itself and legitimately varies it ("a couple of weeks"), so pinning
+  // the number here would fire on a caution that was carried faithfully.
+  // Whether the coach carried the RIGHT figure is a numeric-fidelity question,
+  // and R3 does not scan the closing — a pre-existing gap, not one this rule
+  // can close without re-coupling to the drafter's exact phrasing.
+  {
+    name: 'time bound',
+    pattern:
+      /(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|several|couple|few)[\s-]+(?:of[\s-]+)?(?:day|week|month)s?|(?:day|week|month)[\s-]+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)/,
+  },
+  {
+    name: 'referral',
+    pattern:
+      /therapist|doctor|physician|physio|specialist|clinician|professional|sports medicine|medical/,
+  },
+];
 
 export type CoachSections = {
   /** Lines before the first stage heading. Not checked by R3 or R4. */
@@ -496,17 +473,6 @@ function prescriptionLines(stageLines: string[]): string[] {
 
 function numericTokens(text: string): string[] {
   return text.match(/\d+(?:\.\d+)?/g) ?? [];
-}
-
-function cautionKeyTerms(caution: string): string[] {
-  return Array.from(
-    new Set(
-      normalizeForMatch(caution)
-        .split(' ')
-        .map((word) => word.replace(/[^a-z0-9]/g, ''))
-        .filter((word) => word.length >= 5 && !CAUTION_STOPWORDS.has(word)),
-    ),
-  );
 }
 
 /**
@@ -768,23 +734,24 @@ export function evaluateCoachOutput(
         source: 'plan',
       };
     }
-    // Checks the caution's distinctive terms, not an exact string, because
-    // the coach is supposed to rephrase.
-    const terms = cautionKeyTerms(caution);
-    if (terms.length > 0) {
-      const closing = normalizeForMatch(sections.closing.join(' '));
-      const carried = terms.filter((term) =>
-        closing.includes(term.slice(0, CAUTION_TERM_PREFIX)),
-      );
-      if (carried.length / terms.length < CAUTION_TERM_THRESHOLD) {
-        // `source: 'coach'`: the plan HAS the caution, so re-rendering it
-        // deterministically puts the caution back. The fallback repairs this.
-        return {
-          ok: false,
-          reason: 'R8 mandatory caution not carried into the closing',
-          source: 'coach',
-        };
-      }
+    // The plan HAS the caution; the question is whether the coach's closing
+    // still says it. Checked as concepts rather than shared vocabulary — see
+    // CAUTION_CARRY_CONCEPTS for why the previous overlap ratio was unsound.
+    const closing = normalizeForMatch(sections.closing.join(' '));
+    const missing = CAUTION_CARRY_CONCEPTS.filter(
+      (concept) => !concept.pattern.test(closing),
+    );
+    if (missing.length > 0) {
+      // `source: 'coach'`: the plan HAS the caution, so re-rendering it
+      // deterministically puts the caution back. The fallback repairs this.
+      // `reason` names only our own concept labels, never closing text.
+      return {
+        ok: false,
+        reason: `R8 mandatory caution not carried into the closing: ${missing
+          .map((concept) => concept.name)
+          .join(', ')}`,
+        source: 'coach',
+      };
     }
   }
 
