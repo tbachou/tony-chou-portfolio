@@ -49,7 +49,7 @@ body {
 /* and the hidden-until-focused mechanics are written once; the four    */
 /* appearance decisions are tokens, so each identity answers them in    */
 /* its own vocabulary instead of the component hardcoding one theme's.  */
-/* Same shape as --select-current-* / --cursor-fill (see design.md):    */
+/* Same shape as --select-current-* / --card-bg (see design.md):        */
 /* one rule, per-identity values. The defaults are the terminal palette */
 /* because that is the app-wide default (the html/body rule above reads */
 /* --color-canvas for exactly the same reason); beta.css remaps all     */

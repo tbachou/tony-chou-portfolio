@@ -49,44 +49,10 @@
   --glow-alpha-far: 0.25;
   --glow-blur-near: 4px;
   --glow-blur-far: 12px;
-  /* How the custom cursor composites against whatever it is over, and
-     what shape it is (.retro-cursor, below). `difference` is not a
-     neutral default — it is a palette-specific trick that only reads
-     because bright phosphor inverted against a near-black canvas stays
-     bright, and, crucially, because inverting is non-destructive: glyphs
-     under the block invert too and stay legible (8.56:1 against it).
-     Tokenized for the same reason the glow radii above are: the light
-     palette has to answer this question differently — see there for why
-     it trades the solid fill for a hollow ring. */
-  --cursor-blend: difference;
   /* The printed area's own ground. Transparent on the CRT: there is
      no sheet behind it to hide, and a fill would change the dark
      surface that is already correct. */
   --card-bg: transparent;
-  --cursor-fill: var(--color-accent);
-  --cursor-stroke-width: 0px;
-  --cursor-glow: 0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);
-  /* Cursor geometry. Unlike the four tokens above these are NOT
-     palette-specific — both palettes hit the same pixels on purpose (see
-     the box-sizing note on .retro-cursor) — so they are declared once
-     here and never re-answered in the light selectors.
-     They are tokens rather than literals so there is one place to change
-     if the size ever needs to respond to something. Nothing varies them
-     today, and that is a limitation, not an oversight: THERE IS NO WAY
-     to detect that a visitor enlarged their pointer or gave it a
-     high-contrast outline in their OS. No media query exposes it —
-     `pointer: fine/coarse` reports the input device's accuracy, not the
-     cursor's size; `prefers-contrast` and `forced-colors` report a
-     display-legibility preference, not a pointer one — and no JS API
-     exposes it either, deliberately, because cursor size is a
-     fingerprinting vector. A `1cur` unit and a `cursor-size` property
-     were proposed for exactly this (w3c/csswg-drafts#12048, April 2025)
-     and have not shipped anywhere. Until they do, the honest response to
-     a visitor who has tuned their pointer is to stop replacing it — see
-     the gating in RetroCursor.tsx, which now yields on the adjacent
-     signals that ARE detectable. */
-  --cursor-size: 12px;
-  --cursor-size-hover: 24px;
   /* The printed sheet (see the light palette below). A CRT has no paper,
      so the dark canvas carries no background image at all. */
   --sheet-image: none;
@@ -199,18 +165,6 @@
   --paper-sheet-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat;
 }
 
-/* A banded page is harder to read than a flat one, and the cost lands on
-   exactly the people least able to absorb it: low vision, dyslexia, and
-   visual processing differences all suffer when the ground changes under a
-   line of text. No WCAG criterion covers it, because a contrast ratio only
-   ever compares text to ONE background.
-
-   So anyone whose OS asks for more contrast gets a flat manila page: the
-   bars go transparent, the perforations and tear rules go with them, and
-   the type sits on a single unchanging ground. Everyone else keeps the
-   printout. This is the same signal `.retro-cursor` yields to, and it is
-   detectable, unlike the pointer-size preference it sits beside in macOS
-   System Settings. */
 @media (prefers-contrast: more) {
   :root:not([data-theme='dark']),
   :root[data-theme='light'] {
@@ -270,14 +224,10 @@
        composited with at all, so they hold their full 12.66:1 / 10.82:1.
        Paper does not glow, so the halo goes with the fill (the same call
        the scanline and bloom alphas above already make). */
-    --cursor-blend: normal;
     /* Flat manila under body copy. The bars stay in the margins, where
        they read as the sheet's pre-printed ruling, but text no longer
        crosses a band boundary mid-line. */
     --card-bg: var(--paper-canvas);
-    --cursor-fill: transparent;
-    --cursor-stroke-width: 2px;
-    --cursor-glow: none;
     /* The current nav section is a filled block HERE ONLY. The CRT can
        mark it with brighter type because ink and muted sit 2.86:1 apart
        there; on paper they are two dark inks 1.77:1 apart and the mark
@@ -316,14 +266,10 @@
   --glow-blur-near: 0.4px;
   --glow-blur-far: 1px;
   /* See the note in the prefers-color-scheme block above. */
-  --cursor-blend: normal;
   /* Flat manila under body copy. The bars stay in the margins, where
      they read as the sheet's pre-printed ruling, but text no longer
      crosses a band boundary mid-line. */
   --card-bg: var(--paper-canvas);
-  --cursor-fill: transparent;
-  --cursor-stroke-width: 2px;
-  --cursor-glow: none;
   --select-current-bg: var(--select-bg);
   --select-current-fg: var(--select-fg);
   --sheet-image: var(--paper-sheet-image);
@@ -478,12 +424,6 @@
 :root {
   --select-bg: var(--color-accent);
   --select-fg: var(--color-on-accent);
-  /* What the CURRENT item wears, which is NOT the same answer in both
-     palettes — see `.terminal-select[aria-current]` below. Dark keeps
-     its original brighter-text mark, so the "block" here is no block at
-     all: a transparent background and ink type. The two light palette
-     selectors map these to the --select-* pair instead, exactly the way
-     --cursor-fill is defaulted here and re-answered there. */
   --select-current-bg: transparent;
   --select-current-fg: var(--color-ink);
 }
@@ -521,7 +461,6 @@
 /*          ink on canvas #0a0a0f          14.57:1                      */
 /*                                                                      */
 /* Scoped by TOKEN rather than by a light-scoped copy of this rule, for  */
-/* the same reason --cursor-fill is: the palette blocks are already the  */
 /* one place a "paper answers this differently" decision is recorded,    */
 /* and a token keeps this rule single, so both channels stay declared    */
 /* together. A `:root[data-theme='light'] .terminal-select[aria-current]`*/
@@ -543,10 +482,8 @@
 /* Once current is a persistent block, hover painting the SAME block    */
 /* means a pointed-at inactive item is momentarily indistinguishable    */
 /* from the one you are actually on. That is how a completion list      */
-/* behaves and it is defensible, but here the tell you would normally   */
-/* rely on — the pointer sitting on the item — is weak, because         */
-/* RetroCursor hides the native cursor and replaces it with a block     */
-/* that LAGS behind the real position. So hover gets one extra mark.    */
+/* behaves and it is defensible, but a momentary ambiguity on the one   */
+/* item telling you where you are is worth one extra mark to remove.    */
 /*                                                                      */
 /* The mark is an underline, on purpose:                                */
 /*   - it costs nothing in contrast. It is drawn in currentColor, i.e.  */
@@ -669,61 +606,4 @@
   }
 }
 
-/* Custom mouse cursor — a sharp-edged accent block centred on the
-   pointer, tracking it 1:1 (it used to trail; see RetroCursor.tsx for
-   why the easing was removed). Both how it composites AND whether it is filled are
-   palette-dependent, because the pointer sits on top of running text and
-   must not eat it: on the CRT it is a solid phosphor block inverting
-   against the near-black canvas (the spotlight-cursor trick — glyphs
-   under it invert too, so they stay readable), and on paper it is a
-   hollow ink ring, because no blend mode over manila stock both shows
-   the cursor and keeps the type under it legible. Both cases are driven
-   from tokens (--cursor-blend / --cursor-fill / --cursor-stroke-width /
-   --cursor-glow) up in the palette; the geometry here is shared. Since
-   the native cursor is hidden below, this element is the only pointer
-   the visitor has, so it must clear contrast in every palette.
-   RetroCursor.tsx only adds the `retro-cursor-active` class when JS has
-   confirmed a fine pointer and no reduced-motion preference, so the
-   native cursor is the safe default. */
-body.retro-cursor-active,
-body.retro-cursor-active a,
-body.retro-cursor-active button,
-body.retro-cursor-active [role='button'] {
-  cursor: none;
-}
 
-.retro-cursor {
-  position: fixed;
-  top: 0;
-  left: 0;
-  /* border-box so the ring the light palette turns on eats into the same
-     --cursor-size footprint instead of growing it — the two palettes then
-     hit the same pixels, and the dark block (0px ring) is untouched. */
-  box-sizing: border-box;
-  width: var(--cursor-size);
-  height: var(--cursor-size);
-  background: var(--cursor-fill);
-  border: var(--cursor-stroke-width) solid var(--color-accent);
-  mix-blend-mode: var(--cursor-blend);
-  pointer-events: none;
-  z-index: 100;
-  opacity: 0;
-  box-shadow: var(--cursor-glow);
-  transition:
-    width var(--duration-base) var(--ease-standard),
-    height var(--duration-base) var(--ease-standard),
-    opacity var(--duration-base) var(--ease-standard);
-}
-
-body.retro-cursor-active .retro-cursor {
-  opacity: 1;
-}
-
-.retro-cursor[data-hover='true'] {
-  width: var(--cursor-size-hover);
-  height: var(--cursor-size-hover);
-}
-
-.retro-cursor[data-hidden='true'] {
-  opacity: 0;
-}
