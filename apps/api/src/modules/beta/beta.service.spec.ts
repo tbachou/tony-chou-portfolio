@@ -56,7 +56,8 @@ function makeInput(
 /**
  * A layer-1-shaped stage: structured dose, declared equipment, a rationale,
  * two exercises and two advancement criteria (drafter.md's stated counts),
- * and non-overlapping increasing time windows (1-2, 3-4, 5-6, 7-8).
+ * and a concrete `timeWindow` per stage (Weeks 1-2, 3-4, 5-6, 7-8). Nothing
+ * checks how those windows relate to each other; they are only realistic.
  */
 function makeStage(n: number) {
   return {
@@ -365,23 +366,34 @@ describe('layer 1: parseDraftPlan explicit prohibitions (AC-G4)', () => {
     });
   });
 
-  describe('stage time windows are non-overlapping and increasing', () => {
-    it('rejects overlapping windows', () => {
+  describe('timeWindow is checked for presence only, never for ordering', () => {
+    // The ordering check that used to live here (windows must not overlap and
+    // must increase) was REMOVED. It had no source line in drafter.md — the
+    // only thing that file says about `timeWindow` is line 16, "a concrete
+    // range, e.g. 'Weeks 1-2'", immediately followed by "Windows are guidance,
+    // not promises ... stages may need repeating". It was unit-blind and
+    // position-blind, and it threw on the hard error path, so a clinically
+    // fine plan cost the visitor their plan entirely. These cases are the
+    // exact strings it rejected.
+    it.each([
+      ['a shared boundary week', ['Weeks 1-2', 'Weeks 2-4']],
+      ['a change of unit mid-plan', ['Weeks 9-12', 'Months 3-6']],
+      ['a trailing frequency number', ['Weeks 1-2', 'Weeks 4-6, 3 sessions a week']],
+      ['a repeated stage', ['Weeks 1-2', 'Weeks 1-2']],
+      ['prose instead of a range', ['Weeks 1-2', 'Once the previous stage feels settled']],
+    ])('ACCEPTS %s', (_label, [first, second]) => {
       const stages = [1, 2, 3, 4].map(makeStage);
-      stages[1].timeWindow = 'Weeks 2-4';
-      expect(() => parseDraftPlan({ stages }, pulley)).toThrow(/overlapping/i);
-    });
-
-    it('rejects a window that runs backwards', () => {
-      const stages = [1, 2, 3, 4].map(makeStage);
-      stages[0].timeWindow = 'Weeks 4-1';
-      expect(() => parseDraftPlan({ stages }, pulley)).toThrow(/backwards/i);
-    });
-
-    it('skips windows whose numbers cannot be read rather than erroring', () => {
-      const stages = [1, 2, 3, 4].map(makeStage);
-      stages[1].timeWindow = 'Once the previous stage feels settled';
+      stages[0].timeWindow = first;
+      stages[1].timeWindow = second;
       expect(() => parseDraftPlan({ stages }, pulley)).not.toThrow();
+    });
+
+    it('still rejects a missing or empty timeWindow (drafter.md line 16)', () => {
+      for (const bad of ['', '   ', undefined]) {
+        const stages = [1, 2, 3, 4].map(makeStage);
+        (stages[1] as { timeWindow?: unknown }).timeWindow = bad;
+        expect(() => parseDraftPlan({ stages }, pulley)).toThrow(/malformed/i);
+      }
     });
   });
 

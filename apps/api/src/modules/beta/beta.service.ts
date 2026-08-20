@@ -595,14 +595,6 @@ function buildDrafterSchema(
   };
 }
 
-/** A parsed `timeWindow`, or null when its numbers cannot be read. */
-function parseTimeWindow(raw: string): { start: number; end: number } | null {
-  const numbers = raw.match(/\d+/g);
-  if (!numbers || numbers.length === 0) return null;
-  const values = numbers.map(Number);
-  return { start: values[0], end: values[values.length - 1] };
-}
-
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= DOSE_MIN;
 }
@@ -661,25 +653,6 @@ function assertExplicitProhibitions(
       }
     });
   }
-
-  // Structural, not clinical: stage time windows must not overlap and must
-  // increase. Windows whose numbers cannot be read are skipped rather than
-  // rejected — an unreadable format is not evidence of a bad plan.
-  let previousEnd: number | null = null;
-  for (const stage of stages) {
-    const window = parseTimeWindow(stage.timeWindow);
-    if (!window) {
-      previousEnd = null;
-      continue;
-    }
-    if (window.end < window.start) {
-      throw new Error('Drafter returned a stage time window that runs backwards');
-    }
-    if (previousEnd !== null && window.start <= previousEnd) {
-      throw new Error('Drafter returned overlapping stage time windows');
-    }
-    previousEnd = window.end;
-  }
 }
 
 export function parseDraftPlan(
@@ -696,7 +669,15 @@ export function parseDraftPlan(
   for (const stage of stages) {
     if (
       typeof stage?.title !== 'string' ||
+      // drafter.md line 16: "`timeWindow` — a concrete range, e.g. 'Weeks
+      // 1-2'." Present and non-empty is the whole of what that line lets us
+      // transcribe. The same line goes on to say windows "are guidance, not
+      // promises" and that "stages may need repeating", so ANY rule about how
+      // one stage's window relates to the next contradicts the skill file
+      // rather than transcribing it. A previous ordering check lived here and
+      // was removed for exactly that reason.
       typeof stage?.timeWindow !== 'string' ||
+      stage.timeWindow.trim().length === 0 ||
       typeof stage?.allowedClimbing !== 'string' ||
       typeof stage?.rationale !== 'string' ||
       !Array.isArray(stage?.exercises) ||
