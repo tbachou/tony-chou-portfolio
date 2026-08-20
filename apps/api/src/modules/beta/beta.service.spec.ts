@@ -958,6 +958,53 @@ describe('BetaService.generatePlan', () => {
       expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
     });
 
+    it('does NOT redraft a CLINICALLY rejected plan, and fails safe', async () => {
+      // Clinical audit MUST-FIX: a blind redraft hands the same prompt a
+      // second chance at a plan the same narrow lexical check might miss.
+      // Layer 1 rejected a full-crimp exercise on a finger_pulley plan, so
+      // the request fails rather than resampling.
+      const h = makeHarness();
+      const crimpPlan = {
+        stages: [1, 2, 3, 4].map((n) =>
+          n === 3
+            ? {
+                ...makeStage(n),
+                exercises: [
+                  { ...makeStage(n).exercises[0], name: 'Full crimp hangs' },
+                  makeStage(n).exercises[1],
+                ],
+              }
+            : makeStage(n),
+        ),
+      };
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce({
+          input: crimpPlan,
+          inputTokens: 100,
+          outputTokens: 200,
+        })
+        .mockResolvedValueOnce(drafterOk);
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      // screener + ONE drafter call: the clean drafterOk mock is never used.
+      expect(h.anthropic.forceToolCall).toHaveBeenCalledTimes(2);
+      expect(h.anthropic.streamMessage).not.toHaveBeenCalled();
+      expect(h.events[h.events.length - 1]).toEqual([
+        'error',
+        { message: FRIENDLY_ERROR_MESSAGE },
+      ]);
+      // The rejection is tallied, so the rate stays visible in production.
+      expect(h.usage.recordGuardBlock).toHaveBeenCalledTimes(1);
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('error');
+      expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('treats a rejected plan on BOTH attempts as a failure: friendly error, refund, no counters', async () => {
       const h = makeHarness();
       h.anthropic.forceToolCall
