@@ -44,12 +44,12 @@ services:
       #             the coach's prose unchanged. Gate on enforce (AC-G9).
       #   enforce - substitutes a plan rendered from the drafter object when
       #             the coach's prose fires a rule.
-      # Shadow and enforce both BUFFER, so the plan arrives after the coach
-      # finishes rather than streaming. The follow-up that removes that cost
-      # (render the validated drafter plan immediately, upgrade to prose on
-      # pass) is specced but not built.
+      # Shadow and enforce both buffer the coach, but the plan no longer
+      # waits on it: the validated plan is rendered and sent as soon as the
+      # drafter returns, then upgraded to the coach's prose once the guard
+      # passes. Time to first plan text is the same as it was at 'off'.
       - key: BETA_OUTPUT_GUARD_MODE
-        value: 'off'
+        value: 'enforce'
       - key: TURN_PAIR_CAP
         value: '5'
       - key: DAILY_TURN_CAP
