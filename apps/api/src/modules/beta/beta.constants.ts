@@ -224,3 +224,36 @@ export const INJECTION_BLOCKLIST = [
   'new instructions',
   'act as',
 ] as const;
+
+/** Escapes every regex metacharacter so a blocklist phrase matches literally. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The blocklist compiled to whole-word matchers, built ONCE at module load
+ * from the constant list above. Never built from request data: no regex in
+ * this codebase is constructed from visitor text, and that must stay true
+ * (security review), so this is module scope rather than per-request.
+ *
+ * Word boundaries, not `String.includes`. A substring match on `act as`
+ * fires on ordinary English — "re|act as| it used to", "cont|act as| soon
+ * as", "ex|act as| before" — and because a hit shows REFUSAL_MESSAGE it can
+ * replace a red-flag warning with a generic refusal. `\b` requires the
+ * phrase to start and end on a word boundary, so only the standalone phrase
+ * matches. Every phrase begins and ends with a word character, which is what
+ * makes `\b` the right anchor; a phrase added with leading or trailing
+ * punctuation would need a different one.
+ */
+const INJECTION_PATTERNS: readonly RegExp[] = INJECTION_BLOCKLIST.map(
+  (phrase) => new RegExp(`\\b${escapeRegExp(phrase)}\\b`),
+);
+
+/**
+ * True when the already-normalized text contains a blocklist phrase as whole
+ * words. Callers pass the output of `normalizeForMatch`. Matching only —
+ * never logs or stores what matched.
+ */
+export function matchesInjectionBlocklist(normalized: string): boolean {
+  return INJECTION_PATTERNS.some((pattern) => pattern.test(normalized));
+}
