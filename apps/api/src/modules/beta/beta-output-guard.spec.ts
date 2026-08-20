@@ -631,6 +631,10 @@ describe('R6 diagnosis asserted as fact', () => {
   it.each([
     'From what you describe, you have torn the pulley.',
     'You have a grade II injury here.',
+    // Both notations of the clinical ordinal, which is what separates the
+    // injury sense of "grade" from the climbing one.
+    'You have a grade 2 pulley strain.',
+    'You have a grade III tear of the A2.',
     'It sounds like you have ruptured it.',
     'You have a tear in the A2.',
     'You tore it when you heard the pop.',
@@ -666,6 +670,18 @@ describe('R6 diagnosis asserted as fact', () => {
   it('does NOT catch general education about the injury type', () => {
     const closing =
       'Pulley strains usually settle with graded loading, and this kind of injury often feels worse before it feels better.';
+    expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('does NOT catch the climbing sense of "grade"', () => {
+    // "Grade" is the most common noun in climbing, and drafter.md asks for it
+    // by name: `allowedClimbing` is phrased relative to `pre_injury_grade`
+    // (line 18) and progression runs "several number grades below their max"
+    // (line 41). The unqualified "you have a grade" entry fired on this.
+    const closing =
+      'Once you have a grade you can climb comfortably, stay there for a few sessions before pushing up.';
     expect(evaluate(coachOutput(PULLEY_PLAN, { closing }))).toEqual({
       ok: true,
     });
@@ -892,6 +908,39 @@ describe('drafter free text is held to the same content rules (R1/R5/R6/R7)', ()
 
   it('passes a realistic plan whose free text is ordinary rehab prose', () => {
     expect(evaluatePlanContent(PULLEY_PLAN)).toEqual({ ok: true });
+  });
+
+  it('does NOT fire R6 on the climbing sense of "grade" in the fields drafter.md puts it in', () => {
+    // The surface where this regression actually bit. R6 was calibrated as a
+    // coach-prose rule, where a hit costs the warmth of the plan and the
+    // fallback still ships. Applied here it costs the visitor the whole plan
+    // — `source: 'plan'` is a hard error — and "once you have a grade you can
+    // climb comfortably" is what a legitimate `advanceWhen` criterion looks
+    // like. drafter.md line 18 requires `allowedClimbing` to be phrased in
+    // the visitor's own grade, so this vocabulary is mandated, not incidental.
+    const graded = planWith((plan) => {
+      plan.stages[2].advanceWhen = [
+        'Once you have a grade you can climb comfortably, you are ready',
+        'Full pain-free range in the finger',
+      ];
+      plan.stages[3].allowedClimbing =
+        'Cautious return to normal bouldering, several number grades below your max.';
+    });
+    expect(evaluatePlanContent(graded)).toEqual({ ok: true });
+  });
+
+  it('still CATCHES the clinical grading sense in a plan field', () => {
+    // Narrowing the phrase must not disarm it: this is the assertion R6 was
+    // written for, and it must not reach a visitor through the fallback.
+    const result = evaluatePlanContent(
+      planWith((plan) => {
+        plan.stages[0].exercises[0].notes =
+          'You have a grade 2 strain, so keep the load light.';
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R6/);
+    expect(result.ok === false && result.source).toBe('plan');
   });
 
   it('does NOT fire on the traffic-light and safety language the drafter is told to write', () => {
