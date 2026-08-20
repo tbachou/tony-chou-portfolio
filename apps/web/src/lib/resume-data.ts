@@ -47,17 +47,19 @@ export const experience: ResumeEntry[] = [
     org: 'Tensure Consulting',
     role: 'Senior Software Engineer',
     dates: '2020 – Present',
-    context: "Consulting practice delivering the Topstep, Product Forge, and Mailchimp engagements below.",
+    context:
+      "Consulting practice delivering the Topstep, Product Forge, and Mailchimp engagements below, plus current internal work.",
     bullets: [
       'Deliver full-stack engineering and technical consulting for startup and enterprise clients, working within established production codebases and leading architecture and technical planning.',
       'Partner with founders, product managers, and stakeholders to translate business requirements into production-ready solutions.',
+      'Currently on an internal project: diagnosed reliability failures in a HubSpot-to-Ruddr integration — tracing them to strict downstream data-formatting requirements and no automated error recovery, which had been forcing manual intervention to keep resourcing data accurate — and recommended a custom multi-platform resourcing dashboard over the direct integration. Scoping the technical approach now.',
       'Mentor a software engineer on the Product Forge team through structured 1:1s, providing career guidance and technical development support.'
     ]
   },
   {
     org: 'Topstep',
     role: 'Senior Software Engineer',
-    dates: 'Sep 2025 – Present',
+    dates: 'Sep 2025 – Jul 2026',
     context: 'via Tensure (long-term embedded engagement)',
     stack: ['TypeScript', 'Node.js', 'React', 'PostgreSQL', 'GraphQL', 'AWS', 'Datadog', 'LaunchDarkly'],
     bullets: [
