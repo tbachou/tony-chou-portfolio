@@ -1,6 +1,7 @@
 import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { GradeService, normalizeHistogram } from './grade.service';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { GradeAnalysisService } from './grade-analysis.service';
 import * as pool from './photo-pool';
 import type { GradePhoto } from './photo-pool';
 
@@ -71,6 +72,20 @@ function makePrisma(options: { row?: Record<string, unknown> } = {}) {
   return { prisma: prisma as unknown as PrismaService, state };
 }
 
+/**
+ * The vision service stubbed to "no analysis available", which is the state
+ * every test below except the cached-row one exercises. Tests that care about
+ * the call itself live in grade-analysis.service.spec.ts.
+ */
+let ensureAnalysis: jest.Mock;
+
+function makeService(prisma: PrismaService): GradeService {
+  ensureAnalysis = jest.fn().mockResolvedValue(null);
+  return new GradeService(prisma, {
+    ensureAnalysis,
+  } as unknown as GradeAnalysisService);
+}
+
 describe('GradeService', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
@@ -87,7 +102,7 @@ describe('GradeService', () => {
     it('returns the day, image, note and pool size', () => {
       const { prisma } = makePrisma();
 
-      expect(new GradeService(prisma).getToday(NOW)).toEqual({
+      expect(makeService(prisma).getToday(NOW)).toEqual({
         date: '2026-08-20',
         imageUrl: 'https://tonychou.dev/grade/seed-a.png',
         note: 'Placeholder gym, north wall',
@@ -97,7 +112,7 @@ describe('GradeService', () => {
 
     it('leaks no grade of any kind before a guess', () => {
       const { prisma } = makePrisma();
-      const today = new GradeService(prisma).getToday(NOW);
+      const today = makeService(prisma).getToday(NOW);
 
       // The leak check the spec asks for: the whole serialized pre-guess
       // payload must not contain the answer or anything derived from it.
@@ -116,14 +131,14 @@ describe('GradeService', () => {
       jest.spyOn(pool, 'photoForDate').mockReturnValue(bare);
       const { prisma } = makePrisma();
 
-      expect(new GradeService(prisma).getToday(NOW)).not.toHaveProperty('note');
+      expect(makeService(prisma).getToday(NOW)).not.toHaveProperty('note');
     });
 
     it('builds the image URL from CORS_ORIGIN, taking the first entry', () => {
       process.env.CORS_ORIGIN = 'https://tonychou.dev,https://www.tonychou.dev';
       const { prisma } = makePrisma();
 
-      expect(new GradeService(prisma).getToday(NOW).imageUrl).toBe(
+      expect(makeService(prisma).getToday(NOW).imageUrl).toBe(
         'https://tonychou.dev/grade/seed-a.png',
       );
     });
@@ -132,7 +147,7 @@ describe('GradeService', () => {
       jest.spyOn(pool, 'photoForDate').mockReturnValue(null);
       const { prisma } = makePrisma();
 
-      expect(() => new GradeService(prisma).getToday(NOW)).toThrow(
+      expect(() => makeService(prisma).getToday(NOW)).toThrow(
         ServiceUnavailableException,
       );
     });
@@ -142,7 +157,7 @@ describe('GradeService', () => {
     it('returns truth, distances and the histogram on a fresh day', async () => {
       const { prisma, state } = makePrisma();
 
-      const reveal = await new GradeService(prisma).submitGuess(3, NOW);
+      const reveal = await makeService(prisma).submitGuess(3, NOW);
 
       expect(reveal.trueGrade).toBe(5);
       expect(reveal.yourGuess).toBe(3);
@@ -159,10 +174,37 @@ describe('GradeService', () => {
     it('reports the model as null while the day has no analysis (AC-5)', async () => {
       const { prisma } = makePrisma();
 
-      const reveal = await new GradeService(prisma).submitGuess(4, NOW);
+      const reveal = await makeService(prisma).submitGuess(4, NOW);
 
       expect(reveal.model).toBeNull();
       expect(reveal.modelDistance).toBeNull();
+    });
+
+    it('asks for the day\'s vision call when the row has no analysis', async () => {
+      const { prisma } = makePrisma();
+
+      await makeService(prisma).submitGuess(4, NOW);
+
+      expect(ensureAnalysis).toHaveBeenCalledWith({
+        date: '2026-08-20',
+        imageUrl: 'https://tonychou.dev/grade/seed-a.png',
+      });
+    });
+
+    it('serves a freshly produced analysis in the same response', async () => {
+      const { prisma } = makePrisma();
+      const service = makeService(prisma);
+      ensureAnalysis.mockResolvedValue({
+        grade: 6,
+        confidence: 'low',
+        observations: ['dark photo'],
+        reasoning: 'Hard to read.',
+      });
+
+      const reveal = await service.submitGuess(4, NOW);
+
+      expect(reveal.model?.grade).toBe(6);
+      expect(reveal.modelDistance).toBe(1);
     });
 
     it('serves the cached analysis and its distance once the row has one', async () => {
@@ -175,7 +217,7 @@ describe('GradeService', () => {
         },
       });
 
-      const reveal = await new GradeService(prisma).submitGuess(4, NOW);
+      const reveal = await makeService(prisma).submitGuess(4, NOW);
 
       expect(reveal.model).toEqual({
         grade: 7,
@@ -185,12 +227,14 @@ describe('GradeService', () => {
       });
       // |7 - 5|, the model's own distance from truth.
       expect(reveal.modelDistance).toBe(2);
+      // Cached means cached: no second call is made or paid for (AC-4).
+      expect(ensureAnalysis).not.toHaveBeenCalled();
     });
 
     it('scores a perfect guess as distance zero', async () => {
       const { prisma } = makePrisma();
 
-      const reveal = await new GradeService(prisma).submitGuess(5, NOW);
+      const reveal = await makeService(prisma).submitGuess(5, NOW);
 
       expect(reveal.yourDistance).toBe(0);
     });
@@ -198,7 +242,7 @@ describe('GradeService', () => {
     it('increments the slot for the guessed grade, and plays, in one statement', async () => {
       const { prisma, state } = makePrisma();
 
-      await new GradeService(prisma).submitGuess(6, NOW);
+      await makeService(prisma).submitGuess(6, NOW);
 
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
       // The interpolated values are [guess, date] in template order.
@@ -211,7 +255,7 @@ describe('GradeService', () => {
     it('sends nothing a visitor supplied to the database beyond the integer', async () => {
       const { prisma, state } = makePrisma();
 
-      await new GradeService(prisma).submitGuess(2, NOW);
+      await makeService(prisma).submitGuess(2, NOW);
 
       // AC-6: the only visitor-derived value that reaches Prisma at all is
       // the grade integer itself.
@@ -226,7 +270,7 @@ describe('GradeService', () => {
       jest.spyOn(pool, 'photoForDate').mockReturnValue(null);
       const { prisma } = makePrisma();
 
-      await expect(new GradeService(prisma).submitGuess(1, NOW)).rejects.toThrow(
+      await expect(makeService(prisma).submitGuess(1, NOW)).rejects.toThrow(
         ServiceUnavailableException,
       );
       expect(prisma.gradeDay.create).not.toHaveBeenCalled();
@@ -250,7 +294,7 @@ describe('GradeService', () => {
         },
       );
 
-      const service = new GradeService(prisma);
+      const service = makeService(prisma);
       const [a, b] = await Promise.all([
         service.submitGuess(3, NOW),
         service.submitGuess(4, NOW),
@@ -269,7 +313,7 @@ describe('GradeService', () => {
       );
 
       await expect(
-        new GradeService(prisma).submitGuess(1, NOW),
+        makeService(prisma).submitGuess(1, NOW),
       ).rejects.toThrow('connection lost');
     });
   });

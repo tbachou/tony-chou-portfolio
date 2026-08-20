@@ -1,5 +1,6 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { GradeAnalysisService } from './grade-analysis.service';
 import {
   GRADE_SLOTS,
   PHOTO_URL_PREFIX,
@@ -68,7 +69,10 @@ const NO_PHOTOS_MESSAGE =
 export class GradeService {
   private readonly logger = new Logger(GradeService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly analysis: GradeAnalysisService,
+  ) {}
 
   /**
    * Today's problem, with nothing that gives the answer away (AC-1, AC-2).
@@ -105,7 +109,7 @@ export class GradeService {
     await this.ensureDayRow(date, photo.id);
     const row = await this.recordGuess(date, guess);
 
-    const model = await this.resolveAnalysis(row);
+    const model = await this.resolveAnalysis(row, photo);
 
     return {
       date,
@@ -122,17 +126,24 @@ export class GradeService {
   }
 
   /**
-   * The day's cached analysis, or null.
+   * The day's analysis: the cached one, or the day's single vision call.
    *
-   * Build plan step 2 stops here: the row is read but never filled, so every
-   * reveal reports `model: null` and the degraded path (AC-5) is the only
-   * path. Step 4 injects the vision service and calls it from here when the
-   * row still has none.
+   * Lazy fill (spec 0006's chosen option): nothing runs on a schedule, so the
+   * first guess of the day pays for the call and everyone after gets it from
+   * the row. `ensureAnalysis` never throws, so a failed call simply leaves
+   * this null and a later guess retries (AC-5).
    */
-  private resolveAnalysis(
+  private async resolveAnalysis(
     row: GradeDayRow,
+    photo: GradePhoto,
   ): Promise<GradeModelAnalysis | null> {
-    return Promise.resolve(toAnalysis(row));
+    const cached = toAnalysis(row);
+    if (cached) return cached;
+
+    return this.analysis.ensureAnalysis({
+      date: row.date,
+      imageUrl: this.imageUrlFor(photo),
+    });
   }
 
   /** The absolute URL both the page and the vision call resolve the photo at. */
