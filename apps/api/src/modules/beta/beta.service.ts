@@ -15,13 +15,13 @@ import {
   EQUIPMENT_ACCESS,
   FRIENDLY_ERROR_MESSAGE,
   FULL_CRIMP_PATTERN,
-  INJECTION_BLOCKLIST,
   RATIONALE_MAX_LENGTH,
   RED_FLAG_CATEGORIES,
   RED_FLAG_FALLBACK_MESSAGE,
   RED_FLAG_MESSAGES,
   REFUSAL_MESSAGE,
   SCREENER_MODEL,
+  matchesInjectionBlocklist,
   normalizeForMatch,
   type RedFlagCategory,
 } from './beta.constants';
@@ -451,8 +451,7 @@ function buildVisitorProfile(input: BetaPlanRequestDto): string {
  */
 export function containsInjectionAttempt(goals: string | undefined): boolean {
   if (!goals) return false;
-  const normalized = normalizeForMatch(goals);
-  return INJECTION_BLOCKLIST.some((phrase) => normalized.includes(phrase));
+  return matchesInjectionBlocklist(normalizeForMatch(goals));
 }
 
 /**
