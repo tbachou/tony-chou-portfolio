@@ -15,6 +15,7 @@ import { ConversationModule } from './modules/conversation/conversation.module';
 import { UsageSummaryModule } from './modules/usage-summary/usage-summary.module';
 import { BetaModule } from './modules/beta/beta.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
+import { GradeModule } from './modules/grade/grade.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { FeedbackModule } from './modules/feedback/feedback.module';
     UsageSummaryModule,
     BetaModule,
     FeedbackModule,
+    GradeModule,
   ],
   controllers: [AppController],
   providers: [
