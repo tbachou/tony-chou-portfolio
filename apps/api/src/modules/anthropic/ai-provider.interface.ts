@@ -28,6 +28,17 @@ export type ForceToolCallParams = {
   model: string;
   system: string;
   userMessage: string;
+  /**
+   * An image to put in front of `userMessage` in the same user turn, passed to
+   * the model as a URL source so no image bytes pass through the api (spec
+   * 0006's vision call). Optional and additive: omitting it gives exactly the
+   * text-only call every existing caller already makes.
+   *
+   * URL sources are an Anthropic API feature. `BedrockAnthropicService`
+   * rejects this field rather than pretending to support it — see its
+   * forceToolCall.
+   */
+  imageUrl?: string;
   maxTokens: number;
   toolName: string;
   toolDescription: string;

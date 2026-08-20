@@ -215,3 +215,31 @@ model Verification {
   @@index([identifier])
   @@map("verification")
 }
+
+// Grade Guesser (the daily climbing-grade game, spec 0006). One row per UTC
+// day, created lazily by the day's first guess. Everything a visitor
+// contributes is an anonymous integer: guessCounts is a 9-slot histogram
+// indexed by V-grade and plays is a bare tally (AC-6). No visitor identity,
+// no free text, and no per-visitor row exists or may be added here — the
+// feature's request DTO is a single validated integer by construction.
+// Streaks and play history live only in the visitor's browser (AC-7).
+//
+// The model* columns cache the day's single vision call (AC-4): null until
+// it lands, filled once, never reset. `photoId` references an id in
+// apps/api/src/modules/grade/photos.json, which is a repo file rather than
+// a table so the true grades never reach the client bundle (AC-2);
+// photos.manifest.spec.ts keeps the two consistent (AC-9).
+model GradeDay {
+  date            String   @id
+  photoId         String
+  modelGrade      Int?
+  modelConfidence String?
+  observations    String[] @default([])
+  reasoning       String?
+  model           String?
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  guessCounts     Int[]    @default([0, 0, 0, 0, 0, 0, 0, 0, 0])
+  plays           Int      @default(0)
+  createdAt       DateTime @default(now())
+}
