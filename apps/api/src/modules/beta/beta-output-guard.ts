@@ -190,19 +190,40 @@ const COACH_LABELS = [
  * object. "push through" is kept in its bare-object form ("push through it")
  * because in this register it carries the contraindicated sense on its own —
  * there is no benign "push through it" in a rehab plan.
+ *
+ * The objects are listed BOTH bare and article-prefixed. A re-audit found the
+ * first version of the cross product carried only the "the" forms, so it
+ * matched "push through the pain" but not "push through pain", "power
+ * through soreness", or "work through pain in the first two weeks" — and
+ * rehab prose reaches for the bare noun at least as often as the definite
+ * article. Two phrases ("power through", "work through it") had been blocked
+ * outright before the cross product existed, so that omission moved them from
+ * caught to allowed. Bare objects are safe to add because the VERB is what
+ * killed the original false positives: "you rebuild power through progressive
+ * loading" and "work through it one stage at a time" name no pain object at
+ * all, in either form.
  */
 const PUSH_PAST_VERBS = [
   'push through',
   'work through',
   'power through',
   'fight through',
+  // "train through the pain" reached a visitor past the first cross product:
+  // the object was listed but this verb was not. It has no benign sense in
+  // front of a pain object, so it belongs here rather than as a bare phrase.
+  'train through',
 ] as const;
 
 const PAIN_OBJECTS = [
+  'pain',
   'the pain',
+  'ache',
   'the ache',
+  'aching',
   'the aching',
+  'soreness',
   'the soreness',
+  'discomfort',
   'the discomfort',
 ] as const;
 

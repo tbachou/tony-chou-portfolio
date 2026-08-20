@@ -273,9 +273,32 @@ describe('R1 contraindicated pain phrasing', () => {
     expect(result.ok === false && result.reason).toMatch(/^R1/);
   });
 
+  // ---- The regression the verb x object cross product introduced. ----
+  // Its first version listed only article-prefixed objects ("the pain"), so
+  // it matched "push through THE pain" and nothing else. Rehab prose reaches
+  // for the bare noun at least as often, and two of these ("power through",
+  // "work through it") were blocked outright before the cross product
+  // existed — so the rewrite moved them from caught to allowed.
+  it.each([
+    'Power through soreness and keep loading.',
+    'Work through pain in the first two weeks.',
+    'Push through pain on the hangboard.',
+    // The object was listed but the verb was not.
+    'Train through the pain.',
+    'Fight through discomfort and it will settle.',
+    // Control: already covered by the article-prefixed form.
+    'Work through the ache rather than resting it.',
+  ])('CATCHES the bare-object form in %j', (closing) => {
+    const result = evaluate(coachOutput(PULLEY_PLAN, { closing }));
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R1/);
+  });
+
   // The two false positives an audit found in the bare-substring version.
   // Both are ordinary, correct rehab prose; a guard that rejected them would
-  // hand a plainer plan to a visitor whose coach did everything right.
+  // hand a plainer plan to a visitor whose coach did everything right. They
+  // are also what makes the bare objects above safe: the VERB is doing the
+  // work, and neither of these names a pain object in any form.
   it.each([
     'You rebuild power through progressive loading, not through big jumps.',
     'Take your time and work through it one stage at a time.',
