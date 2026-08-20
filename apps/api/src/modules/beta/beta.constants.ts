@@ -102,7 +102,17 @@ export const REFUSAL_MESSAGE =
 export const FRIENDLY_ERROR_MESSAGE =
   'Something went wrong on our side while drafting your plan. Nothing you entered was stored. This attempt did not count against your daily limit, so please try again in a moment.';
 
-export const BETA_GLOBAL_DAILY_CAP = 50;
+/**
+ * Plans per day, globally. Deliberately NOT raised past this: at roughly
+ * $0.05 a plan (the Sonnet 5 drafter dominates), 40 a day is about $60 a
+ * month, which already sits above the account's $50 Anthropic limit. The
+ * cap is only useful while it is the constraint that binds FIRST, because
+ * it fails gracefully (DEMO_BUDGET_MESSAGE, resets at midnight UTC) whereas
+ * the account limit fails as raw API errors that do not reset until the
+ * month does. Raising this moves the failure to the worse one. Sizing it
+ * honestly against the account limit is owed before Beta is advertised.
+ */
+export const BETA_GLOBAL_DAILY_CAP = 40;
 export const BETA_IP_DAILY_CAP = 6;
 
 export const DEMO_BUDGET_MESSAGE =

@@ -95,7 +95,7 @@ const STAGE_ANNOUNCEMENTS: Record<BetaStage, string> = {
 };
 
 const CAP_NOTICE_DEFAULT =
-  'Beta caps itself at 50 plans a day so a portfolio demo can’t run away with the AI bill. Today’s budget is spent — it resets at midnight UTC. The form below stays open if you want to look around.';
+  'Beta caps itself at 40 plans a day so a portfolio demo can’t run away with the AI bill. Today’s budget is spent — it resets at midnight UTC. The form below stays open if you want to look around.';
 
 const HOURLY_THROTTLE_MESSAGE =
   'You’ve hit the hourly attempt limit — Beta allows 3 attempts per hour per visitor. Take a breather and try again in a little while.';
