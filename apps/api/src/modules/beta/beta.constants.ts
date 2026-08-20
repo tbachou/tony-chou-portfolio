@@ -103,16 +103,24 @@ export const FRIENDLY_ERROR_MESSAGE =
   'Something went wrong on our side while drafting your plan. Nothing you entered was stored. This attempt did not count against your daily limit, so please try again in a moment.';
 
 /**
- * Plans per day, globally. Deliberately NOT raised past this: at roughly
- * $0.05 a plan (the Sonnet 5 drafter dominates), 40 a day is about $60 a
- * month, which already sits above the account's $50 Anthropic limit. The
- * cap is only useful while it is the constraint that binds FIRST, because
- * it fails gracefully (DEMO_BUDGET_MESSAGE, resets at midnight UTC) whereas
- * the account limit fails as raw API errors that do not reset until the
- * month does. Raising this moves the failure to the worse one. Sizing it
- * honestly against the account limit is owed before Beta is advertised.
+ * Plans per day, globally.
+ *
+ * Sized so that THIS cap is the one that binds first, which is the only way
+ * it is worth having. At a measured ~$0.05 a plan (the Sonnet 5 drafter's
+ * ~2,500 output tokens dominate), 20 a day is about $30 a month, leaving
+ * room under the account's $50 monthly Anthropic limit for the interview
+ * simulator, the daily game, and development.
+ *
+ * The previous 40 was about $60 a month, ABOVE that limit, so the account
+ * would have run out first. The difference matters: this cap fails
+ * gracefully (DEMO_BUDGET_MESSAGE, the form stays browsable, resets at
+ * midnight UTC), while the account limit fails as raw API errors behind the
+ * generic friendly error and does not reset until the month does.
+ *
+ * Raising it is a spend decision, not a code one: raise the Anthropic
+ * account limit first, or this simply stops being the constraint again.
  */
-export const BETA_GLOBAL_DAILY_CAP = 40;
+export const BETA_GLOBAL_DAILY_CAP = 20;
 export const BETA_IP_DAILY_CAP = 6;
 
 export const DEMO_BUDGET_MESSAGE =
@@ -338,13 +346,20 @@ export const RATIONALE_MAX_LENGTH = 400;
  * This does not replace the screener's `off_topic` verdict, which stays as
  * the layer that understands language rather than matching strings.
  */
+/**
+ * Stored in the SINGULAR where a phrase has a plural, because the matcher
+ * below allows an optional trailing "s". "system prompt" therefore covers
+ * "system prompts", which `\b` anchoring alone missed: the boundary fails
+ * when the next character is a word character, so the plural walked past a
+ * rule written for exactly it.
+ */
 export const INJECTION_BLOCKLIST = [
-  'ignore your instructions',
+  'ignore your instruction',
   'ignore the above',
   'disregard your',
   'you are now',
   'system prompt',
-  'new instructions',
+  'new instruction',
   'act as',
 ] as const;
 
@@ -369,7 +384,11 @@ function escapeRegExp(text: string): string {
  * punctuation would need a different one.
  */
 const INJECTION_PATTERNS: readonly RegExp[] = INJECTION_BLOCKLIST.map(
-  (phrase) => new RegExp(`\\b${escapeRegExp(phrase)}\\b`),
+  // `s?` before the closing boundary, so a phrase stored in the singular
+  // also matches its plural. Without it "system prompts" slipped past the
+  // rule written for "system prompt": `\b` fails when the next character is
+  // a word character, so the plural was not a near miss, it was invisible.
+  (phrase) => new RegExp(`\\b${escapeRegExp(phrase)}s?\\b`),
 );
 
 /**
