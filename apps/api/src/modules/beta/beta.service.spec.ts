@@ -10,6 +10,7 @@ import {
   RED_FLAG_FALLBACK_MESSAGE,
   RED_FLAG_MESSAGES,
   REFUSAL_MESSAGE,
+  MANDATORY_REST_PAIN_CAUTION,
   SCREENER_MODEL,
 } from './beta.constants';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -408,6 +409,46 @@ describe('layer 1: parseDraftPlan explicit prohibitions (AC-G4)', () => {
         'Open-hand into half-crimp transition',
       );
       expect(() => parseDraftPlan(raw, input)).toThrow(/stage 1/i);
+    });
+  });
+
+  describe('the mandatory rest-pain caution is enforced, not just requested', () => {
+    const restPain = makeInput({ painBehavior: 'constant_even_at_rest' });
+
+    it('substitutes the caution when the drafter omits it entirely', () => {
+      // drafter.md:27 calls it MANDATORY for this pain behavior. The schema's
+      // `required` only ASKS the model; this asserts the api guarantees it.
+      // Substituting rather than throwing is deliberate: a throw would put
+      // exactly the visitor this caution protects on the no-plan path.
+      const plan = parseDraftPlan({ stages: [1, 2, 3, 4].map(makeStage) }, restPain);
+      expect(plan.overallCaution).toBe(MANDATORY_REST_PAIN_CAUTION);
+    });
+
+    it.each([['empty', ''], ['whitespace', '   ']])(
+      'substitutes when the drafter returns an %s caution',
+      (_label, bad) => {
+        const plan = parseDraftPlan(
+          { stages: [1, 2, 3, 4].map(makeStage), overallCaution: bad },
+          restPain,
+        );
+        expect(plan.overallCaution).toBe(MANDATORY_REST_PAIN_CAUTION);
+      },
+    );
+
+    it("keeps the drafter's own caution when it wrote one", () => {
+      const plan = parseDraftPlan(
+        { stages: [1, 2, 3, 4].map(makeStage), overallCaution: 'Stop if the ache sharpens.' },
+        restPain,
+      );
+      expect(plan.overallCaution).toBe('Stop if the ache sharpens.');
+    });
+
+    it('does NOT invent a caution for any other pain behavior', () => {
+      const plan = parseDraftPlan(
+        { stages: [1, 2, 3, 4].map(makeStage) },
+        makeInput({ painBehavior: 'warms_up_then_fine' }),
+      );
+      expect(plan.overallCaution).toBeUndefined();
     });
   });
 

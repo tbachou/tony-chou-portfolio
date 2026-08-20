@@ -14,6 +14,7 @@ import {
   EQUIPMENT_ACCESS,
   FRIENDLY_ERROR_MESSAGE,
   FULL_CRIMP_PATTERN,
+  MANDATORY_REST_PAIN_CAUTION,
   RATIONALE_MAX_LENGTH,
   RED_FLAG_CATEGORIES,
   RED_FLAG_FALLBACK_MESSAGE,
@@ -724,11 +725,25 @@ export function parseDraftPlan(
 
   assertExplicitProhibitions(stages, input);
 
+  const drafted =
+    typeof candidate?.overallCaution === 'string'
+      ? candidate.overallCaution.trim()
+      : '';
+
+  // drafter.md:27 calls overallCaution MANDATORY for constant_even_at_rest.
+  // The schema's `required` is a request to the model, not a guarantee, so
+  // enforce it here. SUBSTITUTE rather than throw: a throw puts exactly the
+  // visitor this caution protects onto the hard-error path with no plan at
+  // all, which is the worse outcome. The guard's R8 still fires if it is
+  // missing, as defense in depth for any path that bypasses this.
+  const overallCaution =
+    drafted.length === 0 && input.painBehavior === 'constant_even_at_rest'
+      ? MANDATORY_REST_PAIN_CAUTION
+      : drafted;
+
   return {
     stages,
-    ...(typeof candidate?.overallCaution === 'string' && {
-      overallCaution: candidate.overallCaution,
-    }),
+    ...(overallCaution.length > 0 && { overallCaution }),
   };
 }
 

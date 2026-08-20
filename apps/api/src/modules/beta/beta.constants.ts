@@ -71,6 +71,21 @@ export const RED_FLAG_MESSAGES: Record<RedFlagCategory, string> = {
 // Constant pain at rest, weeks after onset or alongside swelling/weakness,
 // is one of the classic screening signs for something beyond a simple
 // strain. Escalated in code (clinical audit), not left to the drafter.
+/**
+ * Substituted into a plan when the drafter omits the caution `drafter.md:27`
+ * calls MANDATORY for `constant_even_at_rest`. Transcribes that line's own
+ * wording ("pain at rest which does not improve within a couple of weeks
+ * deserves a professional assessment").
+ *
+ * This is NOT the hard-block refusal — CONSTANT_REST_PAIN_MESSAGE below is
+ * what a visitor sees when the escalation fires and no plan is drafted at
+ * all. This one is woven into a plan that IS being delivered, for the
+ * visitor who sits under the hard block's thresholds and still reported
+ * pain at rest.
+ */
+export const MANDATORY_REST_PAIN_CAUTION =
+  'Pain at rest that does not improve within a couple of weeks deserves a professional assessment.';
+
 export const CONSTANT_REST_PAIN_MESSAGE =
   'Pain that stays constant even at rest — this long after the injury, or together with swelling or weakness — can point beyond a simple strain, and that is worth ruling out properly. Please see a physician or physical therapist before starting any loading program. Once they have cleared it, a staged return to climbing is a great goal.';
 
