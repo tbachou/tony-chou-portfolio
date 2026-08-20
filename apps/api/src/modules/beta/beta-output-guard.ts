@@ -801,8 +801,13 @@ export function evaluateCoachOutput(
  */
 export function renderPlanFallback(plan: DraftPlan): string {
   const parts: string[] = [
-    // Deliberately avoids "work through it": that is an R1 blocklist phrase,
-    // and the fallback must never trip the guard it exists to satisfy.
+    // Phrased to keep well clear of R1: the fallback must never trip the
+    // guard it exists to satisfy. "work through it" is no longer an R1 phrase
+    // — R1 requires a push-past verb AND a pain object, and that bare
+    // substring was dropped for firing on "work through it one stage at a
+    // time" — so this wording is not forced any more. It is kept because it
+    // reads well and because the constraint it was chosen under still holds
+    // in spirit: no push-past-pain framing anywhere in substituted copy.
     'Here is your staged plan. Take it one stage at a time, and let the "move on when" points decide when you are ready for the next one.',
   ];
 
