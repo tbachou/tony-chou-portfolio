@@ -657,18 +657,42 @@ export function evaluateCoachOutput(
   }
 
   // R8: the caution drafter.md calls MANDATORY for this pain behavior must
-  // survive into the closing ("a MANDATORY `overallCaution` (never omit it
-  // for this pain behavior)"; coach.md's closing carries "the drafted
-  // `overallCaution` if present"). Checks the caution's distinctive terms,
-  // not an exact string, because the coach is supposed to rephrase.
-  if (input.painBehavior === 'constant_even_at_rest' && plan.overallCaution) {
-    const terms = cautionKeyTerms(plan.overallCaution);
+  // exist and must survive into the closing ("a MANDATORY `overallCaution`
+  // (never omit it for this pain behavior)"; coach.md's closing carries "the
+  // drafted `overallCaution` if present").
+  //
+  // The rule used to be written `painBehavior === '...' && plan.overallCaution`,
+  // which made it fail OPEN on the one case it exists for: a drafter that
+  // omitted the caution entirely could not trip it. Nothing else caught that
+  // — the JSON schema's `required` is a request to the model, not a
+  // guarantee, and `parseDraftPlan` validates every other field but not this
+  // one — so a visitor with constant rest pain could receive a confident
+  // staged plan with no caution anywhere, in any mode. The presence check is
+  // now its own branch.
+  if (input.painBehavior === 'constant_even_at_rest') {
+    const caution = plan.overallCaution?.trim() ?? '';
+    if (caution.length === 0) {
+      // `source: 'plan'`, not 'coach': the fallback's closing is conditional
+      // on the same field, so substituting it would ship a plan with no
+      // caution either. Failing closed is the only honest answer here until
+      // the drafter side substitutes a fixed caution (see parseDraftPlan).
+      return {
+        ok: false,
+        reason: 'R8 mandatory caution absent from the drafted plan',
+        source: 'plan',
+      };
+    }
+    // Checks the caution's distinctive terms, not an exact string, because
+    // the coach is supposed to rephrase.
+    const terms = cautionKeyTerms(caution);
     if (terms.length > 0) {
       const closing = normalizeForMatch(sections.closing.join(' '));
       const carried = terms.filter((term) =>
         closing.includes(term.slice(0, CAUTION_TERM_PREFIX)),
       );
       if (carried.length / terms.length < CAUTION_TERM_THRESHOLD) {
+        // `source: 'coach'`: the plan HAS the caution, so re-rendering it
+        // deterministically puts the caution back. The fallback repairs this.
         return {
           ok: false,
           reason: 'R8 mandatory caution not carried into the closing',

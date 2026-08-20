@@ -651,6 +651,58 @@ describe('R8 mandatory caution carried into the closing', () => {
     );
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.reason).toMatch(/^R8/);
+    // The plan HAS the caution, so re-rendering it puts the caution back:
+    // this is the failure the fallback exists to repair.
+    expect(result.ok === false && result.source).toBe('coach');
+  });
+
+  // The bug: R8 used to read `painBehavior === '...' && plan.overallCaution`,
+  // so a drafter that omitted the caution could not trip the rule that exists
+  // for exactly that omission. The visitor it protects — constant pain at
+  // rest, too recent for the code hard block — got a confident staged plan
+  // with no caution anywhere, in any mode.
+  it('CATCHES an overallCaution the drafter never produced', () => {
+    const planWithout: DraftPlan = { ...PULLEY_PLAN };
+    delete planWithout.overallCaution;
+    const result = evaluateCoachOutput(
+      coachOutput(planWithout, { closing: 'Keep going steadily.' }),
+      planWithout,
+      restPainInput,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R8/);
+    // Not repairable by the fallback: its closing is conditional on the same
+    // missing field, so substituting it would ship a plan with no caution.
+    expect(result.ok === false && result.source).toBe('plan');
+  });
+
+  it.each(['', '   ', '\n'])(
+    'CATCHES an empty overallCaution (%j), which is an omission by another name',
+    (overallCaution) => {
+      const emptied: DraftPlan = { ...PULLEY_PLAN, overallCaution };
+      const result = evaluateCoachOutput(
+        coachOutput(emptied, { closing: 'Keep going steadily.' }),
+        emptied,
+        restPainInput,
+      );
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason).toMatch(/^R8/);
+      expect(result.ok === false && result.source).toBe('plan');
+    },
+  );
+
+  it('does NOT fire on a missing caution for any other pain behavior', () => {
+    // drafter.md only calls it MANDATORY for constant_even_at_rest; making it
+    // mandatory everywhere would encode a rule the skill file does not state.
+    const planWithout: DraftPlan = { ...PULLEY_PLAN };
+    delete planWithout.overallCaution;
+    expect(
+      evaluateCoachOutput(
+        coachOutput(planWithout, { closing: 'Keep going steadily.' }),
+        planWithout,
+        PULLEY_INPUT,
+      ),
+    ).toEqual({ ok: true });
   });
 
   it('does NOT catch a rephrasing, which the coach is supposed to do', () => {
