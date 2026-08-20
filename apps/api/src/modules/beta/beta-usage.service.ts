@@ -152,11 +152,22 @@ export class BetaUsageService {
   }
 
   /**
-   * Counts one output-guard firing on the coach's text (spec 0005
-   * guardrails child). NOT a refund reason: the visitor still receives a
-   * complete plan rendered from the validated drafter object, so the
-   * request succeeded and planCount increments as normal. Counts in shadow
-   * mode too — measuring the firing rate is the point of shadow.
+   * Counts one output-guard firing (spec 0005 guardrails child). Counts in
+   * shadow mode too — measuring the firing rate is the point of shadow.
+   *
+   * Whether the request also refunds depends on WHERE the violation was,
+   * so this counter alone does not tell you:
+   *   - `source: 'coach'` — only the prose broke a rule. The fallback
+   *     renders a complete plan from the validated drafter object, the
+   *     request succeeded, and planCount increments as normal. No refund.
+   *   - `source: 'plan'` — the drafter's own free text broke a rule. The
+   *     fallback would re-ship that same text verbatim, so the request
+   *     takes the hard-error path instead: slot refunded, errorCount
+   *     incremented, planCount untouched.
+   *
+   * So one request can increment BOTH guardBlockCount and errorCount. That
+   * is intended, not double counting: the firing and the failure are
+   * separate facts and shadow-mode analysis needs them apart.
    */
   recordGuardBlock(): Promise<void> {
     return this.safeIncrement('guardBlockCount');
