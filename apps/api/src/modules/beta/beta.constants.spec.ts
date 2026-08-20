@@ -6,6 +6,7 @@ import {
   INJECTION_BLOCKLIST,
   RED_FLAG_MESSAGES,
   REFUSAL_MESSAGE,
+  namePrescribesCrimping,
   normalizeForMatch,
 } from './beta.constants';
 
@@ -34,6 +35,41 @@ describe('normalizeForMatch', () => {
     // ...but the broader stage-1 pattern deliberately does catch it,
     // transcribing "No crimping of any kind".
     expect(normalizeForMatch('Half-crimp holds')).toContain(ANY_CRIMP_PATTERN);
+  });
+});
+
+describe('namePrescribesCrimping', () => {
+  const check = (name: string) => namePrescribesCrimping(normalizeForMatch(name));
+
+  it.each([
+    'Crimp repeaters',
+    'Half-crimp isometric holds',
+    'Full-crimp hangs',
+    'Crimping on small edges',
+    'Open-hand into half-crimp transition',
+  ])('is true for %j, which programs crimping', (name) => {
+    expect(check(name)).toBe(true);
+  });
+
+  it.each([
+    'Open-hand tendon glides (no crimping)',
+    'Non-crimp finger extensions',
+    'Rice bucket work — avoid crimping',
+    'Tendon glides, no crimping of any kind',
+    'Putty squeezes without crimping',
+    'Finger extensions, not crimped',
+    'Open-hand hangs (never crimp)',
+    'Wrist curls, avoids crimping',
+    'Noncrimp putty work',
+    'Open-hand putty squeezes',
+  ])('is false for %j, which rules crimping out', (name) => {
+    expect(check(name)).toBe(false);
+  });
+
+  it('is not blinded by a negation earlier in the same name', () => {
+    expect(check('Open-hand glides (no crimping), then half-crimp holds')).toBe(
+      true,
+    );
   });
 });
 

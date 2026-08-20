@@ -364,6 +364,51 @@ describe('layer 1: parseDraftPlan explicit prohibitions (AC-G4)', () => {
       const { raw, input } = planWithExercise(0, 'Open-hand putty squeezes');
       expect(() => parseDraftPlan(raw, input)).not.toThrow();
     });
+
+    // drafter.md line 38 is both the rule this check transcribes AND the text
+    // the drafter reads, so a defensively-named stage 1 exercise is the
+    // drafter OBEYING the prohibition. It must not cost the visitor a plan.
+    it.each([
+      'Open-hand tendon glides (no crimping)',
+      'Non-crimp finger extensions',
+      'Rice bucket work — avoid crimping',
+      'Tendon glides, no crimping of any kind',
+      'Putty squeezes without crimping',
+      'Finger extensions, not crimped',
+      'Open-hand hangs (never crimp)',
+      'Wrist curls, avoids crimping',
+    ])('ACCEPTS the defensively-named stage 1 exercise %j', (name) => {
+      const { raw, input } = planWithExercise(0, name);
+      expect(() => parseDraftPlan(raw, input)).not.toThrow();
+    });
+
+    it.each([
+      ['half crimp holds', 'Half-crimp isometric holds'],
+      ['a bare crimp instruction', 'Crimp repeaters on the hangboard'],
+      ['crimping among other work', 'Tendon glides then light crimping'],
+      ['full crimp', 'Full-crimp hangs'],
+    ])('still rejects %s in stage 1', (_label, name) => {
+      const { raw, input } = planWithExercise(0, name);
+      expect(() => parseDraftPlan(raw, input)).toThrow();
+    });
+
+    it('still rejects an affirmative crimp that follows a negated one', () => {
+      // Stripping the negation must not blind the check to the rest of the
+      // name — this one really does program crimping in stage 1.
+      const { raw, input } = planWithExercise(
+        0,
+        'Open-hand glides (no crimping), then half-crimp holds',
+      );
+      expect(() => parseDraftPlan(raw, input)).toThrow(/stage 1/i);
+    });
+
+    it('does not exempt open-hand names that go on to program crimping', () => {
+      const { raw, input } = planWithExercise(
+        0,
+        'Open-hand into half-crimp transition',
+      );
+      expect(() => parseDraftPlan(raw, input)).toThrow(/stage 1/i);
+    });
   });
 
   describe('timeWindow is checked for presence only, never for ordering', () => {

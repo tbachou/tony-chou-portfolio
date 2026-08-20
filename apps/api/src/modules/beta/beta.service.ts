@@ -6,7 +6,6 @@ import { loadBetaSkill } from './skill-loader';
 import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
 import {
   AGENT_CALL_TIMEOUT_MS,
-  ANY_CRIMP_PATTERN,
   COACH_MODEL,
   CONSTANT_REST_PAIN_MESSAGE,
   DEMO_BUDGET_MESSAGE,
@@ -22,6 +21,7 @@ import {
   RED_FLAG_MESSAGES,
   REFUSAL_MESSAGE,
   SCREENER_MODEL,
+  namePrescribesCrimping,
   normalizeForMatch,
   type RedFlagCategory,
 } from './beta.constants';
@@ -645,7 +645,10 @@ function assertExplicitProhibitions(
         // Narrowed to stage 1 deliberately: mapping the skill file's three
         // phases (early/middle/later) onto four or five stages would be a
         // judgement, so only the part that transcribes cleanly is enforced.
-        if (index === 0 && name.includes(ANY_CRIMP_PATTERN)) {
+        // Negated mentions do not count: drafter.md primes the model with
+        // this exact prohibition, so "…(no crimping)" is the drafter obeying
+        // it, not violating it. See `namePrescribesCrimping`.
+        if (index === 0 && namePrescribesCrimping(name)) {
           throw new Error(
             'Drafter named a crimping exercise in stage 1 of a finger_pulley plan',
           );
