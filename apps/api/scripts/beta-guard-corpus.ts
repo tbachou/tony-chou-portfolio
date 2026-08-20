@@ -43,7 +43,66 @@ import { BetaService } from '../src/modules/beta/beta.service';
 import { AnthropicService } from '../src/modules/anthropic/anthropic.service';
 import type { PrismaService } from '../src/modules/prisma/prisma.service';
 import type { BetaUsageService } from '../src/modules/beta/beta-usage.service';
+import { DRAFTER_MODEL } from '../src/modules/beta/beta.constants';
+import type {
+  AiProvider,
+  ForceToolCallParams,
+  ForceToolCallResult,
+  StreamMessageParams,
+  StreamMessageResult,
+  UpstreamErrorClassification,
+} from '../src/modules/anthropic/ai-provider.interface';
 import { CORPUS, type CorpusProfile } from './beta-guard-corpus.profiles';
+
+/**
+ * Wraps the real provider so the screener and drafter can be recorded once
+ * and replayed, while the coach still hits the live model every time.
+ *
+ * Rule calibration samples COACH variance — R8 compares the coach's paraphrase
+ * against the drafter's caution, R2 catches full crimp the coach introduced —
+ * but a full profile spends most of its tokens on the drafter (Sonnet 5,
+ * ~2.5k output) to produce a plan that could simply be held fixed. Replaying
+ * it drops a sampling run from roughly $0.048 to $0.008.
+ *
+ * It wraps the provider rather than reimplementing the calls, so the coach's
+ * prompt, the guard call site and the section splitting are all still the
+ * production ones. Reimplementing would drift: `buildVisitorProfile` is
+ * module-private to beta.service.ts and could not be reused.
+ */
+type ProviderCache = { screener?: ForceToolCallResult; drafter?: ForceToolCallResult };
+
+class CachingProvider implements AiProvider {
+  constructor(
+    private readonly real: AiProvider,
+    private readonly cache: ProviderCache,
+    private readonly mode: 'live' | 'record' | 'replay',
+  ) {}
+
+  /** The drafter's raw tool input from the most recent call — the plan object. */
+  lastDrafterInput: unknown = null;
+
+  async forceToolCall(params: ForceToolCallParams): Promise<ForceToolCallResult> {
+    const role = params.model === DRAFTER_MODEL ? 'drafter' : 'screener';
+    const cached = this.cache[role];
+    if (this.mode === 'replay' && cached) {
+      if (role === 'drafter') this.lastDrafterInput = cached.input;
+      return cached;
+    }
+    const result = await this.real.forceToolCall(params);
+    if (role === 'drafter') this.lastDrafterInput = result.input;
+    if (this.mode === 'record') this.cache[role] = result;
+    return result;
+  }
+
+  /** Always live: the coach is the output under test. */
+  streamMessage(params: StreamMessageParams): Promise<StreamMessageResult> {
+    return this.real.streamMessage(params);
+  }
+
+  classifyUpstreamError(error: unknown): UpstreamErrorClassification | null {
+    return this.real.classifyUpstreamError(error);
+  }
+}
 
 type GuardFiring = {
   guard: string;
@@ -85,6 +144,10 @@ type ProfileResult = {
   calls: AgentCall[];
   planChars: number;
   planText?: string;
+  /** The drafter's plan object, so an R8 firing names its own cause. */
+  draftedPlan?: unknown;
+  /** Pulled out of the plan: the field R8's presence and carry checks read. */
+  overallCaution?: string | null;
 };
 
 /**
@@ -166,7 +229,10 @@ async function runProfile(
   service: BetaService,
   profile: CorpusProfile,
   dumpText: boolean,
+  provider: CachingProvider,
+  label = profile.id,
 ): Promise<ProfileResult> {
+  provider.lastDrafterInput = null;
   const lines: { level: string; message: string }[] = [];
   let planText = '';
   // Held on an object: the assignments below happen inside a callback, and
@@ -210,8 +276,12 @@ async function runProfile(
     state.terminatedBy = failure ? 'pipeline_error' : 'refusal';
   }
 
+  const drafted = provider.lastDrafterInput as
+    | { overallCaution?: string }
+    | null;
+
   return {
-    id: profile.id,
+    id: label,
     tags: profile.tags,
     reachedGuard: state.terminatedBy === 'plan',
     terminatedBy: state.terminatedBy,
@@ -220,6 +290,9 @@ async function runProfile(
     planChars: planText.length,
     ...(failure ? { pipelineError: failure.message } : {}),
     ...(dumpText ? { planText } : {}),
+    ...(drafted
+      ? { draftedPlan: drafted, overallCaution: drafted.overallCaution ?? null }
+      : {}),
   };
 }
 
@@ -257,10 +330,31 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const recordPath = arg('record');
+  const replayPath = arg('replay');
+  const repeat = Math.max(1, Number(arg('repeat') ?? 1));
+  if (recordPath && replayPath) {
+    console.error('❌ --record and --replay are mutually exclusive');
+    process.exit(1);
+  }
+  const cache: ProviderCache = replayPath
+    ? (JSON.parse(fs.readFileSync(replayPath, 'utf8')) as ProviderCache)
+    : {};
+  const providerMode = recordPath ? 'record' : replayPath ? 'replay' : 'live';
+  if (providerMode === 'replay' && !cache.drafter) {
+    console.error(`❌ ${replayPath} holds no drafter result to replay`);
+    process.exit(1);
+  }
+
   installLogCapture();
+  const provider = new CachingProvider(
+    new AnthropicService(),
+    cache,
+    providerMode,
+  );
   const service = new BetaService(
     prismaStub,
-    new AnthropicService(),
+    provider as unknown as AnthropicService,
     usageStub,
   );
 
@@ -269,13 +363,20 @@ async function main(): Promise<void> {
   );
 
   const results: ProfileResult[] = [];
-  const queue = [...profiles];
+  const queue: { profile: CorpusProfile; label: string }[] = profiles.flatMap(
+    (profile) =>
+      Array.from({ length: repeat }, (_, i) => ({
+        profile,
+        label: repeat > 1 ? `${profile.id}#${i + 1}` : profile.id,
+      })),
+  );
   const workers = Array.from({ length: concurrency }, async () => {
     for (;;) {
-      const profile = queue.shift();
-      if (!profile) return;
+      const item = queue.shift();
+      if (!item) return;
+      const { profile, label } = item;
       try {
-        const result = await runProfile(service, profile, dumpText);
+        const result = await runProfile(service, profile, dumpText, provider, label);
         results.push(result);
         const mark = !result.reachedGuard
           ? '·'
@@ -291,9 +392,9 @@ async function main(): Promise<void> {
             (result.pipelineError ? `  ${result.pipelineError}` : ''),
         );
       } catch (error) {
-        console.log(`💥 ${profile.id} threw: ${String(error)}`);
+        console.log(`💥 ${label} threw: ${String(error)}`);
         results.push({
-          id: profile.id,
+          id: label,
           tags: profile.tags,
           reachedGuard: false,
           terminatedBy: 'error',
@@ -353,6 +454,12 @@ async function main(): Promise<void> {
       : 'no successful coach calls',
   );
 
+  if (recordPath) {
+    fs.mkdirSync(path.dirname(recordPath), { recursive: true });
+    fs.writeFileSync(recordPath, `${JSON.stringify(cache, null, 2)}\n`);
+    console.log(`\nRecorded screener + drafter to ${recordPath}`);
+  }
+
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(
     outPath,
@@ -367,10 +474,11 @@ async function main(): Promise<void> {
   // A --limit/--only run cannot reach 30 by construction, so reporting it as
   // "AC-G9 not satisfied" would read as a corpus failure rather than a partial
   // run. Only a full run gets to render a verdict on the AC.
-  const partial = profiles.length < CORPUS.length;
+  const partial = profiles.length < CORPUS.length || repeat > 1 || providerMode === 'replay';
   if (partial) {
     console.log(
-      `\n◐ Partial run (${profiles.length}/${CORPUS.length}) — AC-G9 verdict not applicable.` +
+      `\n◐ Partial run (${profiles.length}/${CORPUS.length}${repeat > 1 ? ` x${repeat}` : ''}` +
+        `${providerMode === 'replay' ? ', replayed plan' : ''}) — AC-G9 verdict not applicable.` +
         (fired.length ? ' Firings above still need tuning.' : ' No firings in this slice.'),
     );
     process.exit(fired.length === 0 ? 0 : 1);
