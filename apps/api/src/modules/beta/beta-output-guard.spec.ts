@@ -358,6 +358,36 @@ describe('R2 full-crimp programming, scoped to prescription lines', () => {
     expect(evaluate(coachOutput(PULLEY_PLAN))).toEqual({ ok: true });
   });
 
+  // The three cases below all put the phrase where R2 does not look — a
+  // Climbing line, a closing paragraph — or use wording that never contains
+  // "full crimp" at all. None of them exercised a NEGATED full crimp inside a
+  // **Do this:** bullet, which is where a coach actually writes the
+  // prohibition, so the rule fired on safety-correct copy for as long as the
+  // suite was green. Found live in a shadow corpus run, not by these tests.
+  // Each variant is spliced into the EXISTING stage 4 bullet so the drafted
+  // dose survives untouched — inventing numbers here trips R3 instead and
+  // would test the wrong rule.
+  it.each([
+    'Open-hand hangs only, no full crimp',
+    'Avoid full crimping',
+    'Half-crimp holds, not full crimp',
+    'Never full crimp',
+  ])('does NOT catch the prohibition in a **Do this:** bullet: "%s"', (phrase) => {
+    const result = evaluate(
+      coachOutput(PULLEY_PLAN, {
+        mutateStage: (lines, index) =>
+          index === 3
+            ? lines.map((line) =>
+                line.startsWith('- Half-crimp holds')
+                  ? line.replace('- Half-crimp holds', `- ${phrase}`)
+                  : line,
+              )
+            : lines,
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
   it('does NOT catch "full crimp moves are the very last thing to return"', () => {
     const closing =
       'Full crimp moves are the very last thing to return, so stay patient with them.';

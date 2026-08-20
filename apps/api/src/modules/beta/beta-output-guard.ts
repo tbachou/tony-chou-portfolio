@@ -13,7 +13,7 @@
  * valid. Each rule below names its source line.
  */
 
-import { FULL_CRIMP_PATTERN, normalizeForMatch } from './beta.constants';
+import { namePrescribesFullCrimp, normalizeForMatch } from './beta.constants';
 
 // ---------------------------------------------------------------------------
 // The plan shape the drafter produces, and how code (never the model) turns
@@ -626,10 +626,19 @@ export function evaluateCoachOutput(
   // would assert something the skill file does not say. Layer 1 already
   // rejects a drafter plan naming full crimp, so a hit here means the COACH
   // introduced it — which is the only thing this rule is left to catch.
+  //
+  // Uses `namePrescribesFullCrimp`, the same negation-aware matcher layer 1
+  // applies to exercise names, NOT a bare `includes(FULL_CRIMP_PATTERN)`.
+  // A prescription bullet is exactly where a coach writes the prohibition
+  // defensively — "Open-hand hangs only, no full crimp until stage 3",
+  // "Half-crimp holds, not full crimp" — and a bare substring match fires on
+  // all of them. That was a live false positive: found firing in shadow on a
+  // corpus profile whose closing was clinically correct. The negation
+  // reasoning already written for layer 1 applies here for the same reason.
   if (input.injuryArea === 'finger_pulley') {
     for (const stage of sections.stages) {
       for (const bullet of prescriptionLines(stage.lines)) {
-        if (normalizeForMatch(bullet).includes(FULL_CRIMP_PATTERN)) {
+        if (namePrescribesFullCrimp(normalizeForMatch(bullet))) {
           return {
             ok: false,
             reason: 'R2 full-crimp programming in a prescription line',
