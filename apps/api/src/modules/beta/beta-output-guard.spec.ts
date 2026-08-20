@@ -906,6 +906,24 @@ describe('R8 mandatory caution carried into the closing', () => {
     ).toEqual({ ok: true });
   });
 
+  // The captured closings below were produced against a drafter caution
+  // anchored at THREE weeks from onset, not this describe block's shorter
+  // "couple of weeks" fixture. They get their own plan so the magnitude
+  // check compares them with the deadline they were actually written for.
+  const capturedCaution =
+    "Pain that stays constant even at rest and hasn't clearly improved by about three weeks from onset deserves a professional assessment (such as a hand therapist or sports medicine clinician) before continuing to load the finger.";
+  const planWithCapturedCaution: DraftPlan = {
+    ...PULLEY_PLAN,
+    overallCaution: capturedCaution,
+  };
+  function evaluateCaptured(closing: string) {
+    return evaluateCoachOutput(
+      coachOutput(planWithCapturedCaution, { closing }),
+      planWithCapturedCaution,
+      restPainInput,
+    );
+  }
+
   // Real coach closings, captured from live shadow runs on the AC-G9 corpus.
   // The first FIRED under the previous key-term overlap rule while carrying
   // every clinical element, which is what sent that rule to be replaced; the
@@ -929,7 +947,41 @@ describe('R8 mandatory caution carried into the closing', () => {
       'This is a steady return. Most climbers find that the first three weeks are the hardest — just letting it settle — and then the steps back to the wall feel quick. If pain stays constant through week three or gets worse instead of better, a hand therapist or sports medicine doctor can give you a clearer picture and get you back faster.',
     ],
   ])('does NOT catch a real coach closing that %s', (_label, closing) => {
-    expect(evaluateRestPain(closing)).toEqual({ ok: true });
+    expect(evaluateCaptured(closing)).toEqual({ ok: true });
+  });
+
+  // A clinical audit found these: each satisfies all three CONCEPT patterns
+  // (the caution's topics are present) while destroying its meaning. The
+  // concepts alone passed every one of them.
+  it.each([
+    [
+      'inverts the instruction into reassurance',
+      'Early on your pain was constant at rest, and that is common and nothing to worry about. Most climbers feel fully back to normal by month six, so there is no need to slow down. If you are ever curious, any doctor can take a quick look sometime.',
+    ],
+    [
+      'stretches the deadline to months',
+      'Give it a few months, and if the constant rest pain is still there, a physio can take a look.',
+    ],
+    [
+      'moves a three week checkpoint to six months',
+      'If your rest pain has not eased after six months, see a sports medicine doctor.',
+    ],
+  ])('CATCHES a closing that %s', (_label, closing) => {
+    const result = evaluateCaptured(closing);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/^R8/);
+    expect(result.ok === false && result.source).toBe('coach');
+  });
+
+  it('does NOT catch a closing that TIGHTENS the deadline', () => {
+    // Safer than drafted is faithful. A ratio based fidelity floor failed
+    // this one (4 carried terms of a verbose 17 term caution); a count does
+    // not, which is why the floor is a count.
+    expect(
+      evaluateCaptured(
+        'If your rest pain has not clearly improved within two weeks, see a hand therapist.',
+      ),
+    ).toEqual({ ok: true });
   });
 
   it.each([
