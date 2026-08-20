@@ -136,9 +136,74 @@ export const AGENT_CALL_TIMEOUT_MS = 60_000;
  * to spaces, whitespace collapsed. Shared by every layer 1 and layer 2 check
  * so "full-crimp", "Full Crimp" and "full  crimp" all match one pattern.
  */
+/**
+ * Contractions expanded before matching, so a blocklist can be written in
+ * plain English and still catch the way a model actually writes.
+ *
+ * The recovery-promise list says "you will be back"; the coach, instructed to
+ * write warmly, writes "you'll be back to V5 climbing soon" — and the rule
+ * that exists for exactly that sentence never saw it. Warm English uses
+ * contractions, so the rules were catching the stiff phrasing and missing the
+ * natural one.
+ *
+ * A fixed list, deliberately never a generic `'s -> is` rule, which would
+ * mangle every possessive ("the climber's finger" is not "the climber is
+ * finger"). Anything not listed here is left exactly as written.
+ */
+const CONTRACTIONS: Readonly<Record<string, string>> = {
+  "you'll": 'you will',
+  "you're": 'you are',
+  "you've": 'you have',
+  "you'd": 'you would',
+  "we'll": 'we will',
+  "we're": 'we are',
+  "we've": 'we have',
+  "we'd": 'we would',
+  "they'll": 'they will',
+  "they're": 'they are',
+  "they've": 'they have',
+  "i'll": 'i will',
+  "i'm": 'i am',
+  "i've": 'i have',
+  "it'll": 'it will',
+  "it's": 'it is',
+  "that's": 'that is',
+  "there's": 'there is',
+  "here's": 'here is',
+  "what's": 'what is',
+  "let's": 'let us',
+  "don't": 'do not',
+  "doesn't": 'does not',
+  "didn't": 'did not',
+  "won't": 'will not',
+  "can't": 'cannot',
+  "couldn't": 'could not',
+  "shouldn't": 'should not',
+  "wouldn't": 'would not',
+  "isn't": 'is not',
+  "aren't": 'are not',
+  "wasn't": 'was not',
+  "weren't": 'were not',
+  "hasn't": 'has not',
+  "haven't": 'have not',
+  "hadn't": 'had not',
+};
+
+const CONTRACTION_PATTERN = new RegExp(
+  `\\b(?:${Object.keys(CONTRACTIONS)
+    .map((c) => c.replace("'", "'"))
+    .join('|')})\\b`,
+  'g',
+);
+
 export function normalizeForMatch(text: string): string {
   return text
     .toLowerCase()
+    // Curly and modifier apostrophes folded onto the straight one FIRST. A
+    // model that emits "you\u2019ll" would otherwise slip past the expansion
+    // below and silently defeat every rule that depends on it.
+    .replace(/[\u2018\u2019\u02BC\u02B9]/g, "'")
+    .replace(CONTRACTION_PATTERN, (match) => CONTRACTIONS[match] ?? match)
     .replace(/[-_]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
