@@ -29,6 +29,9 @@ resource "aws_ce_cost_category" "model_spend" {
 
   rule {
     value = "bedrock-models"
+    # AWS defaults this to REGULAR and returns it, so state it or terraform
+    # plans a no-op change forever.
+    type = "REGULAR"
 
     rule {
       dimension {
