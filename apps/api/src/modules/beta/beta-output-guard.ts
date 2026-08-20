@@ -132,7 +132,24 @@ export function toCoachPlan(plan: DraftPlan): CoachPlan {
 // safety language ("No crimping of any kind").
 // ---------------------------------------------------------------------------
 
-export type GuardResult = { ok: true } | { ok: false; reason: string };
+/**
+ * Where a failure lives, and therefore whether `renderPlanFallback` can
+ * repair it.
+ *
+ * `coach` — the drafted plan is clean and only the coach's prose broke a
+ * rule. Re-rendering the plan deterministically fixes it, which is what the
+ * fallback is for.
+ *
+ * `plan` — the drafter's OWN free text broke a content rule. The fallback
+ * renders those fields verbatim, so substituting it would re-ship the exact
+ * text that tripped the guard, only without the coach's hedging. A `plan`
+ * failure means the plan must not ship at all.
+ */
+export type GuardFailureSource = 'coach' | 'plan';
+
+export type GuardResult =
+  | { ok: true }
+  | { ok: false; reason: string; source: GuardFailureSource };
 
 const STAGE_HEADING = /^##\s+Stage\s+(\d+)\s*:/i;
 
@@ -421,6 +438,85 @@ function cautionKeyTerms(caution: string): string[] {
   );
 }
 
+/**
+ * The four content rules that are about WHAT is said rather than about the
+ * shape of the coach's document, so they apply to any prose a visitor could
+ * end up reading — the coach's or the drafter's.
+ */
+const CONTENT_BLOCKLISTS = [
+  ['R1 contraindicated pain phrasing', CONTRAINDICATED_PAIN_PHRASES],
+  ['R5 medication naming', MEDICATION_NAMES],
+  ['R6 diagnosis asserted as fact', DIAGNOSIS_PHRASES],
+  ['R7 recovery promised as fact', RECOVERY_PROMISE_PHRASES],
+] as const;
+
+function matchContentBlocklists(
+  text: string,
+  source: GuardFailureSource,
+): GuardResult {
+  const normalized = normalizeForMatch(text);
+  for (const [rule, phrases] of CONTENT_BLOCKLISTS) {
+    for (const phrase of phrases) {
+      if (normalized.includes(phrase)) {
+        return { ok: false, reason: `${rule}: "${phrase}"`, source };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Every drafter-authored string that `renderPlanFallback` renders verbatim.
+ *
+ * That list is the definition, not a convenience: the fallback is the exact
+ * mechanism by which drafter text reaches a visitor unmediated, so anything
+ * it prints is content the content rules must have seen. `rationale` and
+ * `equipmentUsed` are excluded because neither is ever rendered or sent to
+ * the coach — checking them would add false-positive risk with no reachable
+ * text behind it.
+ */
+function planFreeText(plan: DraftPlan): string[] {
+  const fields: string[] = [];
+  for (const stage of plan.stages) {
+    fields.push(stage.title, stage.timeWindow, stage.allowedClimbing);
+    fields.push(...stage.advanceWhen);
+    for (const exercise of stage.exercises) {
+      fields.push(exercise.name);
+      if (exercise.notes !== undefined) fields.push(exercise.notes);
+    }
+  }
+  if (plan.overallCaution !== undefined) fields.push(plan.overallCaution);
+  return fields;
+}
+
+/**
+ * R1 / R5 / R6 / R7 over the DRAFTER's own free text.
+ *
+ * This closes the hole the spec's key invariant names: "The guard fallback is
+ * only safe because the drafter side checks run first. Any rule that protects
+ * the plan's content must sit on the drafter's output, never only on the
+ * coach's." Before this ran, a drafter emitting `notes: "take ibuprofen if it
+ * flares up"` produced a coach bullet that R5 caught, and then `enforce` mode
+ * substituted `renderPlanFallback`, which printed the same sentence verbatim
+ * and without the coach's hedging. The counter incremented, no error
+ * surfaced, and the visitor read the medication advice anyway — enforce being
+ * strictly worse than shadow.
+ *
+ * Its failures carry `source: 'plan'` so the caller knows the fallback cannot
+ * repair them and the plan must not ship.
+ *
+ * R2 (full crimp) is NOT repeated here: layer 1's `assertExplicitProhibitions`
+ * already rejects a drafter plan naming full crimp, on the hard-error path,
+ * before the coach ever runs.
+ */
+export function evaluatePlanContent(plan: DraftPlan): GuardResult {
+  for (const field of planFreeText(plan)) {
+    const verdict = matchContentBlocklists(field, 'plan');
+    if (!verdict.ok) return verdict;
+  }
+  return { ok: true };
+}
+
 /** The parts of a request the guard needs; a DTO satisfies it structurally. */
 export type GuardInput = { injuryArea: string; painBehavior: string };
 
@@ -431,30 +527,27 @@ export type GuardInput = { injuryArea: string; painBehavior: string };
  * `reason` names the rule and, where a blocklist matched, the blocklist phrase
  * — which is one of our own constants, never visitor or model text. Nothing
  * here returns matched output to a caller that logs it.
+ *
+ * The plan's own free text is evaluated FIRST, and its failures are marked
+ * `source: 'plan'`: a caller in `enforce` mode must not answer those with
+ * `renderPlanFallback`, which would print the offending text again.
  */
 export function evaluateCoachOutput(
   text: string,
   plan: DraftPlan,
   input: GuardInput,
 ): GuardResult {
-  const normalized = normalizeForMatch(text);
   const sections = splitCoachSections(text);
   const coachPlan = toCoachPlan(plan);
 
-  // R1 / R5 / R6 / R7: blocklists over the whole document.
-  const blocklists = [
-    ['R1 contraindicated pain phrasing', CONTRAINDICATED_PAIN_PHRASES],
-    ['R5 medication naming', MEDICATION_NAMES],
-    ['R6 diagnosis asserted as fact', DIAGNOSIS_PHRASES],
-    ['R7 recovery promised as fact', RECOVERY_PROMISE_PHRASES],
-  ] as const;
-  for (const [rule, phrases] of blocklists) {
-    for (const phrase of phrases) {
-      if (normalized.includes(phrase)) {
-        return { ok: false, reason: `${rule}: "${phrase}"` };
-      }
-    }
-  }
+  // R1 / R5 / R6 / R7 over the drafter's own strings, before anything the
+  // coach wrote. A violation here is not something the fallback can fix.
+  const planContent = evaluatePlanContent(plan);
+  if (!planContent.ok) return planContent;
+
+  // R1 / R5 / R6 / R7 over the coach's whole document.
+  const coachContent = matchContentBlocklists(text, 'coach');
+  if (!coachContent.ok) return coachContent;
 
   // R2: full-crimp programming, scoped to `**Do this:**` bullets. Scoped to
   // finger_pulley as well, because "Never program full-crimp training" lives
@@ -469,6 +562,7 @@ export function evaluateCoachOutput(
           return {
             ok: false,
             reason: 'R2 full-crimp programming in a prescription line',
+            source: 'coach',
           };
         }
       }
@@ -483,6 +577,7 @@ export function evaluateCoachOutput(
     return {
       ok: false,
       reason: `R4 stage count: ${sections.stages.length} headings for ${coachPlan.stages.length} stages`,
+      source: 'coach',
     };
   }
   for (let i = 0; i < sections.stages.length; i += 1) {
@@ -491,12 +586,17 @@ export function evaluateCoachOutput(
       return {
         ok: false,
         reason: `R4 stage order: heading ${section.number ?? 'unnumbered'} at position ${i + 1}`,
+        source: 'coach',
       };
     }
     const body = section.lines.join('\n');
     for (const label of COACH_LABELS) {
       if (!body.includes(label)) {
-        return { ok: false, reason: `R4 missing ${label} in stage ${i + 1}` };
+        return {
+          ok: false,
+          reason: `R4 missing ${label} in stage ${i + 1}`,
+          source: 'coach',
+        };
       }
     }
     const bullets = prescriptionLines(section.lines);
@@ -505,6 +605,7 @@ export function evaluateCoachOutput(
       return {
         ok: false,
         reason: `R4 exercise count: ${bullets.length} bullets for ${expected} exercises in stage ${i + 1}`,
+        source: 'coach',
       };
     }
   }
@@ -549,6 +650,7 @@ export function evaluateCoachOutput(
         return {
           ok: false,
           reason: `R3 numeric fidelity: stage ${i + 1} carries a number the drafter did not`,
+          source: 'coach',
         };
       }
     }
@@ -570,6 +672,7 @@ export function evaluateCoachOutput(
         return {
           ok: false,
           reason: 'R8 mandatory caution not carried into the closing',
+          source: 'coach',
         };
       }
     }
@@ -584,10 +687,17 @@ export function evaluateCoachOutput(
 
 /**
  * Renders the plan deterministically when the guard rejects the coach's
- * prose. Only safe because layer 1's checks ran on the drafter's output
- * first: the plan object was schema-constrained and validated, so the
- * fallback ships content that already passed every prohibition. Only the
+ * prose. Only safe because the drafter's own output was checked first: the
+ * plan object was schema-constrained, validated by `parseDraftPlan`, and its
+ * free text was run through the content rules by `evaluatePlanContent`, so
+ * the fallback ships content that already passed every prohibition. Only the
  * warmth is lost.
+ *
+ * That is a precondition, not a property of this function. It renders
+ * `notes`, `overallCaution`, `allowedClimbing`, `advanceWhen`, `title` and
+ * `timeWindow` VERBATIM, so calling it to answer a `source: 'plan'` failure
+ * would re-ship the exact text that tripped the guard. Callers must only
+ * reach it for `source: 'coach'`.
  *
  * It manufactures no clinical content. The only sentences not drawn from the
  * plan object are connective, and the closing's referral line transcribes

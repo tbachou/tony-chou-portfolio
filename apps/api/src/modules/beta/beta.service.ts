@@ -307,6 +307,11 @@ export class BetaService {
       let text = result.text;
       const verdict = evaluateCoachOutput(result.text, plan, input);
       if (!verdict.ok) {
+        // A `plan`-source failure is in the DRAFTER's own free text, which
+        // the fallback renders verbatim — substituting it would re-ship the
+        // exact text that tripped the guard, without even the coach's
+        // hedging. The only honest answer is to ship nothing.
+        const fallbackRepairs = verdict.source === 'coach';
         // Log-safe by construction: `reason` is built only from literals,
         // our own rule constants, and integer counts. It can never carry
         // visitor or model text (Beta writes anonymous counters only).
@@ -315,11 +320,22 @@ export class BetaService {
             guard: 'beta-output',
             mode,
             rule: verdict.reason,
-            outcome: mode === 'enforce' ? 'substituted' : 'observed',
+            source: verdict.source,
+            outcome:
+              mode !== 'enforce'
+                ? 'observed'
+                : fallbackRepairs
+                  ? 'substituted'
+                  : 'rejected',
           }),
         );
         await this.usage.recordGuardBlock();
         if (mode === 'enforce') {
+          if (!fallbackRepairs) {
+            // Hard-error path: no plan, rather than a plan carrying the
+            // content a rule just rejected.
+            throw new Error('Beta output guard rejected the drafted plan');
+          }
           // Discard the coach's prose and render the plan deterministically
           // from the validated drafter object. The visitor still gets a
           // complete plan, no spend is wasted, and the request counts as the
