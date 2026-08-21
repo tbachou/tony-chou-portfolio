@@ -281,7 +281,12 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
               disabled={phase === 'submitting'}
               aria-describedby={describedBy}
               aria-invalid={validationError ? true : undefined}
-              className="beta-textarea mt-3 beta-measure"
+              // Full width of the card: a textarea is something you TYPE
+              // into, not prose you read, so a reading measure does not
+              // apply and a control stopping short of its own card looks
+              // unfinished. The category select keeps its own narrow cap,
+              // being a short list rather than free text.
+              className="beta-textarea mt-3"
               placeholder="What's on your mind?"
             />
             <p

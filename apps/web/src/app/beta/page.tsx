@@ -193,7 +193,14 @@ export default function BetaPage() {
         <section className="border-t border-[color:var(--beta-border)]">
           <div className="mx-auto w-full max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
             <h2 className="text-[length:var(--beta-text-2xl)]">Safety FAQ</h2>
-            <div className="mt-8 beta-measure-wide space-y-3">
+            {/*
+              Not capped. These are CARDS, and a measure belongs on text, not
+              on a box: capping here left bordered accordions stopping 125px
+              short of every other card on the page. The answer paragraph
+              inside carries its own `beta-measure`, which is the thing that
+              actually needs a readable line length.
+            */}
+            <div className="mt-8 space-y-3">
               {FAQ_ITEMS.map((item) => (
                 <details key={item.question} className="beta-faq">
                   <summary>{item.question}</summary>
@@ -218,7 +225,13 @@ export default function BetaPage() {
               it is not monitored for urgent problems — if something is getting worse, contact a
               doctor or emergency services.
             </p>
-            <div className="mt-8 max-w-xl">
+            {/*
+              Not capped. The form is a bordered card, and it was stopping
+              221px short of every other card on the page while sharing their
+              left edge. A measure belongs on text; the controls inside size
+              themselves.
+            */}
+            <div className="mt-8">
               <FeedbackForm source="beta" variant="beta" />
             </div>
           </div>
