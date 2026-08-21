@@ -22,3 +22,10 @@ output "ses_owner_identity_arn" {
   description = "ARN of the SES v2 email identity (owner_email) the classifier Lambda sends from and to. Must be verified manually (see README) before SES will deliver — SES stays in sandbox mode by design."
   value       = aws_sesv2_email_identity.owner.arn
 }
+
+# 0006-grade-guesser-daily-game adds the photo bucket name below.
+
+output "grade_photo_bucket" {
+  description = "Name of the private Grade Guesser photo bucket. Set as the api's GRADE_PHOTO_BUCKET Render env var (spec 0006); nothing wires this automatically."
+  value       = aws_s3_bucket.grade_photos.bucket
+}
