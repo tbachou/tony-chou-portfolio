@@ -36,13 +36,31 @@ const allPresent = () => true;
 
 describe('grade photo manifest (AC-9)', () => {
   describe('the checked-in manifest', () => {
-    it('passes every manifest rule against the real image directory', () => {
-      expect(validatePhotoManifest(realManifest, realFileExists)).toEqual([]);
+    // The pool is deliberately EMPTY while the game is unreleased.
+    //
+    // The two seed placeholders were removed from apps/web/public/grade/ on
+    // 2026-08-21. GRADE_GAME_ENABLED gates the route and the api module, but
+    // it does not gate static assets: everything under the web app's public
+    // directory is served at the site root on every deploy. A placeholder no
+    // visitor can reach through the game is still a file the whole internet
+    // can fetch, and the same would be true of any borrowed photo dropped in
+    // for local testing.
+    //
+    // Real photos land here when the pool is sourced (spec 0006 follow-up).
+    it('names no image the repo does not contain', () => {
+      // The consistency guarantee AC-9 exists for. An empty manifest against
+      // an empty directory satisfies it; a dangling filename never does.
+      const problems = validatePhotoManifest(realManifest, realFileExists);
+      expect(problems.filter((p) => p.includes('missing'))).toEqual([]);
     });
 
-    it('ships at least the two seed entries the build plan calls for', () => {
-      expect(Array.isArray(realManifest)).toBe(true);
-      expect((realManifest as GradePhoto[]).length).toBeGreaterThanOrEqual(2);
+    it('is empty, and reports that as its own problem', () => {
+      // Reported separately from the file check so that shipping a release
+      // with no pool cannot pass silently once the route is turned on.
+      expect(realManifest).toEqual([]);
+      expect(validatePhotoManifest(realManifest, realFileExists)).toContain(
+        'manifest is empty; the game has no pool to draw from',
+      );
     });
   });
 
@@ -163,7 +181,13 @@ describe('the daily cycle (AC-1)', () => {
     expect(photoForDate(new Date(), [])).toBeNull();
   });
 
-  it('selects a real photo from the checked-in manifest today', () => {
-    expect(photoForDate(new Date())).not.toBeNull();
+  it('returns null from the checked-in manifest while the pool is empty', () => {
+    // Not a regression, and deliberately kept rather than deleted: the pool
+    // was emptied when the seed placeholders were removed (see the AC-9 block
+    // above). GradeService turns this null into the 503 the spec specifies
+    // for "no photos in manifest", and the module is not registered at all
+    // while GRADE_GAME_ENABLED is off. Flip this back to `not.toBeNull()`
+    // when real photos land — a failure here then means the wiring broke.
+    expect(photoForDate(new Date())).toBeNull();
   });
 });
