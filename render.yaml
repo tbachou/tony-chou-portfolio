@@ -50,6 +50,16 @@ services:
       # passes. Time to first plan text is the same as it was at 'off'.
       - key: BETA_OUTPUT_GUARD_MODE
         value: 'enforce'
+      # Grade Guesser (spec 0006) is built only to build-plan step 4: no share
+      # button, no home page teaser, and the photo pool is two placeholders.
+      # Disabled means GradeModule is NOT REGISTERED, so /grade/* has no
+      # handler, no DTO and no database access to reach, rather than existing
+      # and refusing. The web route 404s on the same variable.
+      # Release is flipping this to 'true' here AND setting GRADE_GAME_ENABLED
+      # in Vercel; absence means off on both sides, so it cannot go live by
+      # forgetting to set something.
+      - key: GRADE_GAME_ENABLED
+        value: 'false'
       - key: TURN_PAIR_CAP
         value: '5'
       - key: DAILY_TURN_CAP
