@@ -1,10 +1,15 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PhotoStorageService } from '../grade-photos/photo-storage.service';
 import { GradeAnalysisService } from './grade-analysis.service';
 import {
   GRADE_SLOTS,
   gradeGameEnabled,
-  photoObjectUrl,
   type GradeConfidence,
 } from './grade.constants';
 import {
@@ -64,6 +69,9 @@ type GradeDayRow = {
 const NO_PHOTOS_MESSAGE =
   'The daily problem is not available right now. Please try again later.';
 
+const STALE_DATE_MESSAGE =
+  "The day rolled over while you were looking. Today's problem has been reloaded.";
+
 @Injectable()
 export class GradeService {
   private readonly logger = new Logger(GradeService.name);
@@ -82,6 +90,7 @@ export class GradeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly analysis: GradeAnalysisService,
+    private readonly storage: PhotoStorageService,
   ) {}
 
   /**
@@ -96,7 +105,7 @@ export class GradeService {
 
     return {
       date,
-      imageUrl: photoObjectUrl(photo.objectKey),
+      imageUrl: await this.storage.presignGet(photo.objectKey),
       ...(photo.note ? { note: photo.note } : {}),
       poolSize: eligible.length,
     };
@@ -112,9 +121,21 @@ export class GradeService {
    */
   async submitGuess(
     guess: number,
+    shownDate: string,
     now: Date = new Date(),
   ): Promise<GradeReveal> {
     const date = utcDateKey(now);
+
+    // AC-19. The guess carries the UTC date the visitor was actually shown, and
+    // a mismatch is refused rather than quietly regraded. Without this, someone
+    // who opens the page at 23:55 and guesses at 00:02 is scored against
+    // tomorrow's problem, which they never saw — their guess would look wrong
+    // for no reason they could observe, and it would land in the wrong day's
+    // histogram. Refusing costs them one reload; regrading costs them the game.
+    if (shownDate !== date) {
+      throw new ConflictException(STALE_DATE_MESSAGE);
+    }
+
     const { photo: candidate } = await this.resolveDayPhoto(date, now);
 
     await this.ensureDayRow(date, candidate.id);
@@ -228,7 +249,7 @@ export class GradeService {
 
     return this.analysis.ensureAnalysis({
       date: row.date,
-      imageUrl: photoObjectUrl(photo.objectKey),
+      imageUrl: await this.storage.presignGet(photo.objectKey),
     });
   }
 

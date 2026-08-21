@@ -49,6 +49,6 @@ export class GradeController {
     long: { limit: 40, ttl: 3_600_000 },
   })
   async guess(@Body() body: GradeGuessRequestDto): Promise<GradeReveal> {
-    return this.gradeService.submitGuess(body.guess);
+    return this.gradeService.submitGuess(body.guess, body.date);
   }
 }

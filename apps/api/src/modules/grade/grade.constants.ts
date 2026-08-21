@@ -1,8 +1,3 @@
-import {
-  resolvePhotoBucket,
-  resolvePhotoRegion,
-} from '../grade-photos/photo-storage.service';
-
 /** The V scale, as far as this game goes. Both bounds are inclusive. */
 export const GRADE_MIN = 0;
 export const GRADE_MAX = 8;
@@ -44,17 +39,3 @@ export function gradeGameEnabled(): boolean {
   return process.env.GRADE_GAME_ENABLED === 'true';
 }
 
-/**
- * Where an object lives, as a URL.
- *
- * UNSIGNED, and therefore not yet usable by a browser: the bucket blocks all
- * public access, so this address returns 403 until R4 signs it. That is the
- * intended state between R2 and R4 rather than an oversight — the shape and
- * the location are already right, and R4 adds the signature and the one hour
- * lifetime (AC-14). Nothing reaches this code path in the meantime: the pool
- * is empty until R3 builds the upload, and the module is not registered while
- * GRADE_GAME_ENABLED is false.
- */
-export function photoObjectUrl(objectKey: string): string {
-  return `https://${resolvePhotoBucket()}.s3.${resolvePhotoRegion()}.amazonaws.com/${objectKey}`;
-}

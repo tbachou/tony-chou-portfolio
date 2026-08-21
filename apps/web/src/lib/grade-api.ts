@@ -24,6 +24,7 @@ export function formatGrade(grade: number): string {
  */
 export type GradeToday = {
   date: string;
+  /** Presigned and good for one hour; a page left open overnight needs a reload. */
   imageUrl: string;
   note?: string;
   poolSize: number;
@@ -91,15 +92,19 @@ export async function fetchToday(): Promise<GradeToday> {
 }
 
 /**
- * Submit a guess and get the reveal. The request body is a single integer —
- * the feature has no free-text field anywhere, and nothing identifying the
- * visitor is ever sent (AC-6, AC-7).
+ * Submit a guess and get the reveal.
+ *
+ * The body is one integer and the UTC date the page was showing — no free-text
+ * field anywhere, and nothing identifying the visitor is ever sent (AC-6,
+ * AC-7). `date` is echoed straight back from fetchToday so the server can
+ * refuse a guess made after the day rolled over, rather than silently scoring
+ * it against a problem the visitor never saw (AC-19).
  */
-export async function submitGuess(guess: number): Promise<GradeReveal> {
+export async function submitGuess(guess: number, date: string): Promise<GradeReveal> {
   const res = await fetch(`${API_URL}/grade/guess`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ guess })
+    body: JSON.stringify({ guess, date })
   });
 
   if (!res.ok) {
