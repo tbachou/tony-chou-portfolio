@@ -237,29 +237,28 @@ resource "aws_cloudwatch_metric_alarm" "feedback_classifier_errors" {
 # them. This budget notifies; reserved_concurrent_executions above is what
 # actually limits the rate.
 #
-# The Service cost filter must match Cost Explorer's own service name EXACTLY
-# or the budget silently tracks $0 forever, which is worse than no budget.
+# This budget filters on the ModelSpend cost category (cost-category.tf)
+# rather than on service names, and that choice is load bearing.
 #
-# It did exactly that until 2026-08-20. The filter said "Amazon Bedrock";
-# Cost Explorer bills model usage under a name PER MODEL, in this account
-# "Claude Haiku 4.5 (Amazon Bedrock Edition)". The budget read $0.00 while
-# real invocations were being charged.
+# It filtered by name until 2026-08-21 and was wrong the entire time. Cost
+# Explorer bills model usage PER MODEL through AWS Marketplace, so a by-name
+# filter has to enumerate names nobody can predict before they appear on a
+# bill. First it said "Amazon Bedrock" and read $0.00 against real charges.
+# Then it listed "Claude Haiku 4.5 (Amazon Bedrock Edition)" and read $0.003
+# while five models had actually billed $0.0289 that month. Both failures
+# looked identical from the console: a healthy budget, comfortably under.
 #
-# This list is therefore fragile by construction: a model this account has
-# not billed yet has a service name nobody can predict, and adding one (the
-# interview simulator moving to Sonnet on Bedrock, say) silently escapes the
-# budget again. Tag based filtering is NOT an alternative, checked the same
-# day: Bedrock model spend carries no resource tags at all, so it groups
-# under an empty `project` value.
+# Tag based filtering is NOT an alternative, checked 2026-08-20: Bedrock model
+# spend carries no resource tags at all, so it groups under an empty `project`
+# value even with the cost allocation tag active.
 #
-# The durable fix is a Cost Category matching every Bedrock service name by
-# pattern, with the budget filtering on that category instead. Recorded as a
-# follow-up rather than built here, because it needs its own verification
-# against real billing data.
+# Whatever this filter becomes, the check never changes: after any change,
+# confirm the budget reports NON-ZERO against known spend. HealthStatus
+# HEALTHY only means the filter is well formed — it is never evidence that it
+# matches anything.
 #
-# To re-check the names this account actually bills under:
-#   aws ce get-dimension-values --dimension SERVICE \
-#     --time-period Start=<month-start>,End=<today> --region us-east-1
+#   aws budgets describe-budget --account-id <id> \
+#     --budget-name portfolio-bedrock-monthly
 
 resource "aws_budgets_budget" "bedrock_monthly" {
   name         = "portfolio-bedrock-monthly"
@@ -268,15 +267,18 @@ resource "aws_budgets_budget" "bedrock_monthly" {
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
-  cost_filter {
-    name = "Service"
-    values = [
-      # The per-model name this account is actually billed under today.
-      "Claude Haiku 4.5 (Amazon Bedrock Edition)",
-      # Kept in case AWS ever bills under the plain service name too; a value
-      # matching nothing costs nothing.
-      "Amazon Bedrock",
-    ]
+  # Required alongside filter_expression, and matches what the budget uses.
+  metrics = ["UnblendedCost"]
+
+  # The account's default billing view. Stated explicitly because AWS sets it
+  # on the budget, and leaving it out has terraform clear the field.
+  billing_view_arn = "arn:aws:billing::635474720027:billingview/primary"
+
+  filter_expression {
+    cost_categories {
+      key    = "ModelSpend"
+      values = ["bedrock-models"]
+    }
   }
 
   notification {
