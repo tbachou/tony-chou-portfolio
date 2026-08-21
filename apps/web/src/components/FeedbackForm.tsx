@@ -236,7 +236,7 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
       {phase === 'success' ? (
         <div role="status" className="beta-card p-6 sm:p-8">
           <h3 className="text-[length:var(--beta-text-lg)]">Thank you</h3>
-          <p className="mt-2 max-w-[65ch]">Your feedback has been sent.</p>
+          <p className="mt-2 beta-measure">Your feedback has been sent.</p>
           <button type="button" onClick={resetToIdle} className="beta-btn beta-btn-secondary mt-5">
             Send more feedback
           </button>
@@ -281,7 +281,7 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
               disabled={phase === 'submitting'}
               aria-describedby={describedBy}
               aria-invalid={validationError ? true : undefined}
-              className="beta-textarea mt-3 max-w-[40rem]"
+              className="beta-textarea mt-3 beta-measure"
               placeholder="What's on your mind?"
             />
             <p
@@ -294,7 +294,7 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
               <p
                 id={validationId}
                 role="alert"
-                className="mt-1.5 max-w-[65ch] text-[color:var(--beta-error)]"
+                className="mt-1.5 beta-measure text-[color:var(--beta-error)]"
               >
                 {validationError}
               </p>
@@ -302,7 +302,7 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
           </div>
 
           {phase === 'error' && errorMessage && (
-            <p role="alert" className="mt-4 max-w-[65ch] text-[color:var(--beta-error)]">
+            <p role="alert" className="mt-4 beta-measure text-[color:var(--beta-error)]">
               {errorMessage}
             </p>
           )}

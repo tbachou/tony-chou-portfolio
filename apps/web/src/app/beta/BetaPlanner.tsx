@@ -178,6 +178,7 @@ export function BetaPlanner() {
 
   // Pipeline / result state (AC-4, AC-2, AC-8).
   const [phase, setPhase] = useState<Phase>('idle');
+  const [planCopied, setPlanCopied] = useState(false);
   const [stage, setStage] = useState<BetaStage | null>(null);
   const [planText, setPlanText] = useState('');
   const [redFlagMessage, setRedFlagMessage] = useState<string | null>(null);
@@ -321,6 +322,24 @@ export function BetaPlanner() {
 
   function toggleInList<T>(list: T[], value: T): T[] {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+  }
+
+  /**
+   * Copies the plan the visitor is looking at. Entirely client side: the text
+   * is already rendered, so nothing is requested and nothing is sent. The
+   * confirmation reverts on a timer rather than sticking, so the button never
+   * reads "Copied" against a plan that has since been replaced.
+   */
+  async function copyPlan() {
+    try {
+      await navigator.clipboard.writeText(planText);
+      setPlanCopied(true);
+      window.setTimeout(() => setPlanCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused (permissions, insecure context). The
+      // plan is still on screen and selectable, so this does not warrant an
+      // error state; leaving the label unchanged says "nothing happened".
+    }
   }
 
   function resetResult() {
@@ -492,14 +511,14 @@ export function BetaPlanner() {
       {capNotice && (
         <div className="beta-card beta-card--accent-edge mb-6 p-5 sm:p-6">
           <h3 className="text-[length:var(--beta-text-lg)]">Today’s demo budget is used up</h3>
-          <p className="mt-2 max-w-[65ch]">{capNotice}</p>
+          <p className="mt-2 beta-measure">{capNotice}</p>
         </div>
       )}
 
       {!acknowledged ? (
         <div className="beta-card p-6 sm:p-8">
           <h3 className="text-[length:var(--beta-text-xl)]">Before you start</h3>
-          <div className="mt-4 max-w-[65ch] space-y-3">
+          <div className="mt-4 beta-measure space-y-3">
             <p>
               Beta drafts <strong className="font-semibold text-[color:var(--beta-ink)]">educational</strong>{' '}
               return-to-climbing plans. It is not medical advice, a diagnosis, or physical
@@ -808,7 +827,7 @@ export function BetaPlanner() {
               </p>
               <textarea
                 id="beta-goals"
-                className="beta-textarea max-w-[40rem]"
+                className="beta-textarea beta-measure"
                 maxLength={200}
                 rows={3}
                 aria-describedby="beta-goals-hint beta-goals-counter"
@@ -885,7 +904,7 @@ export function BetaPlanner() {
               <button type="submit" className="beta-btn beta-btn-primary" disabled={submitBlocked}>
                 {formDisabled ? 'Drafting…' : 'Draft my plan'}
               </button>
-              <p className="beta-hint mt-3 max-w-[65ch]">
+              <p className="beta-hint mt-3 beta-measure">
                 Nothing you type into the planner is stored. The first request can take a few
                 extra seconds while the demo server wakes up.
               </p>
@@ -902,7 +921,14 @@ export function BetaPlanner() {
         aria-label="Plan results"
         className="beta-focus-target scroll-mt-24"
       >
-        {showPipeline && (
+        {/*
+          Hidden once the plan has arrived. Three chips all reading "complete"
+          sit directly above the thing the visitor came for and never change
+          again; the plan's own presence is the completion signal. While the
+          pipeline is still running they are the only feedback there is, so
+          they stay for exactly that long.
+        */}
+        {showPipeline && !planText && (
           <div className="mt-8">
             <h3 className="sr-only">Plan generation progress</h3>
             <ol className="flex flex-wrap items-center gap-2 p-0" aria-label="Pipeline stages">
@@ -939,8 +965,8 @@ export function BetaPlanner() {
             className="beta-card beta-card--error-edge beta-focus-target mt-6 p-6 sm:p-8"
           >
             <h3 className="text-[length:var(--beta-text-xl)]">Let’s pause here</h3>
-            <p className="mt-3 max-w-[65ch]">{redFlagMessage}</p>
-            <div className="mt-5 max-w-[65ch] rounded-lg bg-[color:var(--beta-surface-2)] p-4">
+            <p className="mt-3 beta-measure">{redFlagMessage}</p>
+            <div className="mt-5 beta-measure rounded-lg bg-[color:var(--beta-surface-2)] p-4">
               <p className="font-medium text-[color:var(--beta-ink)]">
                 This tool stops here on purpose.
               </p>
@@ -958,8 +984,48 @@ export function BetaPlanner() {
         )}
 
         {planText && (
-          <section aria-label="Your plan" className="mt-6">
-            <PlanDisplay text={planText} streaming={phase === 'running'} />
+          <section aria-labelledby="plan-heading" className="mt-8">
+            {/*
+              A VISIBLE heading, not just an aria-label. The label alone gave
+              screen readers a landmark name and sighted users nothing, so the
+              plan began with a muted disclaimer and no title. `aria-labelledby`
+              now points at the real heading, so both audiences get the same
+              structure instead of two different ones.
+            */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              {/*
+                h3, not h2: BetaPlanner renders inside a section whose own
+                heading is the page's h2, so h2 here would make the plan a
+                sibling of its container rather than a child. h3 puts it level
+                with "Before you start" and the other in-planner headings, and
+                the stage titles below it step down to h4.
+              */}
+              <h3 id="plan-heading" className="text-[length:var(--beta-text-xl)]">
+                Your plan
+              </h3>
+              {/*
+                Offered because the plan is worth keeping and the visitor has
+                nowhere to put it: nothing is stored server side, so closing
+                the tab loses it. Copying is entirely client side — the text is
+                already on screen, and no request is made.
+              */}
+              <button
+                type="button"
+                onClick={() => void copyPlan()}
+                disabled={phase === 'running'}
+                className="beta-btn beta-btn-secondary beta-btn-sm"
+              >
+                {planCopied ? 'Copied' : 'Copy plan'}
+              </button>
+            </div>
+            <div className="mt-5">
+              <PlanDisplay text={planText} streaming={phase === 'running'} />
+            </div>
+            {/* Announced politely so the copy result is not silent for a
+                screen reader; visually the button label already changed. */}
+            <p aria-live="polite" className="sr-only">
+              {planCopied ? 'Plan copied to the clipboard.' : ''}
+            </p>
           </section>
         )}
 
@@ -977,9 +1043,9 @@ export function BetaPlanner() {
             <h3 className="text-[length:var(--beta-text-xl)]">
               {errorKind === 'limit' ? 'You’ve hit the demo’s limit' : 'That didn’t work'}
             </h3>
-            <p className="mt-3 max-w-[65ch]">{errorMessage}</p>
+            <p className="mt-3 beta-measure">{errorMessage}</p>
             {planCutOff && (
-              <p className="mt-3 max-w-[65ch] font-medium text-[color:var(--beta-error)]">
+              <p className="mt-3 beta-measure font-medium text-[color:var(--beta-error)]">
                 The plan above was cut off before it finished — its later stages and safety
                 notes are missing. Please don’t follow a partial plan; draft a fresh one instead.
               </p>
@@ -995,11 +1061,11 @@ export function BetaPlanner() {
         {phase === 'done' && (
           <div className="beta-card mt-6 p-6 sm:p-8">
             <h3 className="text-[length:var(--beta-text-lg)]">A starting point, not a finish line</h3>
-            <p className="mt-3 max-w-[65ch]">
+            <p className="mt-3 beta-measure">
               This plan is drawn from common rehab patterns, not an assessment of you. Let pain set
               the pace: if a stage stirs things up, drop back a stage and give it another week.
             </p>
-            <div className="mt-4 max-w-[65ch] rounded-lg bg-[color:var(--beta-surface-2)] p-4">
+            <div className="mt-4 beta-measure rounded-lg bg-[color:var(--beta-surface-2)] p-4">
               <p className="font-medium text-[color:var(--beta-ink)]">
                 Stop the plan and see a professional if any of these show up:
               </p>
