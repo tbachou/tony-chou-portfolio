@@ -29,16 +29,22 @@ export type ForceToolCallParams = {
   system: string;
   userMessage: string;
   /**
-   * An image to put in front of `userMessage` in the same user turn, passed to
-   * the model as a URL source so no image bytes pass through the api (spec
+   * An image to put in front of `userMessage` in the same user turn (spec
    * 0006's vision call). Optional and additive: omitting it gives exactly the
    * text-only call every existing caller already makes.
    *
-   * URL sources are an Anthropic API feature. `BedrockAnthropicService`
-   * rejects this field rather than pretending to support it — see its
-   * forceToolCall.
+   * BYTES, not a URL. This replaced an `imageUrl` field in R5 for a reason
+   * worth keeping written down: Bedrock's Anthropic surface rejects URL image
+   * sources outright, so the URL form could never have worked in production —
+   * it would have failed on every attempt and degraded into a reveal with the
+   * model fields empty. Base64 bytes are the one form BOTH providers accept,
+   * so this seam now has a single shape rather than one provider quietly not
+   * supporting it.
+   *
+   * `mediaType` is the stored object's own content type, produced by the
+   * upload pipeline rather than claimed by a client.
    */
-  imageUrl?: string;
+  image?: { data: string; mediaType: string };
   maxTokens: number;
   toolName: string;
   toolDescription: string;

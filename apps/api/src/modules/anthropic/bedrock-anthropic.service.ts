@@ -73,17 +73,6 @@ export class BedrockAnthropicService implements AiProvider {
   async forceToolCall(
     params: ForceToolCallParams,
   ): Promise<ForceToolCallResult> {
-    // Bedrock's Anthropic surface takes image bytes, not URL sources. Rather
-    // than silently dropping the image and returning a confident answer about
-    // a photo it never saw, this fails loudly. The one caller that passes an
-    // image (spec 0006's Grade Guesser) treats a throw as a failed vision call
-    // and degrades gracefully, so this costs a null analysis, not an error page.
-    if (params.imageUrl) {
-      throw new Error(
-        'BedrockAnthropicService does not support URL image sources; set AI_PROVIDER=anthropic for vision calls',
-      );
-    }
-
     const message = await this.getClient().messages.create(
       {
         model: params.model,
@@ -95,7 +84,29 @@ export class BedrockAnthropicService implements AiProvider {
             cache_control: { type: 'ephemeral' },
           },
         ],
-        messages: [{ role: 'user', content: params.userMessage }],
+        messages: [
+          {
+            role: 'user',
+            // Identical to the direct API path. Bedrock's Anthropic surface
+            // takes base64 image bytes, which is why R5 moved this seam off
+            // URL sources: this provider used to refuse an image outright, so
+            // the vision call could never have run in production.
+            content: params.image
+              ? [
+                  {
+                    type: 'image' as const,
+                    source: {
+                      type: 'base64' as const,
+                      media_type: params.image
+                        .mediaType as Anthropic.Base64ImageSource['media_type'],
+                      data: params.image.data,
+                    },
+                  },
+                  { type: 'text' as const, text: params.userMessage },
+                ]
+              : params.userMessage,
+          },
+        ],
         tools: [
           {
             name: params.toolName,

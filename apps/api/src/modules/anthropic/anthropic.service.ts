@@ -97,14 +97,19 @@ export class AnthropicService implements AiProvider {
         messages: [
           {
             role: 'user',
-            content: params.imageUrl
+            content: params.image
               ? // Image first, then the instruction: the API's own guidance
                 // for single-image prompts, and the order the grader skill
                 // is written against.
                 [
                   {
                     type: 'image' as const,
-                    source: { type: 'url' as const, url: params.imageUrl },
+                    source: {
+                      type: 'base64' as const,
+                      media_type: params.image
+                        .mediaType as Anthropic.Base64ImageSource['media_type'],
+                      data: params.image.data,
+                    },
                   },
                   { type: 'text' as const, text: params.userMessage },
                 ]

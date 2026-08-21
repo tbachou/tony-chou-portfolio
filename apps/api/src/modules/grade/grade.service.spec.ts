@@ -108,6 +108,8 @@ let ensureAnalysis: jest.Mock;
 
 /** Records every object key the service asked to have signed. */
 let presignGet: jest.Mock;
+/** Records every object key the service read bytes from for the vision call. */
+let getBytes: jest.Mock;
 
 function makeService(prisma: PrismaService): GradeService {
   ensureAnalysis = jest.fn().mockResolvedValue(null);
@@ -116,10 +118,11 @@ function makeService(prisma: PrismaService): GradeService {
       `https://signed.example/${key}?X-Amz-Expires=3600&X-Amz-Signature=sig`,
     ),
   );
+  getBytes = jest.fn(() => Promise.resolve(Buffer.from('image-bytes')));
   return new GradeService(
     prisma,
     { ensureAnalysis } as unknown as GradeAnalysisService,
-    { presignGet } as unknown as PhotoStorageService,
+    { presignGet, getBytes } as unknown as PhotoStorageService,
   );
 }
 
@@ -515,14 +518,20 @@ describe('GradeService', () => {
       expect(reveal.modelDistance).toBeNull();
     });
 
-    it('asks for the day\'s vision call when the row has no analysis', async () => {
+    it('sends the day\'s image BYTES to the vision call, never a URL', async () => {
       const { prisma } = makePrisma();
 
       await makeService(prisma).submitGuess(4, TODAY, NOW);
 
+      // Bytes, not a URL (AC-15): read from the day's own object and base64
+      // encoded, which is the form both providers accept.
+      expect(getBytes).toHaveBeenCalledWith(PHOTO.objectKey);
       expect(ensureAnalysis).toHaveBeenCalledWith({
         date: '2026-08-20',
-        imageUrl: IMAGE_URL,
+        image: {
+          data: Buffer.from('image-bytes').toString('base64'),
+          mediaType: PHOTO.contentType,
+        },
       });
     });
 
