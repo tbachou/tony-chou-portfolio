@@ -32,6 +32,35 @@ services:
         sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5
+      # Which provider serves AI calls: 'anthropic' (direct API) or 'bedrock'
+      # (the same Claude models on Amazon Bedrock), spec 0005's provider swap.
+      #
+      # Declared here rather than left to the dashboard because a dashboard-only
+      # variable is invisible to this repo: nothing in the tree recorded that
+      # production runs on Bedrock, and the only way to find out was to read a
+      # ConversationService log line. That is the same silent-configuration
+      # shape that let the Bedrock budget read $0.00 against real charges.
+      #
+      # NOT inert: Bedrock's Anthropic surface rejects URL image sources, so
+      # any vision call must send image bytes. Grade Guesser is the only such
+      # caller and is disabled below.
+      - key: AI_PROVIDER
+        value: bedrock
+      # Required by the boot guard whenever AI_PROVIDER=bedrock — the factory
+      # fails startup if any is missing rather than failing at first request.
+      # Declared as sync: false so the repo records that they exist; the values
+      # are dashboard-only and never committed.
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      # Optional; falls back to DEFAULT_BEDROCK_MODEL_ID when unset. It IS set
+      # in the dashboard today — production log lines report the served model
+      # as us.anthropic.claude-sonnet-4-6, which is not the code default.
+      - key: BEDROCK_MODEL_ID
+        sync: false
       - key: IP_HASH_SALT
         sync: false
       # Beta's in-process output guard (spec 0005 guardrails child).
