@@ -3,7 +3,22 @@
 import { useId, useState } from 'react';
 import { signIn } from '@/lib/auth-client';
 
-export function LoginForm() {
+interface LoginFormProps {
+  /**
+   * The tool being signed into, as it reads in the prompt line and the blurb.
+   *
+   * Parameterised because this form is shared by every /internal page: left
+   * hardcoded, the photo pool page greeted you with the usage monitor's copy
+   * and told you it tracked conversation API spend.
+   */
+  tool?: string;
+  description?: string;
+}
+
+export function LoginForm({
+  tool = 'internal-usage-monitor',
+  description = 'This tool tracks live spend against the public conversation API. Sign in with the seeded admin account to continue.'
+}: LoginFormProps = {}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,15 +46,12 @@ export function LoginForm() {
     <div>
       <p className="text-term-sm text-term-muted">
         <span aria-hidden="true">$ </span>
-        internal-usage-monitor --auth
+        {tool} --auth
       </p>
       <h1 className="mt-2 text-term-xl font-bold text-term-ink terminal-glow">
         AUTHENTICATION REQUIRED
       </h1>
-      <p className="mt-2 text-term-sm text-term-body">
-        This tool tracks live spend against the public conversation API. Sign in with the
-        seeded admin account to continue.
-      </p>
+      <p className="mt-2 text-term-sm text-term-body">{description}</p>
 
       <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5" noValidate>
         <div className="flex flex-col gap-1.5">
