@@ -42,6 +42,18 @@ enum FeedbackCategory {
   other
 }
 
+// Where a Grade Guesser photo came from (spec 0006, AC-18). Required on every
+// row so provenance is data rather than memory: `unlicensed_test` marks an
+// image borrowed for testing, and the daily cycle refuses to serve one once
+// GRADE_GAME_ENABLED is true, so a borrowed photo cannot reach a released
+// game by being forgotten.
+enum GradePhotoSource {
+  own_photo
+  permission_given
+  licensed
+  unlicensed_test
+}
+
 model Story {
   id              String         @id @default(cuid())
   title           String
@@ -95,20 +107,20 @@ model DailyUsageCounter {
 // visitor content. Unrelated to the "beta access" wording on AccessRequest
 // below.
 model BetaDailyUsageCounter {
-  date              DateTime @id @db.Date
-  planCount         Int      @default(0)
-  tokenCount        Int      @default(0)
-  errorCount        Int      @default(0)
-  redFlagCount      Int      @default(0)
-  refusalCount      Int      @default(0)
-  throttledCount    Int      @default(0)
-  ipCappedCount     Int      @default(0)
-  globalCappedCount Int      @default(0)
+  date                DateTime @id @db.Date
+  planCount           Int      @default(0)
+  tokenCount          Int      @default(0)
+  errorCount          Int      @default(0)
+  redFlagCount        Int      @default(0)
+  refusalCount        Int      @default(0)
+  throttledCount      Int      @default(0)
+  ipCappedCount       Int      @default(0)
+  globalCappedCount   Int      @default(0)
   // Spec 0005 guardrails child. Neither is a refund reason: a guard failure
   // still delivers a complete plan (so planCount increments as normal), and
   // an injection block happens before a slot is reserved.
-  guardBlockCount   Int      @default(0)
-  injectionBlockCount Int    @default(0)
+  guardBlockCount     Int      @default(0)
+  injectionBlockCount Int      @default(0)
 }
 
 model BetaIpDailyCount {
@@ -143,11 +155,11 @@ model AccessRequest {
 // text lands here and, fire-and-forget, in one SNS publish — nowhere else
 // (inline rationale, spec 0005-feedback-intake).
 model Feedback {
-  id        String             @id @default(cuid())
-  createdAt DateTime           @default(now())
+  id        String            @id @default(cuid())
+  createdAt DateTime          @default(now())
   source    FeedbackSource
   category  FeedbackCategory?
-  message   String             @db.VarChar(2000)
+  message   String            @db.VarChar(2000)
   hashedIp  String
 
   @@index([hashedIp])
@@ -216,6 +228,36 @@ model Verification {
   @@map("verification")
 }
 
+// The Grade Guesser photo pool (spec 0006 R2). Api-side rather than a web
+// asset for the same reason the manifest it replaces was: the row carries
+// `trueGrade`, so the day's answer never reaches the client bundle (AC-2).
+//
+// The bytes live in a private S3 bucket under `objectKey`; nothing about the
+// image is served from the web app's public directory, so turning the
+// feature flag off genuinely hides the photos (AC-13). Object keys are
+// random rather than derived from the slug, which keeps gym circuit colour
+// words (a grade hint) out of the presigned URL a visitor sees (AC-2), and
+// means a rollback delete can only ever remove the object its own upload
+// just wrote (AC-9).
+//
+// Rows are deactivated, never deleted: `active` is what the daily cycle
+// filters on, and GradeDay's foreign key is onDelete: Restrict so the
+// database enforces it rather than a habit.
+model GradePhoto {
+  id          String           @id
+  objectKey   String           @unique
+  contentType String
+  trueGrade   Int
+  source      GradePhotoSource
+  sourceNote  String?
+  note        String?
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  days        GradeDay[]
+
+  @@index([active])
+}
+
 // Grade Guesser (the daily climbing-grade game, spec 0006). One row per UTC
 // day, created lazily by the day's first guess. Everything a visitor
 // contributes is an anonymous integer: guessCounts is a 9-slot histogram
@@ -225,21 +267,22 @@ model Verification {
 // Streaks and play history live only in the visitor's browser (AC-7).
 //
 // The model* columns cache the day's single vision call (AC-4): null until
-// it lands, filled once, never reset. `photoId` references an id in
-// apps/api/src/modules/grade/photos.json, which is a repo file rather than
-// a table so the true grades never reach the client bundle (AC-2);
-// photos.manifest.spec.ts keeps the two consistent (AC-9).
+// it lands, filled once, never reset. `photoId` is a real foreign key to
+// GradePhoto (spec 0006 R2, replacing the photos.json manifest it used to
+// name), and once this row exists that photo is what the date is graded
+// against forever, even if the photo is later deactivated (AC-20).
 model GradeDay {
-  date            String   @id
+  date            String     @id
   photoId         String
+  photo           GradePhoto @relation(fields: [photoId], references: [id], onDelete: Restrict)
   modelGrade      Int?
   modelConfidence String?
-  observations    String[] @default([])
+  observations    String[]   @default([])
   reasoning       String?
   model           String?
-  inputTokens     Int      @default(0)
-  outputTokens    Int      @default(0)
-  guessCounts     Int[]    @default([0, 0, 0, 0, 0, 0, 0, 0, 0])
-  plays           Int      @default(0)
-  createdAt       DateTime @default(now())
+  inputTokens     Int        @default(0)
+  outputTokens    Int        @default(0)
+  guessCounts     Int[]      @default([0, 0, 0, 0, 0, 0, 0, 0, 0])
+  plays           Int        @default(0)
+  createdAt       DateTime   @default(now())
 }
