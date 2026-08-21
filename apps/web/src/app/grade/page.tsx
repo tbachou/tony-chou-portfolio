@@ -1,8 +1,20 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { SkipLink } from '@/components/SkipLink';
 import { TerminalWindow } from '@/components/TerminalWindow';
 import { GradeGame } from './GradeGame';
+
+/**
+ * Hidden until release, matching the api's own flag. Read server side (no
+ * NEXT_PUBLIC_ prefix) so the value never ships to the browser, and absent
+ * means OFF so the page cannot appear by forgetting to set something.
+ *
+ * `notFound()` rather than a redirect or a "coming soon" panel: the route
+ * should be indistinguishable from one that does not exist, since the api
+ * behind it is not mounted either.
+ */
+const gradeGameEnabled = process.env.GRADE_GAME_ENABLED === 'true';
 
 const title = 'Grade Guesser — a daily climbing game';
 const description =
@@ -51,6 +63,8 @@ const HOW_IT_WORKS = [
 ];
 
 export default function GradePage() {
+  if (!gradeGameEnabled) notFound();
+
   return (
     <div className="min-h-dvh">
       <SkipLink label="[ skip to main content ]" />

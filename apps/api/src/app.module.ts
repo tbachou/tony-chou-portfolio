@@ -17,6 +17,19 @@ import { BetaModule } from './modules/beta/beta.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
 import { GradeModule } from './modules/grade/grade.module';
 
+/**
+ * Grade Guesser is behind a flag until it is released (spec 0006 is built
+ * only to build-plan step 4: no share button, no home teaser, placeholder
+ * photos). Disabled means the module is NOT REGISTERED, so `/grade/*` does
+ * not exist rather than existing and refusing: a route that 404s because it
+ * was never mounted has no handler, no DTO, and no database access to reach.
+ *
+ * Absence of the variable means OFF, so the feature cannot go live by
+ * forgetting to set something. Release is `GRADE_GAME_ENABLED=true` in the
+ * api's environment, no code change.
+ */
+const gradeGameEnabled = process.env.GRADE_GAME_ENABLED === 'true';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -40,7 +53,7 @@ import { GradeModule } from './modules/grade/grade.module';
     UsageSummaryModule,
     BetaModule,
     FeedbackModule,
-    GradeModule,
+    ...(gradeGameEnabled ? [GradeModule] : []),
   ],
   controllers: [AppController],
   providers: [
