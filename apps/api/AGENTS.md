@@ -2,11 +2,11 @@
 
 ## Overview
 
-Public no-auth API on Render (free tier) powering the portfolio's AI features: the interview simulator (`/conversation`) and Beta, the return-to-climbing planner (`/beta`), plus a better-auth-protected internal admin. Every AI feature follows the same shape: a module under `src/modules/<name>`, agent prompts as markdown skill files on disk, forced tool calls for structured output, SSE streaming to the client.
+Public no-auth API on Render (free tier) powering the portfolio's AI features: the interview simulator (`/conversation`), Beta the return-to-climbing planner (`/beta`), and Grade Guesser the daily climbing-grade game (`/grade`, behind `GRADE_GAME_ENABLED`), plus a better-auth-protected internal admin (`/internal/*`, including the Grade Guesser photo pool). Every AI feature follows the same shape: a module under `src/modules/<name>`, agent prompts as markdown skill files on disk, forced tool calls for structured output, SSE streaming to the client.
 
 ## Stack
 
-NestJS 11 (swc build) · Prisma 7 with driver adapter `@prisma/adapter-pg` (client generated into `src/generated/prisma`, gitignored territory — never edit or lint it) · Prisma Postgres (hosted) · `@anthropic-ai/sdk` · `@nestjs/throttler` · better-auth via `@thallesp/nestjs-better-auth` (global guard; public routes need `@AllowAnonymous()`) · Jest.
+NestJS 11 (swc build) · Prisma 7 with driver adapter `@prisma/adapter-pg` (client generated into `src/generated/prisma`, gitignored territory — never edit or lint it) · Prisma Postgres (hosted) · `@anthropic-ai/sdk` · `@nestjs/throttler` · better-auth via `@thallesp/nestjs-better-auth` (global guard; public routes need `@AllowAnonymous()`) · `@aws-sdk/client-s3` + `s3-request-presigner` and `sharp` (Grade Guesser photo storage; `sharp` ships platform-specific native binaries, so a clean install on Render's linux x64 is not implied by one working locally) · Jest.
 
 ## Commands
 
@@ -15,9 +15,14 @@ npm run start:dev --workspace=apps/api      # dev server :3001 (Node 22+!)
 npm test --workspace=apps/api               # Jest, colocated .spec.ts, all mocked
 cd apps/api && npx prisma generate          # regenerate client after schema edits
 
-# NEVER run `prisma migrate dev` against .env: DATABASE_URL is the SHARED
-# database, so it would create the migration by applying it to PRODUCTION.
-# ALWAYS generate migrations against a throwaway, never hand-write the SQL:
+# MIGRATIONS. `.env`'s DATABASE_URL points at a DEV database (since 2026-08-21);
+# production is migrated by Render's preDeployCommand on deploy, not from here.
+npx prisma migrate status                   # ALWAYS check which DB you are on first
+npx prisma migrate dev --name <change>      # generate against dev
+
+# NEVER hand-write migration SQL. It ships DDL that has never executed, and a
+# subtle mismatch passes `migrate deploy` silently, surfacing later as drift.
+# If you are not certain what .env points at, generate against a throwaway:
 docker run -d --name mig -e POSTGRES_PASSWORD=x -e POSTGRES_DB=dev \
   -p 55433:5432 postgres:16-alpine
 cd apps/api
@@ -38,7 +43,7 @@ docker rm -f mig; unset DATABASE_URL
 
 ## Gotchas
 
-- **Dev and prod share the same Prisma Postgres database.** Local pipeline runs consume production daily caps and counters. Check `BetaDailyUsageCounter` before assuming abuse. **This makes `prisma migrate dev` unsafe against `.env`**, so migrations are generated against a throwaway Postgres instead (see Commands). Hand-writing migration SQL is not the workaround and is not allowed: it ships DDL that has never executed, and a subtle mismatch passes `migrate deploy` silently and only surfaces later as drift. An exported `DATABASE_URL` is safe to rely on here, because `prisma.config.ts` uses `import "dotenv/config"` and dotenv does not override an already-set variable.
+- **Dev and prod are SEPARATE databases as of 2026-08-21** (they used to share one, and much older guidance assumes that). `.env`'s `DATABASE_URL` is a dev database; production is reached only by Render's `preDeployCommand: npx prisma migrate deploy`, which runs before the code swap so a failed migration aborts the deploy rather than half-applying. **Consequences of the split:** local runs no longer consume production daily caps or counters, and `prisma migrate dev` against `.env` is no longer a production hazard. **Still true regardless:** never hand-write migration SQL (see Commands), and run `prisma migrate status` before any migration so you know which database you are on. What is NOT yet decided is seeding and whether CI does anything with the dev database — that is an open `/architect` question. An exported `DATABASE_URL` reliably beats `.env`, because `prisma.config.ts` uses `import "dotenv/config"` and dotenv does not override an already-set variable.
 - **Rate-limit identity**: use `rateLimitIdentity()` (common/utils/ip-hash.util.ts) for any new per-IP feature — it collapses IPv6 to /64. `trust proxy = 1` assumes exactly Render's single proxy hop; adding a CDN in front breaks it (bump to 2). The same proxy-topology fact also lives in apps/api/src/lib/auth.ts as better-auth's `advanced.ipAddress.trustedProxies` — a CDN change must update BOTH (bump trust proxy to 2 AND add the CDN's egress ranges to trustedProxies) or better-auth silently collapses visitors into one rate bucket.
 - **Beta module invariants (spec 0004, audited)**: checked red-flag symptoms block in code before any model call; the global cap is an atomic reserve/refund (`reserveGlobalSlot`); planCount increments on success only; the outcome/abuse tally columns (errorCount, redFlagCount, refusalCount, throttledCount, ipCappedCount, globalCappedCount) increment on their respective non-success events; no visitor content is ever written or logged. Do not weaken these.
 - The in-memory throttle resets on every deploy; the persisted daily caps are the real limits.
