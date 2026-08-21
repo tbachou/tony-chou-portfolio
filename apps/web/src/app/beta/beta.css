@@ -315,6 +315,25 @@ body:has(.beta-theme),
   min-height: 5.5rem;
 }
 
+/* A native <select> draws its arrow at the BORDER box edge and largely
+   ignores padding-right, so the chevron sat almost against the border while
+   the text had its full 0.875rem of room. Drawing our own puts it where the
+   padding says it should be, and keeps a system control (which follows the
+   OS, not this page) out of Beta's identity.
+
+   The chevron is --beta-muted. A data URI cannot read a custom property, so
+   the hex is duplicated here deliberately: if --beta-muted changes, change
+   this too. */
+select.beta-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%236f6757' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.875rem center;
+  background-size: 0.75rem 0.5rem;
+}
+
 /* Choice cards: a <label> wrapping a real radio/checkbox. */
 .beta-choice {
   display: flex;
