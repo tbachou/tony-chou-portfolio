@@ -1,7 +1,7 @@
 ---
 name: debug
 allowed-tools: Bash, Read, Grep, Glob, Write, Edit, Agent
-description: "Run /debug to find and fix the root cause of a bug (something failing, broken, throwing, or behaving wrong) when a test fails for a reason that is not obvious, /check verify finds a failure, or behavior is unexpected. Runs a reproduce, localize, hypothesize, test, fix, verify loop, makes the minimal fix, and hands a regression test to /test. No features, no extra refactors."
+description: "Run /debug to find and fix the root cause of a bug (something failing, broken, throwing, or behaving wrong) when a test fails for a reason that is not obvious, /check verify finds a failure, or behavior is unexpected. Builds a fast reproducible signal first, then runs a minimize, hypothesize, test, fix, verify loop, makes the minimal fix, and hands a regression test to /test. No features, no extra refactors."
 ---
 
 ## Output style (plain words, no dashes, no hyphens)
@@ -14,7 +14,9 @@ Write everything this skill produces, files and messages alike, in plain simple 
 
 **Your role:** the investigator who trusts evidence over intuition. You treat a bug like a case to be proven, not a symptom to be silenced. You reproduce it on demand, narrow it to the smallest surface that still fails, and change exactly one thing at a time so every result *means* something. You resist the pull to patch what you see (the null, the crash) before you understand *why* it's there, because a fix you can't explain is a bug you haven't caught. You stop when the cause is proven and the fix is the smallest one that addresses it, no opportunistic refactors riding along.
 
-A structured root cause investigation, not a guess and check. Bugs are found by a **loop**: reproduce → localize → hypothesize → test the hypothesis → fix the root cause → verify. This skill runs that loop with discipline (**one hypothesis at a time**, each confirmed or rejected by evidence before moving on) until the actual cause is proven, then applies the smallest fix that addresses it.
+A structured root cause investigation, not a guess and check. Everything rests on one thing: **a loop that goes red on this bug and green when it is gone.** Build that first and the rest is mechanical. Reach for a theory before it exists and you are guessing, which is why Step 1 gates the whole skill.
+
+With the loop in hand: minimize the case, rank several hypotheses, then test them **one at a time** so each result means something, fix the proven cause with the smallest change, and prove it stayed fixed.
 
 > This is an *internal investigation loop within a single run*, not the `/loop` skill (which runs a command again on a time interval). Reach for `/loop` only when you need to watch something over time, e.g. poll a flaky test across many runs.
 
@@ -43,39 +45,83 @@ Pin down precisely, before touching code:
 
 If any of these is unclear and you can't derive it, **ask**, you cannot debug what you can't reproduce.
 
-### Step 1: Reproduce reliably
+### Step 1: Build a loop that goes red
 
-Get a **deterministic reproduction** (a failing test, a command, a request) that triggers the bug on demand. If it's intermittent, find what makes it deterministic (timing, ordering, data, concurrency). A bug you can't reproduce on command, you can't prove you've fixed. If you truly can't reproduce it, add instrumentation to catch it and say so, do not "fix" blind.
+**This step is the skill. Everything after it is mechanical.** With a signal that flips red on this bug and green when it is gone, bisection and hypothesis testing just consume it. Without one, no amount of reading code will save you, and the hunt becomes a guess.
 
-### Step 2: Localize
+Spend disproportionate effort here. Be aggressive, be inventive, refuse to settle for "I can sort of trigger it".
 
-Narrow the failure to the smallest possible surface before theorizing:
-- **Bisect the code path**: binary search where good input becomes bad output (logging/print at midpoints, breakpoints, or commenting out).
-- **Bisect history**: if it's a regression, `git bisect` (or `git log -p` on the suspect files) to find the introducing change.
-- **Read the actual values**: instrument inputs/outputs at the boundary; don't assume what they are.
+A failing test at the seam that reaches the bug is the first thing to reach for. When that is not available, or the loop you have is slow or flaky, read [`feedback-loop.md`](feedback-loop.md): ten ways to construct one, how to tighten it, how to raise the reproduction rate on a bug that fires intermittently, what to do when you truly cannot build one, and how to keep secrets out of what you capture.
 
-### Step 3: Hypothesize (one at a time)
+**Done when you can name one command you have already run, and show its output.** That command must be:
 
-State a single, specific, falsifiable hypothesis for the root cause, e.g. "the date is parsed as local time, so the cutoff is off by the timezone offset." Root cause, not symptom: "the value is null here" is a symptom; *why* it's null is the cause. Resist shotgun changing several things at once.
+- **Red capable**: it drives the real code path and asserts the visitor's exact symptom, so it fails now and passes once fixed. "Runs without erroring" is not a loop.
+- **Deterministic**: the same verdict every run (for an intermittent bug, a pinned and high reproduction rate).
+- **Fast**: seconds.
+- **Yours to run**: unattended, no human clicking.
 
-### Step 4: Test the hypothesis
+**No red command, no Step 3.** Reaching for a theory before this command exists is the exact failure this skill prevents, so if you catch yourself reading code to build one, come back here.
 
-Design the smallest experiment that confirms or refutes it (a targeted log, an assertion, a one line change, a unit test). Run it.
-- **Refuted** → discard it, return to Step 2/3 with what you learned. Do not keep a change that didn't help.
-- **Confirmed** → you've found the root cause. Proceed.
+### Step 2: Reproduce, then minimize
 
-Loop Steps 3 to 4 until a hypothesis is confirmed by evidence. **Never skip to a fix on a hunch**, an unverified fix is how a symptom gets patched while the bug survives.
+Run the loop and watch it go red. Confirm three things:
+
+- It produces the failure **the user described**, not a different one nearby. The wrong bug gets the wrong fix.
+- It reproduces across runs.
+- You have captured the exact symptom, so Step 6 can prove the fix addressed it.
+
+Then shrink it to the smallest scenario that still goes red. Cut inputs, callers, config, data, and steps **one at a time**, rerunning after each cut. Done when every remaining element is load bearing: removing any one of them turns the loop green.
+
+Two payoffs. A minimal case leaves fewer moving parts to suspect in Step 3, and it becomes the regression test in Step 6.
+
+Narrowing the code path helps here too: bisect where good input becomes bad output, and if it is a regression, bisect history (`git bisect`, or `git log -p` on the suspect files) to find the change that introduced it. Read the actual values at the boundary rather than assuming them.
+
+### Step 3: Hypothesize, three to five, ranked
+
+Generate **three to five ranked hypotheses before testing any of them**. Generating one at a time anchors you on the first plausible idea, and the first plausible idea is often the symptom wearing a cause's clothes.
+
+Each must be falsifiable, which means stating its prediction: "if the date is parsed as local time, then forcing UTC moves the cutoff by exactly the offset." A hypothesis with no prediction is a vibe. Sharpen it or drop it.
+
+Aim at the root, not the symptom. "The value is null here" is the symptom; **why** it is null is the cause.
+
+**Show the ranked list before you start testing.** The engineer often re ranks it instantly ("we deployed a change to number three yesterday") or has already ruled one out. Cheap, and it regularly saves the whole hunt. Proceed on your own ranking if they are away.
+
+### Step 4: Test them one at a time
+
+Ranked list in hand, test the top one. **Change one variable per experiment**, or the result means nothing.
+
+- **Refuted** → discard it, take the next. Do not keep a change that did not help.
+- **Confirmed** → you have the root cause. Proceed to Step 5.
+
+Exhausted the list without a confirmation? Return to Step 2 and narrow further with what you learned.
+
+Reach for tools in this order: a debugger or REPL where the environment supports it (one breakpoint beats ten log lines), then targeted logs at the boundary that separates two hypotheses. Logging everything and grepping is not instrumentation.
+
+**Tag every debug log with a unique marker**, for example `[DEBUG-a4f2]`, so Step 6's cleanup is one grep. Untagged instrumentation survives into the commit; tagged instrumentation dies.
+
+**Performance regressions take a different route.** Logs mislead. Establish a baseline measurement first (a timing harness, a profiler, a query plan), then bisect against it. Measure, then fix.
 
 ### Step 5: Fix at the root
 
-Make the **minimal, targeted** change that addresses the proven cause. Don't fix the symptom (clamping the null), fix the cause (why it's null). Resist scope creep, no opportunistic refactors riding along with the fix. Follow the project's conventions (`AGENTS.md`, neighbouring code).
+Make the **minimal, targeted** change that addresses the proven cause. Fix why the value is null, not the null itself. Resist scope creep, no opportunistic refactors riding along. Follow the project's conventions (`AGENTS.md`, neighbouring code).
 
-### Step 6: Verify and protect
+### Step 6: Verify, protect, clean up
 
-- Run the Step 1 reproduction again, confirm it now passes.
-- Run the surrounding test suite, confirm no regression.
-- **Add a regression test** that fails without the fix and passes with it, so this bug can't silently return; write it inline, or hand the spec to `/test`.
-- **Check for siblings**: the same root cause often hides in other places (same pattern, same bad assumption). Grep for them and note or fix them.
+Write the regression test **before** applying the fix, but only where a **correct seam** exists: one where the test exercises the real bug pattern as it occurs at the call site. A single caller test for a bug that needs two callers gives false confidence.
+
+**If no correct seam exists, that is itself a finding.** Say so. The architecture is preventing this bug from being locked down, which is worth more than a test that cannot catch it. Report it, and consider `/architect`.
+
+Where a seam exists: turn the minimized case into a failing test, watch it fail, apply the fix, watch it pass.
+
+Then close out every item:
+
+- The Step 1 loop, run against the **original** unminimized scenario, no longer reproduces.
+- The surrounding suite passes, no regression.
+- The regression test is in, or its absent seam is documented.
+- Every `[DEBUG-...]` marker is gone (grep the prefix).
+- Throwaway harnesses are deleted or moved somewhere clearly marked.
+- **Siblings checked.** The same root cause usually hides elsewhere under the same pattern or the same bad assumption. Grep for it, then fix or report what you find.
+- The confirmed hypothesis is stated in the commit message, so the next person to touch this learns what you learned.
 
 ### Optional: run it in a subagent
 
