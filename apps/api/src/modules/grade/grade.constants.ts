@@ -1,3 +1,8 @@
+import {
+  resolvePhotoBucket,
+  resolvePhotoRegion,
+} from '../grade-photos/photo-storage.service';
+
 /** The V scale, as far as this game goes. Both bounds are inclusive. */
 export const GRADE_MIN = 0;
 export const GRADE_MAX = 8;
@@ -37,29 +42,6 @@ export const MAX_REASONING_LENGTH = 1200;
  */
 export function gradeGameEnabled(): boolean {
   return process.env.GRADE_GAME_ENABLED === 'true';
-}
-
-/**
- * The private bucket holding the photo objects (spec 0006 R1).
- *
- * No default: an unset bucket is a deployment mistake, and guessing a name
- * would turn it into a confusing 404 from S3 instead of a clear failure here.
- */
-export function resolvePhotoBucket(): string {
-  const bucket = process.env.GRADE_PHOTO_BUCKET?.trim();
-  if (!bucket) {
-    throw new Error('GRADE_PHOTO_BUCKET is not set');
-  }
-  return bucket;
-}
-
-/** The region the bucket lives in. Shares the variable Bedrock already uses. */
-export function resolvePhotoRegion(): string {
-  const region = process.env.AWS_REGION?.trim();
-  if (!region) {
-    throw new Error('AWS_REGION is not set');
-  }
-  return region;
 }
 
 /**
