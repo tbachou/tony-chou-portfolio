@@ -1129,6 +1129,78 @@ describe('BetaService.generatePlan', () => {
       return h;
     }
 
+    /**
+     * The positive signal that the guard ran at all.
+     *
+     * Every other guard log line is emitted on a RULE FIRING, and the rules
+     * are narrow by design — a 25-profile adversarial corpus run produced
+     * zero. So without this field, "enforce ran and passed" and "the mode
+     * silently resolved to `off` and layer 2 never executed" are byte
+     * identical in production: both log nothing at all.
+     */
+    describe('the resolved guard mode is observable in the coach log line', () => {
+      function agentLines(logged: string[]): Record<string, unknown>[] {
+        return logged
+          .map((entry) => {
+            try {
+              return JSON.parse(entry) as Record<string, unknown>;
+            } catch {
+              // Nest's own non-JSON lines; not what this reads.
+              return null;
+            }
+          })
+          .filter((o): o is Record<string, unknown> => o !== null);
+      }
+
+      async function runCapturingLogs(mode: string | undefined) {
+        const logged: string[] = [];
+        const spy = jest
+          .spyOn(Logger.prototype, 'log')
+          .mockImplementation((message) => {
+            logged.push(String(message));
+          });
+        try {
+          await run(mode, conformantCoachText());
+        } finally {
+          spy.mockRestore();
+        }
+        return agentLines(logged);
+      }
+
+      it.each([
+        ['enforce', 'enforce'],
+        ['shadow', 'shadow'],
+        ['off', 'off'],
+        // An unrecognised value resolves to `off`, and the line must report
+        // what the code DID, not echo back the unusable string it was given.
+        // A typo'd mode is exactly the silent failure this field exists for.
+        ['nonsense', 'off'],
+      ])('reports %s as guardMode %s', async (set, expected) => {
+        const lines = await runCapturingLogs(set);
+        expect(lines.find((o) => o.agent === 'coach')).toMatchObject({
+          guardMode: expected,
+        });
+      });
+
+      it('reports an unset variable as off', async () => {
+        const lines = await runCapturingLogs(undefined);
+        expect(lines.find((o) => o.agent === 'coach')).toMatchObject({
+          guardMode: 'off',
+        });
+      });
+
+      it('does not add the field to the screener or drafter lines', async () => {
+        // The mode governs the coach call and nothing else. Stamping it on
+        // every stage would triple the field for no added information.
+        const lines = await runCapturingLogs('enforce');
+        for (const stage of ['screener', 'drafter']) {
+          const line = lines.find((o) => o.agent === stage);
+          expect(line).toBeDefined();
+          expect(line).not.toHaveProperty('guardMode');
+        }
+      });
+    });
+
     describe('mode off (default): byte for byte today\'s behavior (AC-G12)', () => {
       it('never runs the guard and streams the coach live, even on output that would trip a rule', async () => {
         delete process.env.BETA_OUTPUT_GUARD_MODE;

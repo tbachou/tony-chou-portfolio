@@ -411,6 +411,13 @@ export class BetaService {
               },
         }),
       () => !emittedAnything,
+      // The coach is the only stage the guard mode governs, so it carries the
+      // field. Without it, a guard that ran and passed and a guard whose mode
+      // silently resolved to `off` produce identical logs: the only other
+      // guard line is emitted on a RULE FIRING, which narrow rules make rare.
+      // One literal per plan makes "is enforce actually live?" readable from
+      // the deployed service instead of inferable from an SSE event.
+      { guardMode: mode },
     );
 
     if (buffered) {
@@ -474,6 +481,10 @@ export class BetaService {
   /**
    * One retry on 5xx or timeout, then fail (spec 0004). Emits one structured
    * log line per stage: duration, tokens, model, provider, outcome.
+   *
+   * `extra` merges caller-supplied fields into both log lines. Values must be
+   * literals or our own constants, never visitor or model text — everything
+   * here is logged, and Beta logs anonymous data only.
    */
   private async timedAgentCall<
     T extends { inputTokens: number; outputTokens: number },
@@ -482,6 +493,7 @@ export class BetaService {
     model: string,
     fn: () => Promise<T>,
     canRetry: () => boolean = () => true,
+    extra: Record<string, string> = {},
   ): Promise<T> {
     const startedAt = Date.now();
     let retried = false;
@@ -502,6 +514,7 @@ export class BetaService {
           agent: stage,
           model,
           provider: BETA_PROVIDER,
+          ...extra,
           durationMs: Date.now() - startedAt,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
@@ -516,6 +529,7 @@ export class BetaService {
           agent: stage,
           model,
           provider: BETA_PROVIDER,
+          ...extra,
           durationMs: Date.now() - startedAt,
           retried,
           outcome: 'error',
