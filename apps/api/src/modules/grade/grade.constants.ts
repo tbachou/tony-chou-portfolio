@@ -30,12 +30,15 @@ export const GRADER_MODEL_ANTHROPIC = 'claude-sonnet-5';
 /**
  * The Bedrock cross-region inference profile for the same model family.
  *
- * CONFIRM THIS IN THE BEDROCK CONSOLE before relying on it, exactly as
- * infra/variables.tf says of its own model id. It is set to the id production
- * is already observed serving (render.yaml records the log line), which makes
- * it known valid in this account rather than a guess — but it is a Sonnet 4.6
- * profile, not Sonnet 5, so it is the family rather than the exact model the
- * direct API path uses.
+ * Sonnet 4.6 rather than Sonnet 5 DELIBERATELY, and checked rather than
+ * assumed: Sonnet 5 is not offered on Bedrock (confirmed 2026-08-21), so the
+ * two providers necessarily run different models here. This is the closest
+ * available member of the same family, and it is the id production is already
+ * observed serving, so it is known valid in this account.
+ *
+ * Not a placeholder — do not "fix" it to a Sonnet 5 id, which Bedrock would
+ * reject, reintroducing exactly the unrecognised-model failure AC-16 exists
+ * to prevent. Revisit only when Bedrock actually lists a Sonnet 5 profile.
  */
 export const GRADER_MODEL_BEDROCK = 'us.anthropic.claude-sonnet-4-6';
 
