@@ -25,6 +25,25 @@ type ParsedPlan = { intro: Block[]; sections: Section[]; outro: Block[] };
  */
 const LABEL_LINE = /^\*\*([^*]+?):\*\*\s*(.*)$/;
 
+/**
+ * The only labels that become terms, transcribing coach.md's output format
+ * (and matching COACH_LABELS in the api's beta-output-guard.ts, which the
+ * guard checks each stage for).
+ *
+ * Gated because ANY bolded lead-in was being promoted into the grid: a
+ * closing line like "**One last thing:** if pain returns, see a professional"
+ * became a term inside the final stage, right-aligned beside When and
+ * Climbing. That reads as an attribute of weeks 8-12 rather than as a
+ * plan-wide caution, and the <dl> asserts that scoping to a screen reader.
+ * Anything outside this set falls through to ordinary prose.
+ */
+const CONTRACT_LABELS = new Set(['when', 'climbing', 'do this', 'move on when']);
+
+function isContractLabel(text: string): boolean {
+  const match = text.match(LABEL_LINE);
+  return match ? CONTRACT_LABELS.has(match[1].trim().toLowerCase()) : false;
+}
+
 function parseBlocks(lines: string[]): Block[] {
   const blocks: Block[] = [];
   let paragraph: string[] = [];
@@ -57,7 +76,19 @@ function parseBlocks(lines: string[]): Block[] {
       // paragraph, and only the FIRST is seen as a label: "**When:** Weeks
       // 3-5 **Climbing:** easy jugs only" files the climbing allowance under
       // the timing term, which a <dl> then asserts as a real pairing.
-      if (paragraph.length > 0 && LABEL_LINE.test(line.trim())) flushParagraph();
+      // Flush when the NEXT line is a label, and also when the paragraph
+      // already open STARTS as one. The first half alone left the more
+      // likely failure intact: "**When:** Weeks 3-5" followed directly by
+      // "Stop immediately if you feel a sharp pop." concatenated into the
+      // label, so a safety sentence became the meaning of the timing term.
+      // The coach contract puts a label's value on the label's own line, so
+      // nothing legitimate is split here.
+      if (
+        paragraph.length > 0 &&
+        (isContractLabel(line.trim()) || isContractLabel(paragraph[0]))
+      ) {
+        flushParagraph();
+      }
       paragraph.push(line.trim());
     }
   }
@@ -192,7 +223,8 @@ function toSegments(blocks: Block[]): Segment[] {
   };
 
   for (const block of blocks) {
-    const match = block.kind === 'p' ? block.text.match(LABEL_LINE) : null;
+    const match =
+      block.kind === 'p' && isContractLabel(block.text) ? block.text.match(LABEL_LINE) : null;
     if (match) {
       const row: LabelRow = { label: match[1], lead: match[2], blocks: [] };
       const rows = currentRows();
@@ -240,7 +272,12 @@ function StageBody({ blocks, keyPrefix }: { blocks: Block[]; keyPrefix: string }
           // is re-scanned on.
           <dl
             key={`${keyPrefix}-r${s}`}
-            className="mt-4 grid gap-x-6 gap-y-0 first:mt-0 sm:mt-0 sm:grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)] sm:gap-y-4"
+            // No `sm:mt-0`: Tailwind emits it after `.mt-4` at equal
+            // specificity, so it won at >=640px for EVERY group, not just the
+            // first — a stray paragraph then sat flush against the label grid
+            // below it and appeared to bind forward to the wrong label.
+            // `first:mt-0` is (0,2,0) and already wins at all widths.
+            className="mt-4 grid gap-x-6 gap-y-0 first:mt-0 sm:grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)] sm:gap-y-4"
           >
             {seg.rows.map((row, i) => (
               <Fragment key={`${keyPrefix}-r${s}-${i}`}>

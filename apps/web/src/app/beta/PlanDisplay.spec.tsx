@@ -29,11 +29,15 @@ const COACH_PLAN = [
 
 /**
  * The shape `renderPlanFallback` emits (apps/api/src/modules/beta/
- * beta-output-guard.ts). Duplicated as a fixture because the web app is a
- * separate workspace and does not depend on the api; if that renderer's
- * OUTPUT SHAPE changes, this fixture must change with it. The point being
- * asserted is that the guard's substituted plan renders through exactly the
- * same component, so the framing reaches an enforce-mode visitor too.
+ * beta-output-guard.ts): all four contract labels, and a closing paragraph
+ * carrying the drafter's plan-wide `overallCaution`.
+ *
+ * Duplicated as a fixture because the web app is a separate workspace and
+ * does not depend on the api. It had drifted on day one — missing both
+ * `Move on when:` and the closing caution — while claiming to track the
+ * renderer, so it proved only that the framing rendered above SOME markdown.
+ * The assertions below are now shape dependent, so a fixture that stops
+ * matching the renderer fails here rather than passing quietly.
  */
 const FALLBACK_SHAPED_PLAN = [
   'Here is your staged plan.',
@@ -46,6 +50,13 @@ const FALLBACK_SHAPED_PLAN = [
   '',
   '**Do this:**',
   '- Isometric wrist flexion hold — 3 sets of 1, holding 20 seconds',
+  '',
+  '**Move on when:**',
+  '- Pain settles within 24 hours of a session',
+  '',
+  'Pain that stays constant even at rest, and has not clearly improved by about',
+  'three weeks from when it started, deserves a professional assessment. This plan',
+  'is educational and is not a substitute for an assessment.',
 ].join('\n');
 
 describe('the educational framing (AC-G14)', () => {
@@ -58,6 +69,25 @@ describe('the educational framing (AC-G14)', () => {
   ])('renders above %s', (_label, text) => {
     render(<PlanDisplay text={text} streaming={false} />);
     expect(screen.getByText(PLAN_EDUCATIONAL_FRAMING)).toBeTruthy();
+  });
+
+  it('renders the guard fallback with all four contract labels and its caution', () => {
+    // Shape dependent on purpose: the framing <p> renders unconditionally, so
+    // a fixture-only assertion would pass with text={''} and prove nothing
+    // about the fallback path.
+    render(<PlanDisplay text={FALLBACK_SHAPED_PLAN} streaming={false} />);
+    expect(screen.getAllByRole('term').map((t) => t.textContent)).toEqual([
+      'When:',
+      'Climbing:',
+      'Do this:',
+      'Move on when:',
+    ]);
+    // The drafter's plan-wide caution must sit OUTSIDE the stage grid.
+    const lists = screen.getAllByRole('list');
+    for (const list of lists) {
+      expect(within(list).queryByText(/deserves a professional assessment/)).toBeNull();
+    }
+    expect(screen.getByText(/deserves a professional assessment/)).toBeTruthy();
   });
 
   it('renders even while the plan is still streaming and nearly empty', () => {
@@ -111,6 +141,41 @@ describe('stage labels', () => {
     expect(screen.getByText(/Stop immediately if you feel a sharp pop/)).toBeTruthy();
   });
 
+  it('keeps a same-line sentence out of the label it follows', () => {
+    // The half of the stray-sentence fix that was missed first time: when the
+    // coach omits the blank line, the sentence used to be concatenated INTO
+    // the label's value, so the <dl> claimed it was the meaning of "When".
+    const sameLine = [
+      '## Stage 2: Load it',
+      '**When:** Weeks 3-5',
+      'Stop immediately if you feel a sharp pop.',
+    ].join('\n');
+    render(<PlanDisplay text={sameLine} streaming={false} />);
+
+    const when = screen.getAllByRole('definition')[0];
+    expect(when.textContent).toContain('Weeks 3-5');
+    expect(when.textContent).not.toContain('sharp pop');
+    expect(screen.getByText(/Stop immediately if you feel a sharp pop/)).toBeTruthy();
+  });
+
+  it('does not promote a non-contract bolded lead-in into the grid', () => {
+    // A plan-wide caution written with a bolded lead-in used to become a term
+    // inside the FINAL stage, reading as an attribute of weeks 8-12.
+    const closing = [
+      '## Stage 3: Back to the wall',
+      '',
+      '**When:** Weeks 8-12',
+      '',
+      '**One last thing:** if pain returns at any point, drop back a stage and see a professional.',
+    ].join('\n');
+    render(<PlanDisplay text={closing} streaming={false} />);
+
+    const terms = screen.getAllByRole('term').map((t) => t.textContent);
+    expect(terms).toEqual(['When:']);
+    // Still rendered, just as prose rather than a stage attribute.
+    expect(screen.getByText(/if pain returns at any point/)).toBeTruthy();
+  });
+
   it('leaves a bold-crossing line as prose rather than a mangled term', () => {
     // `.+?` used to cross the bold markers and produce the term
     // "Do this** every day, and **stop when", printing raw asterisks.
@@ -126,34 +191,77 @@ describe('stage labels', () => {
 });
 
 describe('streaming safety', () => {
-  /** Everything the parser produces, flattened to comparable text. */
+  /**
+   * Everything the visitor can actually SEE, read off the rendered DOM.
+   *
+   * This used to call `parsePlan` and flatten its block tree, which never
+   * rendered the component — so `toSegments` and `StageBody`, the whole
+   * reason this file exists, were outside its reach. Three mutations to those
+   * functions survived the suite green: dropping orphan lists, never
+   * attaching a list to its label, and making the row lookup search backwards
+   * (which reinstates the misfiling the rewrite was written to kill).
+   */
   function renderedText(text: string): string {
-    const { intro, sections, outro } = parsePlan(text);
-    const blockText = (blocks: { kind: string; text?: string; items?: string[] }[]) =>
-      blocks.map((b) => (b.kind === 'p' ? b.text : (b.items ?? []).join(' '))).join(' ');
-    return [
-      blockText(intro),
-      ...sections.map((s) => `${s.title} ${blockText(s.blocks)}`),
-      blockText(outro),
-    ].join(' ');
+    const { container, unmount } = render(<PlanDisplay text={text} streaming={false} />);
+    const out = container.textContent ?? '';
+    unmount();
+    return out;
   }
 
+  // Whole lines, not words. The old check filtered to tokens longer than
+  // three characters, which skips every number: a dropped "3 sets of 15" was
+  // verified only for the word "sets".
+  const LINES_THAT_MUST_SURVIVE = [
+    'Tendon glides — 3 sets of 15, 7 times a week',
+    'Morning stiffness resolves within 10 minutes of waking',
+    'deserves a professional assessment',
+  ];
+
+  it('renders every dose and criterion line of a complete plan', () => {
+    const out = renderedText(COACH_PLAN);
+    for (const line of LINES_THAT_MUST_SURVIVE) expect(out).toContain(line);
+  });
+
   it('never drops content at any streaming prefix', () => {
-    // The plan renders on every chunk, so every prefix is a state a visitor
-    // can see. Losing a dose or a caution mid-stream is the failure that
-    // matters; a prefix rendering imperfectly is not.
-    const dropped: number[] = [];
+    // The plan paints on every chunk, so each prefix is a state a visitor can
+    // see. Each line is asserted from the prefix at which it is FULLY present
+    // onward, so a partially-arrived line is not counted against the parser.
+    const missing: string[] = [];
     for (let i = 1; i <= COACH_PLAN.length; i += 1) {
       const prefix = COACH_PLAN.slice(0, i);
       const out = renderedText(prefix);
-      // Every non-marker word in the prefix must survive into the output.
-      const words = prefix
-        .replace(/[*#-]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length > 3);
-      if (!words.every((w) => out.includes(w))) dropped.push(i);
+      for (const line of LINES_THAT_MUST_SURVIVE) {
+        if (prefix.includes(line) && !out.includes(line)) missing.push(`${i}: ${line}`);
+      }
     }
-    expect(dropped).toEqual([]);
+    expect(missing).toEqual([]);
+  });
+
+  it('attaches a bullet list to the label above it', () => {
+    // Guards the pairing the <dl> exists for. Without it "Do this:" renders an
+    // empty description and its exercises fall outside the list entirely.
+    render(<PlanDisplay text={COACH_PLAN} streaming={false} />);
+    const defs = screen.getAllByRole('definition');
+    const doThis = defs[2];
+    expect(doThis.textContent).toContain('Tendon glides');
+  });
+
+  it('keeps an orphan list on screen and out of the labels above it', () => {
+    // A list with no label before it must render as itself, not vanish and
+    // not be adopted by an earlier term.
+    const orphan = [
+      '## Stage 1: Start',
+      '',
+      '**When:** Days 1-5',
+      '',
+      'Watch for these while you work:',
+      '',
+      '- Ice after any provocation',
+    ].join('\n');
+    render(<PlanDisplay text={orphan} streaming={false} />);
+    expect(screen.getByText(/Ice after any provocation/)).toBeTruthy();
+    const when = screen.getAllByRole('definition')[0];
+    expect(when.textContent).not.toContain('Ice after any provocation');
   });
 
   it('keeps the closing caution out of the stage grid', () => {
