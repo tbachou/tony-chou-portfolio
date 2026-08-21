@@ -14,6 +14,17 @@ type Section = { title: string; blocks: Block[] };
 
 type ParsedPlan = { intro: Block[]; sections: Section[]; outro: Block[] };
 
+/**
+ * A `**Label:**` at the start of a line.
+ *
+ * `[^*]+?` rather than `.+?` so the label cannot swallow bold markers:
+ * "**Do this** every day, and **stop when:** it hurts" used to yield the
+ * label "Do this** every day, and **stop when", printing raw asterisks in
+ * the term. It now simply does not match, and falls through to ordinary
+ * prose rendering where the bold spans work.
+ */
+const LABEL_LINE = /^\*\*([^*]+?):\*\*\s*(.*)$/;
+
 function parseBlocks(lines: string[]): Block[] {
   const blocks: Block[] = [];
   let paragraph: string[] = [];
@@ -41,6 +52,12 @@ function parseBlocks(lines: string[]): Block[] {
       list.push(line.trimStart().slice(2).trim());
     } else {
       flushList();
+      // A label line always begins its own block. Without this, a coach that
+      // omits the blank line between labels gets them joined into one
+      // paragraph, and only the FIRST is seen as a label: "**When:** Weeks
+      // 3-5 **Climbing:** easy jugs only" files the climbing allowance under
+      // the timing term, which a <dl> then asserts as a real pairing.
+      if (paragraph.length > 0 && LABEL_LINE.test(line.trim())) flushParagraph();
       paragraph.push(line.trim());
     }
   }
@@ -145,64 +162,104 @@ function BlockList({ blocks, keyPrefix }: { blocks: Block[]; keyPrefix: string }
  */
 type LabelRow = { label: string; lead: string; blocks: Block[] };
 
-function toLabelRows(blocks: Block[]): { rows: LabelRow[]; leading: Block[] } {
-  const leading: Block[] = [];
-  const rows: LabelRow[] = [];
+/** A run of label rows, or ordinary blocks that belong to neither. */
+type Segment =
+  | { kind: 'rows'; rows: LabelRow[] }
+  | { kind: 'blocks'; blocks: Block[] };
+
+/**
+ * Split a stage into segments, preserving document order.
+ *
+ * Only a LIST attaches to the label above it, because that is the shape the
+ * coach contract actually produces ("**Do this:**" then bullets). A stray
+ * paragraph closes the run instead of joining it: left attached, a sentence
+ * like "Stop immediately if you feel a sharp pop." became the description of
+ * the term "When", and a <dl> asserts that pairing to a screen reader rather
+ * than merely implying it visually. Mis-filing a safety instruction under a
+ * timing label is worse than rendering it as its own paragraph.
+ */
+function toSegments(blocks: Block[]): Segment[] {
+  const segments: Segment[] = [];
+
+  const currentRows = (): LabelRow[] | null => {
+    const last = segments[segments.length - 1];
+    return last && last.kind === 'rows' ? last.rows : null;
+  };
+  const pushBlock = (block: Block) => {
+    const last = segments[segments.length - 1];
+    if (last && last.kind === 'blocks') last.blocks.push(block);
+    else segments.push({ kind: 'blocks', blocks: [block] });
+  };
 
   for (const block of blocks) {
-    const match =
-      block.kind === 'p' ? block.text.match(/^\*\*(.+?):\*\*\s*(.*)$/) : null;
+    const match = block.kind === 'p' ? block.text.match(LABEL_LINE) : null;
     if (match) {
-      rows.push({ label: match[1], lead: match[2], blocks: [] });
-    } else if (rows.length > 0) {
+      const row: LabelRow = { label: match[1], lead: match[2], blocks: [] };
+      const rows = currentRows();
+      if (rows) rows.push(row);
+      else segments.push({ kind: 'rows', rows: [row] });
+      continue;
+    }
+    const rows = currentRows();
+    if (block.kind === 'list' && rows && rows.length > 0) {
       rows[rows.length - 1].blocks.push(block);
     } else {
-      // Anything before the first label keeps its ordinary rendering.
-      leading.push(block);
+      pushBlock(block);
     }
   }
-  return { rows, leading };
+  return segments;
 }
 
 function StageBody({ blocks, keyPrefix }: { blocks: Block[]; keyPrefix: string }) {
-  const { rows, leading } = toLabelRows(blocks);
+  const segments = toSegments(blocks);
 
-  // No labels at all (a coach that drifted from the format, or the
-  // deterministic fallback): fall back to the plain block rendering rather
-  // than dropping content.
-  if (rows.length === 0) return <BlockList blocks={blocks} keyPrefix={keyPrefix} />;
+  // No labels anywhere (a coach that drifted from the format): render exactly
+  // as before rather than inventing structure. Note this is NOT the guard's
+  // deterministic fallback, which emits the same labels and so renders
+  // through the <dl> like any coach output.
+  if (!segments.some((seg) => seg.kind === 'rows')) {
+    return <BlockList blocks={blocks} keyPrefix={keyPrefix} />;
+  }
 
   return (
     <>
-      {leading.length > 0 && (
-        <div className="mb-4 beta-measure">
-          <BlockList blocks={leading} keyPrefix={`${keyPrefix}-lead`} />
-        </div>
+      {segments.map((seg, s) =>
+        seg.kind === 'blocks' ? (
+          <div key={`${keyPrefix}-b${s}`} className="beta-measure mt-4 first:mt-0">
+            <BlockList blocks={seg.blocks} keyPrefix={`${keyPrefix}-b${s}`} />
+          </div>
+        ) : (
+          // dt and dd are DIRECT grid children, with a keyed Fragment rather
+          // than a wrapper div. A wrapper would need `display: contents`,
+          // which is known to drop elements from the accessibility tree.
+          //
+          // Stacked below `sm` the grid is ONE column, so a uniform row gap
+          // would put a term exactly as far from its own description as from
+          // the next term. The spacing is asymmetric instead, and the colon
+          // is kept, so a label still visibly binds forward on the phone this
+          // is re-scanned on.
+          <dl
+            key={`${keyPrefix}-r${s}`}
+            className="mt-4 grid gap-x-6 gap-y-0 first:mt-0 sm:mt-0 sm:grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)] sm:gap-y-4"
+          >
+            {seg.rows.map((row, i) => (
+              <Fragment key={`${keyPrefix}-r${s}-${i}`}>
+                <dt className="mt-4 font-semibold text-[color:var(--beta-ink)] first:mt-0 sm:mt-0 sm:text-right">
+                  {row.label}:
+                </dt>
+                <dd className="beta-measure m-0 mt-1 sm:mt-0">
+                  {row.lead && <p>{renderInline(row.lead, `${keyPrefix}-r${s}-${i}-lead`)}</p>}
+                  {row.blocks.length > 0 && (
+                    <div className={row.lead ? 'mt-2' : ''}>
+                      <BlockList blocks={row.blocks} keyPrefix={`${keyPrefix}-r${s}-${i}`} />
+                    </div>
+                  )}
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        ),
       )}
-      {/*
-        dt and dd are DIRECT grid children, with a keyed Fragment rather than a
-        wrapper div. A wrapper would need `display: contents` to let the grid
-        see through it, and `display: contents` is known to drop elements from
-        the accessibility tree in some browsers — not a risk worth taking on
-        the pairing that makes this readable.
-      */}
-      <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)]">
-        {rows.map((row, i) => (
-          <Fragment key={`${keyPrefix}-row${i}`}>
-            <dt className="font-semibold text-[color:var(--beta-ink)] sm:text-right">
-              {row.label}
-            </dt>
-            <dd className="beta-measure m-0">
-              {row.lead && <p>{renderInline(row.lead, `${keyPrefix}-row${i}-lead`)}</p>}
-              {row.blocks.length > 0 && (
-                <div className={row.lead ? 'mt-2' : ''}>
-                  <BlockList blocks={row.blocks} keyPrefix={`${keyPrefix}-row${i}`} />
-                </div>
-              )}
-            </dd>
-          </Fragment>
-        ))}
-      </dl>
     </>
   );
 }
