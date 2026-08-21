@@ -19,5 +19,9 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  // vitest.config.ts is build tooling, not app source, and it resolves Vite
+  // types from vitest's own nested copy — which conflicts with the hoisted
+  // one this project's tsconfig sees. Vitest still validates it at run time,
+  // and CI runs the suite, so a broken config fails loudly there.
+  "exclude": ["node_modules", "vitest.config.ts"]
 }

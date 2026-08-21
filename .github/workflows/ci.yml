@@ -42,5 +42,13 @@ jobs:
       - name: Beta safety regression tests
         run: npm test --workspace=apps/api -- --ci
 
+      # The web app's own safety-critical rendering: that the educational
+      # framing reaches the screen on both the coach and guard-fallback
+      # paths, what the clipboard carries, and that the plan parser cannot
+      # drop or misfile content. Those guarantees live only in the browser
+      # layer, so the api suite above cannot see them.
+      - name: Beta rendering safety tests (web)
+        run: npm test --workspace=apps/web
+
       - name: Feedback classifier Lambda tests
         run: npm test --workspace=infra/lambda/feedback-classifier -- --ci
