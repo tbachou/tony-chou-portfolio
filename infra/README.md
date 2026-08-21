@@ -171,6 +171,13 @@ ever recreated:
   the api's console-created publisher user (see IAM principals above), then
   set `SNS_FEEDBACK_TOPIC_ARN` in Render to the `feedback_topic_arn`
   output.
+- **Set `GRADE_PHOTO_BUCKET` in Render.** The Grade Guesser api reads its
+  photo bucket from this env var, and nothing wires it automatically: copy
+  the `grade_photo_bucket` output into Render's env var UI after applying.
+  Until it is set, the upload endpoint and the vision call have no bucket to
+  talk to (spec 0006 R1). Local development needs the same variable, plus
+  the AWS credentials and `AWS_REGION` the api already uses for Bedrock —
+  presigning and reading objects need them whatever `AI_PROVIDER` is set to.
 
 ## Variables
 
@@ -206,6 +213,7 @@ infra/
   variables.tf         owner_email, bedrock_model_id, and similar knobs
   outputs.tf           topic ARNs, SES identity ARN, function name
   feedback.tf          0005-classifier-flow: SNS, Lambda, IAM, SES, alarm
+  grade-photos.tf      0006 R1: private photo bucket, the api's S3 policy
   lambda/
     feedback-classifier/  TypeScript handler, its own npm workspace
       src/               index.ts (handler), payload/classify/email modules
