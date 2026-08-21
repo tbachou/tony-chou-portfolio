@@ -13,8 +13,20 @@ NestJS 11 (swc build) · Prisma 7 with driver adapter `@prisma/adapter-pg` (clie
 ```bash
 npm run start:dev --workspace=apps/api      # dev server :3001 (Node 22+!)
 npm test --workspace=apps/api               # Jest, colocated .spec.ts, all mocked
-cd apps/api && npx prisma migrate dev       # create+apply migration (reads .env via prisma.config.ts)
 cd apps/api && npx prisma generate          # regenerate client after schema edits
+
+# NEVER run `prisma migrate dev` against .env: DATABASE_URL is the SHARED
+# database, so it would create the migration by applying it to PRODUCTION.
+# ALWAYS generate migrations against a throwaway, never hand-write the SQL:
+docker run -d --name mig -e POSTGRES_PASSWORD=x -e POSTGRES_DB=dev \
+  -p 55433:5432 postgres:16-alpine
+cd apps/api
+export DATABASE_URL="postgresql://postgres:x@localhost:55433/dev?schema=public"
+npx prisma migrate deploy                   # bring the throwaway up to date
+npx prisma migrate dev --name <change>      # GENERATE the new migration here
+npx prisma migrate diff --from-config-datasource \
+  --to-schema ./prisma/schema.prisma --exit-code   # want "No difference detected."
+docker rm -f mig; unset DATABASE_URL
 ```
 
 ## Conventions
@@ -26,7 +38,7 @@ cd apps/api && npx prisma generate          # regenerate client after schema edi
 
 ## Gotchas
 
-- **Dev and prod share the same Prisma Postgres database.** Local pipeline runs consume production daily caps and counters. Check `BetaDailyUsageCounter` before assuming abuse.
+- **Dev and prod share the same Prisma Postgres database.** Local pipeline runs consume production daily caps and counters. Check `BetaDailyUsageCounter` before assuming abuse. **This makes `prisma migrate dev` unsafe against `.env`**, so migrations are generated against a throwaway Postgres instead (see Commands). Hand-writing migration SQL is not the workaround and is not allowed: it ships DDL that has never executed, and a subtle mismatch passes `migrate deploy` silently and only surfaces later as drift. An exported `DATABASE_URL` is safe to rely on here, because `prisma.config.ts` uses `import "dotenv/config"` and dotenv does not override an already-set variable.
 - **Rate-limit identity**: use `rateLimitIdentity()` (common/utils/ip-hash.util.ts) for any new per-IP feature — it collapses IPv6 to /64. `trust proxy = 1` assumes exactly Render's single proxy hop; adding a CDN in front breaks it (bump to 2). The same proxy-topology fact also lives in apps/api/src/lib/auth.ts as better-auth's `advanced.ipAddress.trustedProxies` — a CDN change must update BOTH (bump trust proxy to 2 AND add the CDN's egress ranges to trustedProxies) or better-auth silently collapses visitors into one rate bucket.
 - **Beta module invariants (spec 0004, audited)**: checked red-flag symptoms block in code before any model call; the global cap is an atomic reserve/refund (`reserveGlobalSlot`); planCount increments on success only; the outcome/abuse tally columns (errorCount, redFlagCount, refusalCount, throttledCount, ipCappedCount, globalCappedCount) increment on their respective non-success events; no visitor content is ever written or logged. Do not weaken these.
 - The in-memory throttle resets on every deploy; the persisted daily caps are the real limits.
