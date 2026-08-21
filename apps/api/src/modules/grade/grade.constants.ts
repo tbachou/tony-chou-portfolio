@@ -26,20 +26,53 @@ export const MAX_OBSERVATIONS = 6;
 export const MAX_OBSERVATION_LENGTH = 240;
 export const MAX_REASONING_LENGTH = 1200;
 
-/** Where the day's photo is served from, under the web origin. */
-export const PHOTO_URL_PREFIX = '/grade/';
+/**
+ * Whether the game is released.
+ *
+ * Read here rather than passed in because the same variable already decides
+ * whether GradeModule is registered at all (app.module.ts). It matters inside
+ * the module for one reason: the licence gate (AC-18) only applies once the
+ * game is live, so that a photo borrowed to test the pipeline is usable while
+ * the game is hidden and refused the moment it is not.
+ */
+export function gradeGameEnabled(): boolean {
+  return process.env.GRADE_GAME_ENABLED === 'true';
+}
 
 /**
- * The web origin the vision call and the page both resolve images against.
- * Reuses CORS_ORIGIN (which already holds the web origin on both
- * environments) rather than adding a variable, per spec 0006's configuration
- * decision. CORS_ORIGIN may be a comma-separated list; the first entry is
- * the canonical web origin.
+ * The private bucket holding the photo objects (spec 0006 R1).
+ *
+ * No default: an unset bucket is a deployment mistake, and guessing a name
+ * would turn it into a confusing 404 from S3 instead of a clear failure here.
  */
-export function resolveWebOrigin(): string {
-  const first = process.env.CORS_ORIGIN?.split(',')[0]?.trim();
-  return (first && first.length > 0 ? first : 'http://localhost:3000').replace(
-    /\/+$/,
-    '',
-  );
+export function resolvePhotoBucket(): string {
+  const bucket = process.env.GRADE_PHOTO_BUCKET?.trim();
+  if (!bucket) {
+    throw new Error('GRADE_PHOTO_BUCKET is not set');
+  }
+  return bucket;
+}
+
+/** The region the bucket lives in. Shares the variable Bedrock already uses. */
+export function resolvePhotoRegion(): string {
+  const region = process.env.AWS_REGION?.trim();
+  if (!region) {
+    throw new Error('AWS_REGION is not set');
+  }
+  return region;
+}
+
+/**
+ * Where an object lives, as a URL.
+ *
+ * UNSIGNED, and therefore not yet usable by a browser: the bucket blocks all
+ * public access, so this address returns 403 until R4 signs it. That is the
+ * intended state between R2 and R4 rather than an oversight — the shape and
+ * the location are already right, and R4 adds the signature and the one hour
+ * lifetime (AC-14). Nothing reaches this code path in the meantime: the pool
+ * is empty until R3 builds the upload, and the module is not registered while
+ * GRADE_GAME_ENABLED is false.
+ */
+export function photoObjectUrl(objectKey: string): string {
+  return `https://${resolvePhotoBucket()}.s3.${resolvePhotoRegion()}.amazonaws.com/${objectKey}`;
 }

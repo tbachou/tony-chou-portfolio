@@ -2,7 +2,6 @@ import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { GradeService, normalizeHistogram } from './grade.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { GradeAnalysisService } from './grade-analysis.service';
-import * as pool from './photo-pool';
 import type { GradePhoto } from './photo-pool';
 
 // The real PrismaService pulls in the generated client and the pg adapter;
@@ -15,10 +14,15 @@ jest.mock('../prisma/prisma.service', () => ({
 
 const PHOTO: GradePhoto = {
   id: 'seed-a',
-  file: 'seed-a.png',
+  objectKey: 'photos/9f2c4ab1d0e37b58.webp',
+  contentType: 'image/webp',
   trueGrade: 5,
+  source: 'own_photo',
   note: 'Placeholder gym, north wall',
 };
+
+const IMAGE_URL =
+  'https://portfolio-grade-photos-test.s3.us-east-2.amazonaws.com/photos/9f2c4ab1d0e37b58.webp';
 
 const NOW = new Date('2026-08-20T12:00:00.000Z');
 
@@ -31,22 +35,37 @@ function zeros(): number[] {
  * takes the same shape and records the interpolated values — that is how the
  * histogram assertions read the grade the UPDATE would have incremented,
  * without a database.
+ *
+ * `pinned` is the GradeDay row findUnique returns: null means the date has no
+ * row yet and the cycle decides, an object means it is already pinned (AC-20).
  */
-function makePrisma(options: { row?: Record<string, unknown> } = {}) {
+function makePrisma(
+  options: {
+    row?: Record<string, unknown>;
+    pool?: GradePhoto[];
+    pinned?: { photo: GradePhoto } | null;
+  } = {},
+) {
+  const pool = options.pool ?? [PHOTO];
   const state = {
     createCalls: [] as Record<string, unknown>[],
     queryValues: [] as unknown[][],
-    createError: null as unknown,
     rowOverride: options.row,
   };
 
   const prisma = {
     gradeDay: {
+      findUnique: jest.fn(() => Promise.resolve(options.pinned ?? null)),
       create: jest.fn((args: { data: Record<string, unknown> }) => {
         state.createCalls.push(args.data);
-        if (state.createError) return Promise.reject(state.createError);
         return Promise.resolve(args.data);
       }),
+    },
+    gradePhoto: {
+      findMany: jest.fn(() => Promise.resolve(pool)),
+      findUnique: jest.fn((args: { where: { id: string } }) =>
+        Promise.resolve(pool.find((p) => p.id === args.where.id) ?? null),
+      ),
     },
     $queryRaw: jest.fn((_strings: TemplateStringsArray, ...values: unknown[]) => {
       state.queryValues.push(values);
@@ -92,27 +111,27 @@ describe('GradeService', () => {
     // The empty-pool cases log a deployment error on purpose; keep it out of
     // the run's output rather than letting a passing suite look like a failing one.
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    jest.spyOn(pool, 'loadPhotoManifest').mockReturnValue([PHOTO]);
-    jest.spyOn(pool, 'photoForDate').mockReturnValue(PHOTO);
-    jest.spyOn(pool, 'sortedPool').mockReturnValue([PHOTO]);
-    process.env.CORS_ORIGIN = 'https://tonychou.dev';
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    process.env.GRADE_PHOTO_BUCKET = 'portfolio-grade-photos-test';
+    process.env.AWS_REGION = 'us-east-2';
+    delete process.env.GRADE_GAME_ENABLED;
   });
 
   describe('getToday (AC-1, AC-2)', () => {
-    it('returns the day, image, note and pool size', () => {
+    it('returns the day, image, note and pool size', async () => {
       const { prisma } = makePrisma();
 
-      expect(makeService(prisma).getToday(NOW)).toEqual({
+      await expect(makeService(prisma).getToday(NOW)).resolves.toEqual({
         date: '2026-08-20',
-        imageUrl: 'https://tonychou.dev/grade/seed-a.png',
+        imageUrl: IMAGE_URL,
         note: 'Placeholder gym, north wall',
         poolSize: 1,
       });
     });
 
-    it('leaks no grade of any kind before a guess', () => {
+    it('leaks no grade of any kind before a guess', async () => {
       const { prisma } = makePrisma();
-      const today = makeService(prisma).getToday(NOW);
+      const today = await makeService(prisma).getToday(NOW);
 
       // The leak check the spec asks for: the whole serialized pre-guess
       // payload must not contain the answer or anything derived from it.
@@ -122,32 +141,222 @@ describe('GradeService', () => {
         'note',
         'poolSize',
       ]);
-      expect(JSON.stringify(today)).not.toContain(String(PHOTO.trueGrade));
+      // Scoped past imageUrl deliberately. The object key is opaque random
+      // hex, so a digit inside it is a coincidence rather than a leak — and
+      // asserting a bare digit against the whole payload is what made the
+      // earlier version of this test pass by luck. What the key must not do
+      // is DESCRIBE the photo, which the next test asserts directly.
+      const rest: Record<string, unknown> = { ...today };
+      delete rest.imageUrl;
+      expect(JSON.stringify(rest)).not.toContain(String(PHOTO.trueGrade));
       expect(JSON.stringify(today)).not.toMatch(/trueGrade|model|reasoning/i);
+      expect(Object.values(rest)).not.toContain(PHOTO.trueGrade);
     });
 
-    it('omits note entirely when the manifest entry has none', () => {
-      const bare: GradePhoto = { id: 'b', file: 'b.png', trueGrade: 2 };
-      jest.spyOn(pool, 'photoForDate').mockReturnValue(bare);
+    it('leaks nothing through the object key either', async () => {
+      // The spec's reason for random object keys: a key like
+      // `north-gym-blue-prow` hands a climber a circuit-colour grade hint
+      // before they guess, which breaks AC-2 in spirit with no grade field
+      // present. The URL is part of the pre-guess surface, so it is asserted
+      // on directly rather than only the response body.
       const { prisma } = makePrisma();
+      const today = await makeService(prisma).getToday(NOW);
 
-      expect(makeService(prisma).getToday(NOW)).not.toHaveProperty('note');
+      expect(today.imageUrl).not.toContain(PHOTO.id);
+      expect(today.imageUrl).toMatch(/photos\/[0-9a-f]+\.\w+$/);
     });
 
-    it('builds the image URL from CORS_ORIGIN, taking the first entry', () => {
-      process.env.CORS_ORIGIN = 'https://tonychou.dev,https://www.tonychou.dev';
+    it('omits note entirely when the photo has none', async () => {
+      const bare: GradePhoto = { ...PHOTO, id: 'b', note: null };
+      const { prisma } = makePrisma({ pool: [bare] });
+
+      await expect(
+        makeService(prisma).getToday(NOW),
+      ).resolves.not.toHaveProperty('note');
+    });
+
+    it('builds the image URL from the bucket and region, not the web origin', async () => {
+      process.env.GRADE_PHOTO_BUCKET = 'other-bucket';
+      process.env.AWS_REGION = 'eu-west-1';
       const { prisma } = makePrisma();
 
-      expect(makeService(prisma).getToday(NOW).imageUrl).toBe(
-        'https://tonychou.dev/grade/seed-a.png',
+      const today = await makeService(prisma).getToday(NOW);
+
+      expect(today.imageUrl).toBe(
+        `https://other-bucket.s3.eu-west-1.amazonaws.com/${PHOTO.objectKey}`,
       );
     });
 
-    it('serves 503 rather than a broken page when the pool is empty', () => {
-      jest.spyOn(pool, 'photoForDate').mockReturnValue(null);
+    it('serves 503 rather than a broken page when no photo is active', async () => {
+      const { prisma } = makePrisma({ pool: [] });
+
+      await expect(makeService(prisma).getToday(NOW)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('counts only eligible photos in poolSize once the game is enabled', async () => {
+      process.env.GRADE_GAME_ENABLED = 'true';
+      const { prisma } = makePrisma({
+        pool: [PHOTO, { ...PHOTO, id: 'borrowed', source: 'unlicensed_test' }],
+      });
+
+      await expect(
+        (await makeService(prisma).getToday(NOW)).poolSize,
+      ).toBe(1);
+    });
+
+    it('asks the database only for active photos (AC-1)', async () => {
       const { prisma } = makePrisma();
 
-      expect(() => makeService(prisma).getToday(NOW)).toThrow(
+      await makeService(prisma).getToday(NOW);
+
+      expect(prisma.gradePhoto.findMany).toHaveBeenCalledWith({
+        where: { active: true },
+      });
+    });
+  });
+
+  describe('the pinned day (AC-20)', () => {
+    it('serves the row\'s photo even after that photo is deactivated', async () => {
+      // The pool no longer contains the pinned photo at all, which is what a
+      // mid-day deactivation looks like from here. The date must not move.
+      const retired: GradePhoto = { ...PHOTO, id: 'retired', trueGrade: 8 };
+      const { prisma } = makePrisma({
+        pool: [{ ...PHOTO, id: 'newcomer', trueGrade: 1 }],
+        pinned: { photo: retired },
+      });
+
+      const today = await makeService(prisma).getToday(NOW);
+
+      expect(today.imageUrl).toContain(retired.objectKey);
+      expect(prisma.gradePhoto.findMany).toHaveBeenCalled();
+    });
+
+    it('grades against the pinned photo, not a freshly recomputed cycle', async () => {
+      const retired: GradePhoto = { ...PHOTO, id: 'retired', trueGrade: 8 };
+      const { prisma } = makePrisma({
+        pool: [{ ...PHOTO, id: 'newcomer', trueGrade: 1 }],
+        pinned: { photo: retired },
+        row: { photoId: 'retired' },
+      });
+
+      const reveal = await makeService(prisma).submitGuess(8, NOW);
+
+      // Truth comes from the pinned photo (V8), so a correct guess scores 0.
+      // Against the newcomer (V1) this would have been a distance of 7.
+      expect(reveal.trueGrade).toBe(8);
+      expect(reveal.yourDistance).toBe(0);
+    });
+
+    it('re-reads the photo when the row pinned a different one than resolved', async () => {
+      // The narrow race: a concurrent first guess created the row while the
+      // pool was changing, so the row disagrees with what this request
+      // resolved. The row wins.
+      const other: GradePhoto = { ...PHOTO, id: 'other', trueGrade: 0 };
+      const { prisma } = makePrisma({
+        pool: [PHOTO, other],
+        row: { photoId: 'other' },
+      });
+
+      const reveal = await makeService(prisma).submitGuess(0, NOW);
+
+      expect(prisma.gradePhoto.findUnique).toHaveBeenCalledWith({
+        where: { id: 'other' },
+      });
+      expect(reveal.trueGrade).toBe(0);
+    });
+
+    it('does not re-read the photo when the row agrees with the cycle', async () => {
+      const { prisma } = makePrisma();
+
+      await makeService(prisma).submitGuess(3, NOW);
+
+      expect(prisma.gradePhoto.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('serves 503 if the row points at a photo that is gone', async () => {
+      const { prisma } = makePrisma({ row: { photoId: 'vanished' } });
+
+      await expect(makeService(prisma).submitGuess(3, NOW)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+    });
+  });
+
+  describe('the licence gate (AC-18)', () => {
+    it('never pins an unlicensed test photo once the game is enabled', async () => {
+      process.env.GRADE_GAME_ENABLED = 'true';
+      const borrowed: GradePhoto = {
+        ...PHOTO,
+        id: 'aaa-borrowed',
+        source: 'unlicensed_test',
+      };
+      // Sorted first, so a cycle that ignored the gate would be likely to pick it.
+      const { prisma, state } = makePrisma({ pool: [borrowed, PHOTO] });
+
+      await makeService(prisma).submitGuess(3, NOW);
+
+      expect(state.createCalls).toEqual([
+        { date: '2026-08-20', photoId: PHOTO.id },
+      ]);
+    });
+
+    it('logs one line naming how many were excluded', async () => {
+      process.env.GRADE_GAME_ENABLED = 'true';
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      const { prisma } = makePrisma({
+        pool: [PHOTO, { ...PHOTO, id: 'b1', source: 'unlicensed_test' }],
+      });
+
+      await makeService(prisma).getToday(NOW);
+
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log.mock.calls[0][0]).toContain('1 unlicensed_test');
+      expect(log.mock.calls[0][0]).toContain('2026-08-20');
+    });
+
+    it('logs once per UTC date rather than once per request', async () => {
+      // The line has to be fresh (a boot-time count goes stale the moment a
+      // photo is toggled), but repeating it on every request until the day's
+      // row exists would be noise.
+      process.env.GRADE_GAME_ENABLED = 'true';
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      const { prisma } = makePrisma({
+        pool: [PHOTO, { ...PHOTO, id: 'b1', source: 'unlicensed_test' }],
+      });
+      const service = makeService(prisma);
+
+      await service.getToday(NOW);
+      await service.getToday(NOW);
+      await service.getToday(new Date('2026-08-21T12:00:00.000Z'));
+
+      expect(log).toHaveBeenCalledTimes(2);
+    });
+
+    it('says nothing when the gate excluded nothing', async () => {
+      process.env.GRADE_GAME_ENABLED = 'true';
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      const { prisma } = makePrisma();
+
+      await makeService(prisma).getToday(NOW);
+
+      expect(log).not.toHaveBeenCalled();
+    });
+
+    it('serves 503 when the gate empties the pool', async () => {
+      process.env.GRADE_GAME_ENABLED = 'true';
+      const { prisma } = makePrisma({
+        pool: [{ ...PHOTO, source: 'unlicensed_test' }],
+      });
+
+      await expect(makeService(prisma).getToday(NOW)).rejects.toThrow(
         ServiceUnavailableException,
       );
     });
@@ -187,7 +396,7 @@ describe('GradeService', () => {
 
       expect(ensureAnalysis).toHaveBeenCalledWith({
         date: '2026-08-20',
-        imageUrl: 'https://tonychou.dev/grade/seed-a.png',
+        imageUrl: IMAGE_URL,
       });
     });
 
@@ -266,9 +475,8 @@ describe('GradeService', () => {
       expect(everything).toEqual(['2026-08-20', 'seed-a', 2, '2026-08-20']);
     });
 
-    it('serves 503 rather than writing anything when the pool is empty', async () => {
-      jest.spyOn(pool, 'photoForDate').mockReturnValue(null);
-      const { prisma } = makePrisma();
+    it('serves 503 rather than writing anything when no photo is active', async () => {
+      const { prisma } = makePrisma({ pool: [] });
 
       await expect(makeService(prisma).submitGuess(1, NOW)).rejects.toThrow(
         ServiceUnavailableException,

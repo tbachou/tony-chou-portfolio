@@ -79,8 +79,9 @@ services:
       # passes. Time to first plan text is the same as it was at 'off'.
       - key: BETA_OUTPUT_GUARD_MODE
         value: 'enforce'
-      # Grade Guesser (spec 0006) is built only to build-plan step 4: no share
-      # button, no home page teaser, and the photo pool is two placeholders.
+      # Grade Guesser (spec 0006) is built to revised-plan step R2: no share
+      # button, no home page teaser, and the photo pool is EMPTY (the upload
+      # that fills it is R3), so /grade/today would serve 503 even if enabled.
       # Disabled means GradeModule is NOT REGISTERED, so /grade/* has no
       # handler, no DTO and no database access to reach, rather than existing
       # and refusing. The web route 404s on the same variable.
@@ -89,6 +90,12 @@ services:
       # forgetting to set something.
       - key: GRADE_GAME_ENABLED
         value: 'false'
+      # The private photo bucket (spec 0006 R1). Copy the terraform
+      # `grade_photo_bucket` output into the dashboard; nothing wires it
+      # automatically. Unlike the flag above, this is NOT inert once set —
+      # but nothing reads it until the upload endpoint lands in R3.
+      - key: GRADE_PHOTO_BUCKET
+        sync: false
       - key: TURN_PAIR_CAP
         value: '5'
       - key: DAILY_TURN_CAP
