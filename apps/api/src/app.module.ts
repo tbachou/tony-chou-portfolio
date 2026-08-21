@@ -16,6 +16,7 @@ import { UsageSummaryModule } from './modules/usage-summary/usage-summary.module
 import { BetaModule } from './modules/beta/beta.module';
 import { FeedbackModule } from './modules/feedback/feedback.module';
 import { GradeModule } from './modules/grade/grade.module';
+import { GradePhotosModule } from './modules/grade-photos/grade-photos.module';
 
 /**
  * Grade Guesser is behind a flag until it is released (spec 0006 is built
@@ -53,6 +54,11 @@ const gradeGameEnabled = process.env.GRADE_GAME_ENABLED === 'true';
     UsageSummaryModule,
     BetaModule,
     FeedbackModule,
+    // Registered unconditionally, unlike GradeModule above: the photo pool
+    // has to be fillable while the game is still hidden, so /internal/grade-photos
+    // exists whatever GRADE_GAME_ENABLED says (spec 0006 R3). It is behind the
+    // global better-auth guard, so it is not public surface.
+    GradePhotosModule,
     ...(gradeGameEnabled ? [GradeModule] : []),
   ],
   controllers: [AppController],
