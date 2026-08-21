@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { GradeAnalysisService, parseAnalysis } from './grade-analysis.service';
-import { GRADER_MODEL } from './grade.constants';
+import {
+  GRADER_MODEL_ANTHROPIC,
+  GRADER_MODEL_BEDROCK,
+} from './grade.constants';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AiProvider } from '../anthropic/ai-provider.interface';
 
@@ -15,7 +18,8 @@ jest.mock('./skill-loader', () => ({
 }));
 
 const DATE = '2026-08-20';
-const IMAGE_URL = 'https://tonychou.dev/grade/seed-a.png';
+/** The base64 bytes the seam now carries, not a URL (AC-15). */
+const IMAGE = { data: 'aW1hZ2UtYnl0ZXM=', mediaType: 'image/webp' };
 
 function goodPayload(overrides: Record<string, unknown> = {}) {
   return {
@@ -78,13 +82,91 @@ describe('GradeAnalysisService', () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
 
+  describe('provider routing (AC-15, AC-16)', () => {
+    afterEach(() => {
+      delete process.env.AI_PROVIDER;
+      delete process.env.BEDROCK_MODEL_ID;
+    });
+
+    it('sends a Bedrock model id when the provider is Bedrock', async () => {
+      // The second of the two independent failures the 2026-08-21 revision
+      // found: a first party id means nothing to Bedrock, so the call failed
+      // even before the URL image problem was reached.
+      process.env.AI_PROVIDER = 'bedrock';
+      const h = makeHarness();
+
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+
+      expect(h.forceToolCall.mock.calls[0][0].model).toBe(GRADER_MODEL_BEDROCK);
+    });
+
+    it('sends the first party id when the provider is the direct API', async () => {
+      process.env.AI_PROVIDER = 'anthropic';
+      const h = makeHarness();
+
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+
+      expect(h.forceToolCall.mock.calls[0][0].model).toBe(
+        GRADER_MODEL_ANTHROPIC,
+      );
+    });
+
+    it('never lets a first party id reach Bedrock', async () => {
+      process.env.AI_PROVIDER = 'bedrock';
+      const h = makeHarness();
+
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+
+      const sent = h.forceToolCall.mock.calls[0][0].model as string;
+      expect(sent).not.toBe(GRADER_MODEL_ANTHROPIC);
+      expect(sent).toMatch(/^us\.anthropic\./);
+    });
+
+    it('ignores BEDROCK_MODEL_ID, the env driven downgrade it exists to prevent', async () => {
+      // The whole point of pinning: a cheaper model set for another feature
+      // must not silently become the game's one daily read of the wall.
+      process.env.AI_PROVIDER = 'bedrock';
+      process.env.BEDROCK_MODEL_ID = 'us.anthropic.claude-haiku-4-5-cheap';
+      const h = makeHarness();
+
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+
+      expect(h.forceToolCall.mock.calls[0][0].model).toBe(GRADER_MODEL_BEDROCK);
+    });
+
+    it('sends bytes and never a URL, whichever provider is in use', async () => {
+      process.env.AI_PROVIDER = 'bedrock';
+      const h = makeHarness();
+
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+
+      const params = h.forceToolCall.mock.calls[0][0];
+      expect(params.image).toEqual(IMAGE);
+      expect(params).not.toHaveProperty('imageUrl');
+      expect(JSON.stringify(params)).not.toMatch(/https?:\/\//);
+    });
+
+    it('records the id actually sent on the day row', async () => {
+      // A row claiming the first party id while Bedrock served the call is how
+      // a provider bug stays invisible for months.
+      process.env.AI_PROVIDER = 'bedrock';
+      const h = makeHarness();
+
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+
+      expect(h.updateMany.mock.calls[0][0].data.model).toBe(
+        GRADER_MODEL_BEDROCK,
+      );
+    });
+  });
+
   describe('the happy path (AC-3)', () => {
     it('returns the parsed analysis and stores it on the day row', async () => {
       const h = makeHarness();
 
       const analysis = await h.service.ensureAnalysis({
         date: DATE,
-        imageUrl: IMAGE_URL,
+        image: IMAGE,
       });
 
       expect(analysis).toEqual({
@@ -100,15 +182,15 @@ describe('GradeAnalysisService', () => {
       expect(h.updateMany).toHaveBeenCalledTimes(1);
     });
 
-    it('forces the report_grade tool and sends the photo as a URL image', async () => {
+    it('forces the report_grade tool and sends the photo as image bytes', async () => {
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL });
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
 
       const params = h.forceToolCall.mock.calls[0][0];
       expect(params.toolName).toBe('report_grade');
-      expect(params.model).toBe(GRADER_MODEL);
-      expect(params.imageUrl).toBe(IMAGE_URL);
+      expect(params.model).toBe(GRADER_MODEL_ANTHROPIC);
+      expect(params.image).toEqual(IMAGE);
       expect(params.maxRetries).toBe(0);
       expect(params.inputSchema.required).toEqual([
         'grade',
@@ -126,7 +208,7 @@ describe('GradeAnalysisService', () => {
     it('sends the model the photo and nothing about the pool or the answer', async () => {
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL });
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
 
       const params = h.forceToolCall.mock.calls[0][0];
       // Spec 0006: "the model receives only the photo, never the manifest note
@@ -138,14 +220,14 @@ describe('GradeAnalysisService', () => {
     it('writes the analysis only while the day still has none', async () => {
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL });
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
 
       expect(h.updateMany).toHaveBeenCalledWith({
         where: { date: DATE, modelGrade: null },
         data: expect.objectContaining({
           modelGrade: 5,
           modelConfidence: 'medium',
-          model: GRADER_MODEL,
+          model: GRADER_MODEL_ANTHROPIC,
           inputTokens: 1500,
           outputTokens: 200,
         }),
@@ -155,12 +237,12 @@ describe('GradeAnalysisService', () => {
     it('logs one structured line per call, with no visitor content in it', async () => {
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL });
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
 
       expect(logged).toHaveLength(1);
       expect(JSON.parse(logged[0])).toMatchObject({
         agent: 'grade-grader',
-        model: GRADER_MODEL,
+        model: GRADER_MODEL_ANTHROPIC,
         date: DATE,
         inputTokens: 1500,
         outputTokens: 200,
@@ -177,9 +259,9 @@ describe('GradeAnalysisService', () => {
       const h = makeHarness();
 
       const [a, b, c] = await Promise.all([
-        h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL }),
-        h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL }),
-        h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL }),
+        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
+        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
+        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
       ]);
 
       expect(h.forceToolCall).toHaveBeenCalledTimes(1);
@@ -194,8 +276,8 @@ describe('GradeAnalysisService', () => {
       const h = makeHarness();
 
       await Promise.all([
-        h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL }),
-        h.service.ensureAnalysis({ date: '2026-08-21', imageUrl: IMAGE_URL }),
+        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
+        h.service.ensureAnalysis({ date: '2026-08-21', image: IMAGE }),
       ]);
 
       expect(h.forceToolCall).toHaveBeenCalledTimes(2);
@@ -210,7 +292,7 @@ describe('GradeAnalysisService', () => {
       );
 
       await expect(
-        h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL }),
+        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
       ).resolves.toBeNull();
       expect(h.updateMany).not.toHaveBeenCalled();
     });
@@ -227,7 +309,7 @@ describe('GradeAnalysisService', () => {
 
       const analysis = await h.service.ensureAnalysis({
         date: DATE,
-        imageUrl: IMAGE_URL,
+        image: IMAGE,
       });
 
       expect(analysis?.grade).toBe(7);
@@ -241,7 +323,7 @@ describe('GradeAnalysisService', () => {
         Object.assign(new Error('bad'), { name: 'BadRequestError' }),
       );
 
-      await h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL });
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
 
       expect(h.forceToolCall).toHaveBeenCalledTimes(1);
     });
@@ -254,7 +336,7 @@ describe('GradeAnalysisService', () => {
         }),
       );
 
-      await h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL });
+      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
 
       expect(logged).toHaveLength(1);
       const line = JSON.parse(logged[0]);
@@ -268,8 +350,8 @@ describe('GradeAnalysisService', () => {
         Object.assign(new Error('down'), { name: 'BadRequestError' }),
       );
 
-      const first = await h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL });
-      const second = await h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL });
+      const first = await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      const second = await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
 
       expect(first).toBeNull();
       expect(second?.grade).toBe(5);
@@ -280,7 +362,7 @@ describe('GradeAnalysisService', () => {
       const h = makeHarness({ input: { grade: 'V5', confidence: 'medium' } });
 
       await expect(
-        h.service.ensureAnalysis({ date: DATE, imageUrl: IMAGE_URL }),
+        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
       ).resolves.toBeNull();
       expect(h.updateMany).not.toHaveBeenCalled();
     });

@@ -1,3 +1,5 @@
+import type { ProviderName } from '../anthropic/ai-provider.interface';
+
 /** The V scale, as far as this game goes. Both bounds are inclusive. */
 export const GRADE_MIN = 0;
 export const GRADE_MAX = 8;
@@ -9,12 +11,40 @@ export const GRADE_CONFIDENCES = ['low', 'medium', 'high'] as const;
 export type GradeConfidence = (typeof GRADE_CONFIDENCES)[number];
 
 /**
- * The vision model. Pinned rather than read from ANTHROPIC_MODEL because one
- * call per UTC day makes quality the only axis worth optimising (spec 0006
- * rationale) — a cheaper default set for another feature must not silently
- * downgrade the game's single daily read of the wall.
+ * The vision model, pinned per provider (AC-16).
+ *
+ * Two ids for the same job, because the two providers do not share a
+ * namespace: a first party id is meaningless to Bedrock, which is the second
+ * of the two independent failures the 2026-08-21 revision found on this path.
+ * Resolving by provider is what makes it impossible to send the wrong one.
+ *
+ * Pinned rather than read from ANTHROPIC_MODEL or BEDROCK_MODEL_ID, and the
+ * Bedrock side deliberately does NOT fall back to BEDROCK_MODEL_ID: that
+ * variable is the env driven downgrade this pinning exists to prevent. One
+ * call per UTC day makes quality the only axis worth optimising, so a cheaper
+ * default set for another feature must not silently reach the game's single
+ * daily read of the wall.
  */
-export const GRADER_MODEL = 'claude-sonnet-5';
+export const GRADER_MODEL_ANTHROPIC = 'claude-sonnet-5';
+
+/**
+ * The Bedrock cross-region inference profile for the same model family.
+ *
+ * CONFIRM THIS IN THE BEDROCK CONSOLE before relying on it, exactly as
+ * infra/variables.tf says of its own model id. It is set to the id production
+ * is already observed serving (render.yaml records the log line), which makes
+ * it known valid in this account rather than a guess — but it is a Sonnet 4.6
+ * profile, not Sonnet 5, so it is the family rather than the exact model the
+ * direct API path uses.
+ */
+export const GRADER_MODEL_BEDROCK = 'us.anthropic.claude-sonnet-4-6';
+
+/** The grader id for the provider actually in use (AC-16). */
+export function resolveGraderModel(provider: ProviderName): string {
+  return provider === 'bedrock'
+    ? GRADER_MODEL_BEDROCK
+    : GRADER_MODEL_ANTHROPIC;
+}
 
 /** Vision calls are slower than text; the first guesser of the day waits. */
 export const GRADER_CALL_TIMEOUT_MS = 60_000;

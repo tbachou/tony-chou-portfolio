@@ -8,7 +8,7 @@ import {
 import {
   GRADER_CALL_TIMEOUT_MS,
   GRADER_MAX_TOKENS,
-  GRADER_MODEL,
+  resolveGraderModel,
   GRADE_CONFIDENCES,
   GRADE_MAX,
   GRADE_MIN,
@@ -63,7 +63,7 @@ export class GradeAnalysisService {
    */
   async ensureAnalysis(params: {
     date: string;
-    imageUrl: string;
+    image: { data: string; mediaType: string };
   }): Promise<GradeModelAnalysis | null> {
     const existing = this.inFlight.get(params.date);
     if (existing) return existing;
@@ -77,23 +77,26 @@ export class GradeAnalysisService {
 
   private async runCall(params: {
     date: string;
-    imageUrl: string;
+    image: { data: string; mediaType: string };
   }): Promise<GradeModelAnalysis | null> {
     const startedAt = Date.now();
     const { provider } = resolveConfiguredProvider();
+    // Resolved once, logged as what was actually sent rather than as a
+    // constant that may not be the id this provider received (AC-16).
+    const model = resolveGraderModel(provider);
 
     let retried = false;
     try {
       let result;
       try {
-        result = await this.callModel(params.imageUrl);
+        result = await this.callModel(params.image, model);
       } catch (error) {
         if (!this.isRetryableUpstreamError(error)) throw error;
         retried = true;
         this.logger.warn(
           `Grade grader call failed (${this.describeError(error)}); retrying once`,
         );
-        result = await this.callModel(params.imageUrl);
+        result = await this.callModel(params.image, model);
       }
 
       const analysis = parseAnalysis(result.input);
@@ -103,14 +106,17 @@ export class GradeAnalysisService {
         throw new Error('Grader returned an unusable report_grade payload');
       }
 
-      await this.persist(params.date, analysis, result);
+      // The id actually sent, not the first party constant: under Bedrock
+      // those differ, and a row claiming the wrong one is how a provider bug
+      // stays invisible.
+      await this.persist(params.date, analysis, result, model);
 
       // One JSON line per model call, matching the api's convention. Nothing
       // visitor-supplied exists in this feature to leak into it.
       this.logger.log(
         JSON.stringify({
           agent: 'grade-grader',
-          model: GRADER_MODEL,
+          model,
           provider,
           date: params.date,
           durationMs: Date.now() - startedAt,
@@ -128,7 +134,7 @@ export class GradeAnalysisService {
       this.logger.log(
         JSON.stringify({
           agent: 'grade-grader',
-          model: GRADER_MODEL,
+          model,
           provider,
           date: params.date,
           durationMs: Date.now() - startedAt,
@@ -142,12 +148,15 @@ export class GradeAnalysisService {
     }
   }
 
-  private callModel(imageUrl: string) {
+  private callModel(
+    image: { data: string; mediaType: string },
+    model: string,
+  ) {
     return this.ai.forceToolCall({
-      model: GRADER_MODEL,
+      model,
       system: loadGradeSkill('grader'),
       userMessage: USER_MESSAGE,
-      imageUrl,
+      image,
       maxTokens: GRADER_MAX_TOKENS,
       toolName: 'report_grade',
       toolDescription:
@@ -200,6 +209,7 @@ export class GradeAnalysisService {
     date: string,
     analysis: GradeModelAnalysis,
     result: { inputTokens: number; outputTokens: number },
+    model: string,
   ): Promise<void> {
     await this.prisma.gradeDay.updateMany({
       where: { date, modelGrade: null },
@@ -208,7 +218,7 @@ export class GradeAnalysisService {
         modelConfidence: analysis.confidence,
         observations: analysis.observations,
         reasoning: analysis.reasoning,
-        model: GRADER_MODEL,
+        model,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
       },

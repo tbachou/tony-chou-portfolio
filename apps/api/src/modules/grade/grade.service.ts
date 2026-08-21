@@ -247,9 +247,19 @@ export class GradeService {
     const cached = toAnalysis(row);
     if (cached) return cached;
 
+    // Bytes, not a URL (AC-15). Read from S3 and base64 encoded here, so the
+    // call works under either provider — Bedrock rejects URL sources, which is
+    // why the vision path could never have run in production before R5. It
+    // also means the model sees the same object the visitor's presigned URL
+    // points at, without the model needing to reach a public origin.
+    const bytes = await this.storage.getBytes(photo.objectKey);
+
     return this.analysis.ensureAnalysis({
       date: row.date,
-      imageUrl: await this.storage.presignGet(photo.objectKey),
+      image: {
+        data: bytes.toString('base64'),
+        mediaType: photo.contentType,
+      },
     });
   }
 

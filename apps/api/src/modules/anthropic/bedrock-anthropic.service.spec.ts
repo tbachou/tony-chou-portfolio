@@ -92,3 +92,94 @@ describe('assertBedrockCredentialsConfigured (boot guard)', () => {
     expect(() => assertBedrockCredentialsConfigured()).toThrow(/AWS_REGION/);
   });
 });
+
+/**
+ * The vision path's request shape (spec 0006 R5, AC-15).
+ *
+ * These assertions exist because the bug this step fixes was invisible: the
+ * seam used to carry a URL, and this provider REFUSED it outright, and the failure only ever
+ * showed up as an empty model panel on a game nobody had released yet. The
+ * request body is therefore asserted directly rather than trusted.
+ *
+ * The SDK client is stubbed by assigning the service's own lazily-cached
+ * field, so nothing here touches the network.
+ */
+describe('BedrockAnthropicService.forceToolCall image handling', () => {
+  const IMAGE = { data: 'Ynl0ZXM=', mediaType: 'image/webp' };
+
+  function stubbed(create: jest.Mock) {
+    const service = new BedrockAnthropicService();
+    (service as unknown as { client: unknown }).client = {
+      messages: { create },
+    };
+    return service;
+  }
+
+  function okResponse() {
+    return jest.fn().mockResolvedValue({
+      content: [{ type: 'tool_use', input: { grade: 5 } }],
+      usage: { input_tokens: 10, output_tokens: 20 },
+    });
+  }
+
+  const baseParams = {
+    model: 'us.anthropic.claude-sonnet-4-6',
+    system: 'you grade boulders',
+    userMessage: 'grade this',
+    maxTokens: 100,
+    toolName: 'report_grade',
+    toolDescription: 'report it',
+    inputSchema: { type: 'object' },
+    timeoutMs: 1000,
+  };
+
+  it('sends the image as a base64 source, never a URL', async () => {
+    const create = okResponse();
+
+    await stubbed(create).forceToolCall({ ...baseParams, image: IMAGE });
+
+    const content = create.mock.calls[0][0].messages[0].content;
+    expect(content[0]).toEqual({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: 'image/webp',
+        data: 'Ynl0ZXM=',
+      },
+    });
+    expect(JSON.stringify(content)).not.toContain('"url"');
+  });
+
+  it('puts the image before the instruction, as the grader skill expects', async () => {
+    const create = okResponse();
+
+    await stubbed(create).forceToolCall({ ...baseParams, image: IMAGE });
+
+    const content = create.mock.calls[0][0].messages[0].content;
+    expect(content).toHaveLength(2);
+    expect(content[1]).toEqual({ type: 'text', text: 'grade this' });
+  });
+
+  it('carries the media type through rather than assuming one', async () => {
+    const create = okResponse();
+
+    await stubbed(create).forceToolCall({
+      ...baseParams,
+      image: { data: 'Ynl0ZXM=', mediaType: 'image/png' },
+    });
+
+    expect(
+      create.mock.calls[0][0].messages[0].content[0].source.media_type,
+    ).toBe('image/png');
+  });
+
+  it('sends a plain string body when there is no image', async () => {
+    // Every existing caller is text only; the field is additive and must not
+    // reshape their request.
+    const create = okResponse();
+
+    await stubbed(create).forceToolCall(baseParams);
+
+    expect(create.mock.calls[0][0].messages[0].content).toBe('grade this');
+  });
+});
