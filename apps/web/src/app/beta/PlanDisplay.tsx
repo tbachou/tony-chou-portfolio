@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { PLAN_EDUCATIONAL_FRAMING } from '@/lib/beta-copy';
 
 // Renders the coach's streamed markdown progressively (AC-4) with no
@@ -129,25 +129,111 @@ function BlockList({ blocks, keyPrefix }: { blocks: Block[]; keyPrefix: string }
   );
 }
 
+/**
+ * A stage's blocks regrouped as label -> content pairs.
+ *
+ * The coach writes each stage as a `**Label:**` line followed by its content
+ * (`**Do this:**` then a bullet list, `**When:** Week 1` inline). Rendered as
+ * paragraphs, finding "what am I allowed to climb" means reading the stage
+ * top to bottom. A rehab plan is not read once like an essay: it is
+ * re-scanned weeks later, on a phone, looking for one specific line. Pairing
+ * the labels into a fixed left column turns that into a lookup.
+ *
+ * A `<dl>` rather than a styled grid of divs, because that is exactly what
+ * this is: terms and their descriptions. Screen readers announce the pairing,
+ * which the previous bold-span-inside-a-paragraph shape did not convey.
+ */
+type LabelRow = { label: string; lead: string; blocks: Block[] };
+
+function toLabelRows(blocks: Block[]): { rows: LabelRow[]; leading: Block[] } {
+  const leading: Block[] = [];
+  const rows: LabelRow[] = [];
+
+  for (const block of blocks) {
+    const match =
+      block.kind === 'p' ? block.text.match(/^\*\*(.+?):\*\*\s*(.*)$/) : null;
+    if (match) {
+      rows.push({ label: match[1], lead: match[2], blocks: [] });
+    } else if (rows.length > 0) {
+      rows[rows.length - 1].blocks.push(block);
+    } else {
+      // Anything before the first label keeps its ordinary rendering.
+      leading.push(block);
+    }
+  }
+  return { rows, leading };
+}
+
+function StageBody({ blocks, keyPrefix }: { blocks: Block[]; keyPrefix: string }) {
+  const { rows, leading } = toLabelRows(blocks);
+
+  // No labels at all (a coach that drifted from the format, or the
+  // deterministic fallback): fall back to the plain block rendering rather
+  // than dropping content.
+  if (rows.length === 0) return <BlockList blocks={blocks} keyPrefix={keyPrefix} />;
+
+  return (
+    <>
+      {leading.length > 0 && (
+        <div className="mb-4 beta-measure">
+          <BlockList blocks={leading} keyPrefix={`${keyPrefix}-lead`} />
+        </div>
+      )}
+      {/*
+        dt and dd are DIRECT grid children, with a keyed Fragment rather than a
+        wrapper div. A wrapper would need `display: contents` to let the grid
+        see through it, and `display: contents` is known to drop elements from
+        the accessibility tree in some browsers — not a risk worth taking on
+        the pairing that makes this readable.
+      */}
+      <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)]">
+        {rows.map((row, i) => (
+          <Fragment key={`${keyPrefix}-row${i}`}>
+            <dt className="font-semibold text-[color:var(--beta-ink)] sm:text-right">
+              {row.label}
+            </dt>
+            <dd className="beta-measure m-0">
+              {row.lead && <p>{renderInline(row.lead, `${keyPrefix}-row${i}-lead`)}</p>}
+              {row.blocks.length > 0 && (
+                <div className={row.lead ? 'mt-2' : ''}>
+                  <BlockList blocks={row.blocks} keyPrefix={`${keyPrefix}-row${i}`} />
+                </div>
+              )}
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+    </>
+  );
+}
+
 const HOLD_VARS = ['--hold-1', '--hold-2', '--hold-3', '--hold-4', '--hold-5'];
 
 export function PlanDisplay({ text, streaming }: { text: string; streaming: boolean }) {
   const plan = parsePlan(text);
 
   return (
-    <div className="max-w-[65ch]">
+    // No blanket max-width. It used to sit here and cascade, which capped the
+    // STAGE CARDS at prose width: 960px form card directly above 675px
+    // bordered cards, a visible step in a strong vertical line, worst while
+    // the cards stream in one at a time. Cards now span the column and each
+    // TEXT role carries its own cap, in rem rather than `ch` — `ch` is the
+    // width of "0" and scales with font-size, so one shared cap gave every
+    // descendant a different measure (the 15px framing line ran to ~88
+    // characters while the 20px intro sat at a correct ~66).
+    <div>
       {/*
         Rendered by the page, never taken from the stream, so it is present on
         the coach path and the guard fallback path alike and cannot be
         reworded (AC-G14). It sits inside the plan card region rather than in
         page chrome, so it travels with a screenshot.
       */}
-      <p className="mb-5 border-l-2 border-[color:var(--beta-border-strong)] pl-4 text-[0.9375rem] text-[color:var(--beta-muted)]">
+      <p className="mb-5 beta-measure-tight border-l-2 border-[color:var(--beta-border-strong)] pl-4 text-[0.9375rem] text-[color:var(--beta-muted)]">
         {PLAN_EDUCATIONAL_FRAMING}
       </p>
 
       {plan.intro.length > 0 && (
-        <div className="text-[length:var(--beta-text-lg)] leading-relaxed text-[color:var(--beta-body)]">
+        <div className="beta-measure-wide text-[length:var(--beta-text-lg)] leading-relaxed text-[color:var(--beta-body)]">
           <BlockList blocks={plan.intro} keyPrefix="intro" />
         </div>
       )}
@@ -169,7 +255,8 @@ export function PlanDisplay({ text, streaming }: { text: string; streaming: bool
                   <span className="beta-stage-number" aria-hidden="true">
                     {stageNumber ?? i + 1}
                   </span>
-                  <h3 className="text-[length:var(--beta-text-lg)]">
+                  {/* h4: these sit beneath the plan's own h3 heading. */}
+                  <h4 className="text-[length:var(--beta-text-lg)]">
                     {stageNumber ? (
                       <>
                         <span className="sr-only">Stage {stageNumber}: </span>
@@ -178,10 +265,10 @@ export function PlanDisplay({ text, streaming }: { text: string; streaming: bool
                     ) : (
                       title
                     )}
-                  </h3>
+                  </h4>
                 </div>
                 <div className="mt-4">
-                  <BlockList blocks={section.blocks} keyPrefix={`stage-${i}`} />
+                  <StageBody blocks={section.blocks} keyPrefix={`stage-${i}`} />
                 </div>
               </li>
             );
@@ -190,7 +277,7 @@ export function PlanDisplay({ text, streaming }: { text: string; streaming: bool
       )}
 
       {plan.outro.length > 0 && (
-        <div className="mt-6 border-l-2 border-[color:var(--beta-border)] pl-4 text-[color:var(--beta-muted)]">
+        <div className="mt-6 beta-measure border-l-2 border-[color:var(--beta-border)] pl-4 text-[color:var(--beta-muted)]">
           <BlockList blocks={plan.outro} keyPrefix="outro" />
         </div>
       )}

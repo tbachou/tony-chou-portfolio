@@ -68,6 +68,17 @@ body:has(.beta-theme),
   --beta-text-2xl: 1.9375rem; /* 31 */
   --beta-text-3xl: 2.4375rem; /* 39 */
   --beta-text-4xl: 3.0625rem; /* 49 */
+  /* Measure scale — the readable line length for each type size, so a cap is
+     chosen by what the text IS, not by the box it sits in.
+     `ch` is deliberately avoided: it is the width of "0" (a wide tabular
+     figure in Bricolage) AND it scales with font-size, so one shared `ch`
+     cap gives every descendant a different character count. A single
+     max-w-[65ch] on the plan wrapper produced ~66 characters on the 20px
+     intro and ~88 on the 15px framing line. Fixed rem, one per role, keeps
+     every size near 66-72 characters. */
+  --beta-measure-tight: 34rem; /* ~72ch at 15px */
+  --beta-measure: 36rem; /* ~72ch at 16px */
+  --beta-measure-wide: 42rem; /* ~66ch at 20px */
   --beta-leading-body: 1.5;
   --beta-leading-display: 1.15;
 
@@ -233,6 +244,21 @@ body:has(.beta-theme),
 .beta-btn-secondary:hover {
   border-color: var(--beta-accent);
   color: var(--beta-accent-deep);
+}
+
+/* Compact variant, for an action sitting beside a heading rather than
+   ending a form. Keeps the 44px touch target on coarse pointers, where a
+   shorter button is a worse tap target rather than a tidier one. */
+.beta-btn-sm {
+  min-height: 2.25rem;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.9375rem;
+}
+
+@media (pointer: coarse) {
+  .beta-btn-sm {
+    min-height: 2.75rem;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -596,4 +622,24 @@ body:has(.beta-theme),
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Measure utilities                                                    */
+/* ------------------------------------------------------------------ */
+/* Pick by the text's own size: tight for 15px meta, base for 16px body,
+   wide for 20px lead paragraphs. Containers and cards are NOT capped by
+   these — a card spans its column and caps the text inside it. */
+
+.beta-measure-tight {
+  max-width: var(--beta-measure-tight);
+}
+
+.beta-measure {
+  max-width: var(--beta-measure);
+}
+
+.beta-measure-wide {
+  max-width: var(--beta-measure-wide);
 }

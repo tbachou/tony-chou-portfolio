@@ -91,7 +91,7 @@ export default function BetaPage() {
             <h1 className="max-w-[16ch] text-[length:var(--beta-text-3xl)] sm:text-[length:var(--beta-text-4xl)]">
               A staged path back onto the wall
             </h1>
-            <p className="mt-5 max-w-[58ch] text-[length:var(--beta-text-lg)]">
+            <p className="mt-5 beta-measure text-[length:var(--beta-text-lg)]">
               Beta is an educational AI planner for the three most common climbing injuries.
               Describe what happened, and three AI agents draft a conservative, stage-by-stage
               return to climbing — screened for warning signs first. If your injury is anything
@@ -124,7 +124,7 @@ export default function BetaPage() {
             <h2 className="text-[length:var(--beta-text-2xl)]">
               Three agents, one rope team
             </h2>
-            <p className="mt-3 max-w-[58ch]">
+            <p className="mt-3 beta-measure">
               Every plan passes through three AI agents in sequence. Each one has a single job,
               and the first one is allowed to say no.
             </p>
@@ -155,7 +155,7 @@ export default function BetaPage() {
         <section id="planner" className="scroll-mt-16 border-t border-[color:var(--beta-border)]">
           <div className="mx-auto w-full max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
             <h2 className="text-[length:var(--beta-text-2xl)]">Draft your plan</h2>
-            <p className="mt-3 max-w-[58ch]">
+            <p className="mt-3 beta-measure">
               A couple of minutes of honest answers, in exchange for a staged progression you can
               take to the gym — or to your physical therapist.
             </p>
@@ -170,7 +170,7 @@ export default function BetaPage() {
           <TopoBackground className="-bottom-64 -left-64 hidden md:block" />
           <div className="relative mx-auto w-full max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
             <h2 className="text-[length:var(--beta-text-2xl)]">Why I built this</h2>
-            <div className="mt-4 max-w-[65ch] space-y-4">
+            <div className="mt-4 beta-measure space-y-4">
               <p>
                 Before I wrote software, I spent six years as an occupational therapist — I no
                 longer practice, but grading activity to healing tissue was my day job. I am also
@@ -193,11 +193,11 @@ export default function BetaPage() {
         <section className="border-t border-[color:var(--beta-border)]">
           <div className="mx-auto w-full max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
             <h2 className="text-[length:var(--beta-text-2xl)]">Safety FAQ</h2>
-            <div className="mt-8 max-w-3xl space-y-3">
+            <div className="mt-8 beta-measure-wide space-y-3">
               {FAQ_ITEMS.map((item) => (
                 <details key={item.question} className="beta-faq">
                   <summary>{item.question}</summary>
-                  <p className="max-w-[65ch] px-5 pb-5 pt-0">{item.answer}</p>
+                  <p className="beta-measure px-5 pb-5 pt-0">{item.answer}</p>
                 </details>
               ))}
             </div>
@@ -208,12 +208,12 @@ export default function BetaPage() {
         <section className="border-t border-[color:var(--beta-border)] bg-[color:var(--beta-surface-2)]">
           <div className="mx-auto w-full max-w-5xl px-5 py-16 sm:px-8 sm:py-20">
             <h2 className="text-[length:var(--beta-text-2xl)]">Send feedback</h2>
-            <p className="mt-3 max-w-[58ch]">
+            <p className="mt-3 beta-measure">
               Found a bug, or have an idea for Beta? Tell me anonymously — no account or email
               required. Unlike the planner, the message you send here is stored, run through an
               automated classifier on AWS, and emailed to me.
             </p>
-            <p className="mt-3 max-w-[58ch]">
+            <p className="mt-3 beta-measure">
               This goes to a mailbox I read when I can. It is not a way to reach a clinician, and
               it is not monitored for urgent problems — if something is getting worse, contact a
               doctor or emergency services.
