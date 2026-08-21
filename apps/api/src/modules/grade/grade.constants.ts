@@ -30,15 +30,22 @@ export const GRADER_MODEL_ANTHROPIC = 'claude-sonnet-5';
 /**
  * The Bedrock cross-region inference profile for the same model family.
  *
- * Sonnet 4.6 rather than Sonnet 5 DELIBERATELY, and checked rather than
- * assumed: Sonnet 5 is not offered on Bedrock (confirmed 2026-08-21), so the
- * two providers necessarily run different models here. This is the closest
- * available member of the same family, and it is the id production is already
- * observed serving, so it is known valid in this account.
+ * Sonnet 4.6 rather than Sonnet 5 DELIBERATELY, and stated carefully because
+ * the reason is not what it looks like. Sonnet 5 is NOT usable on this account
+ * today: the Bedrock model catalog lists it, but invocation returns 403 (spec
+ * 0005's guardrails child, and the same child flags the provider-swap child as
+ * stale for claiming it available). Whether that is a regional limit, an
+ * account entitlement, or an incomplete marketplace subscription was NOT
+ * determined — it was deliberately not chased on 2026-08-21.
  *
- * Not a placeholder — do not "fix" it to a Sonnet 5 id, which Bedrock would
- * reject, reintroducing exactly the unrecognised-model failure AC-16 exists
- * to prevent. Revisit only when Bedrock actually lists a Sonnet 5 profile.
+ * So this is the closest usable member of the same family, and it is the id
+ * production is already observed serving, which makes it known good here.
+ *
+ * Not a placeholder — do not "fix" it to a Sonnet 5 id on the strength of the
+ * catalog listing it. That is exactly the unrecognised-or-forbidden model
+ * failure AC-16 exists to prevent, and it fails silently: the reveal simply
+ * shows an empty model panel. Change it only after a Sonnet 5 call has
+ * actually succeeded on this account.
  */
 export const GRADER_MODEL_BEDROCK = 'us.anthropic.claude-sonnet-4-6';
 
