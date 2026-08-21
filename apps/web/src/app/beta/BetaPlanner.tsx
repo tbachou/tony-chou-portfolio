@@ -18,6 +18,11 @@ import {
   type PainBehavior,
   type Symptom,
 } from '@/lib/beta-api';
+import {
+  PLAN_STOP_CONDITIONS,
+  PLAN_STOP_CONDITIONS_HEADING,
+  buildPlanClipboardText,
+} from '@/lib/beta-copy';
 import { PlanDisplay } from './PlanDisplay';
 
 const ACK_STORAGE_KEY = 'beta-disclaimer-acknowledged-v1';
@@ -179,6 +184,7 @@ export function BetaPlanner() {
   // Pipeline / result state (AC-4, AC-2, AC-8).
   const [phase, setPhase] = useState<Phase>('idle');
   const [planCopied, setPlanCopied] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
   const [stage, setStage] = useState<BetaStage | null>(null);
   const [planText, setPlanText] = useState('');
   const [redFlagMessage, setRedFlagMessage] = useState<string | null>(null);
@@ -325,16 +331,23 @@ export function BetaPlanner() {
   }
 
   /**
-   * Copies the plan the visitor is looking at. Entirely client side: the text
-   * is already rendered, so nothing is requested and nothing is sent. The
-   * confirmation reverts on a timer rather than sticking, so the button never
-   * reads "Copied" against a plan that has since been replaced.
+   * Copies the plan the visitor is looking at, WITH the context the screen
+   * gives it: `buildPlanClipboardText` prepends the educational framing and
+   * appends the stop conditions. Copying `planText` alone produced a bare
+   * protocol with neither, which is the artifact AC-G14 exists to prevent.
+   *
+   * Entirely client side: the text is already rendered, so nothing is
+   * requested and nothing is sent.
    */
   async function copyPlan() {
     try {
-      await navigator.clipboard.writeText(planText);
+      await navigator.clipboard.writeText(buildPlanClipboardText(planText));
       setPlanCopied(true);
-      window.setTimeout(() => setPlanCopied(false), 2000);
+      // Held in a ref and cleared first, so a second copy gets its own full
+      // confirmation instead of being cut short by the previous timer, and so
+      // a reset cannot leave "Copied" showing against a plan nobody copied.
+      if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = window.setTimeout(() => setPlanCopied(false), 2000);
     } catch {
       // Clipboard access can be refused (permissions, insecure context). The
       // plan is still on screen and selectable, so this does not warrant an
@@ -342,7 +355,15 @@ export function BetaPlanner() {
     }
   }
 
+  /** Clears any pending "Copied" confirmation. */
+  function clearCopied() {
+    if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = null;
+    setPlanCopied(false);
+  }
+
   function resetResult() {
+    clearCopied();
     runIdRef.current += 1;
     setPhase('idle');
     setStage(null);
@@ -1009,10 +1030,16 @@ export function BetaPlanner() {
                 the tab loses it. Copying is entirely client side — the text is
                 already on screen, and no request is made.
               */}
+              {/*
+                Not offered while the plan is still arriving, and NOT offered
+                at all when it was cut off: the page tells that visitor "don't
+                follow a partial plan", and the copy would carry the plan
+                without carrying the warning, which lives in a sibling card.
+              */}
               <button
                 type="button"
                 onClick={() => void copyPlan()}
-                disabled={phase === 'running'}
+                disabled={phase === 'running' || planCutOff}
                 className="beta-btn beta-btn-secondary beta-btn-sm"
               >
                 {planCopied ? 'Copied' : 'Copy plan'}
@@ -1067,16 +1094,10 @@ export function BetaPlanner() {
             </p>
             <div className="mt-4 beta-measure rounded-lg bg-[color:var(--beta-surface-2)] p-4">
               <p className="font-medium text-[color:var(--beta-ink)]">
-                Stop the plan and see a professional if any of these show up:
+                {PLAN_STOP_CONDITIONS_HEADING}
               </p>
               <ul className="mt-2 space-y-1 text-[0.9375rem]">
-                {[
-                  'new numbness or tingling',
-                  'pain that starts waking you at night',
-                  'a new pop or snap',
-                  'swelling that increases',
-                  'pain above 3 out of 10 that isn’t settling by the next morning, two sessions in a row',
-                ].map((item) => (
+                {PLAN_STOP_CONDITIONS.map((item) => (
                   <li key={item} className="flex gap-2.5">
                     <span
                       aria-hidden="true"
