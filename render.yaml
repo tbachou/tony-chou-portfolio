@@ -41,9 +41,12 @@ services:
       # ConversationService log line. That is the same silent-configuration
       # shape that let the Bedrock budget read $0.00 against real charges.
       #
-      # NOT inert: Bedrock's Anthropic surface rejects URL image sources, so
-      # any vision call must send image bytes. Grade Guesser is the only such
-      # caller and is disabled below.
+      # NOT inert, and the reason changed in spec 0006 R5. Bedrock's Anthropic
+      # surface rejects URL image sources, which used to make Grade Guesser's
+      # vision call impossible here. The seam now carries base64 bytes, which
+      # both providers accept, so this no longer blocks the game — but it does
+      # decide WHICH model grades it: the grader pins a Bedrock id under this
+      # setting and a first party id otherwise (grade.constants.ts).
       - key: AI_PROVIDER
         value: bedrock
       # Required by the boot guard whenever AI_PROVIDER=bedrock — the factory
