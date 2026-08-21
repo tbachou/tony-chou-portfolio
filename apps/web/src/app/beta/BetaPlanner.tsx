@@ -19,6 +19,7 @@ import {
   type Symptom,
 } from '@/lib/beta-api';
 import {
+  PLAN_PACING_RULE,
   PLAN_STOP_CONDITIONS,
   PLAN_STOP_CONDITIONS_HEADING,
   buildPlanClipboardText,
@@ -185,6 +186,14 @@ export function BetaPlanner() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [planCopied, setPlanCopied] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
+
+  // The one path that cannot call clearCopied itself.
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
+    },
+    [],
+  );
   const [stage, setStage] = useState<BetaStage | null>(null);
   const [planText, setPlanText] = useState('');
   const [redFlagMessage, setRedFlagMessage] = useState<string | null>(null);
@@ -427,6 +436,9 @@ export function BetaPlanner() {
     setPhase('running');
     setStage(null);
     setPlanText('');
+    // Same invariant resetResult holds: a new plan must never inherit the
+    // previous plan's "Copied" confirmation, nor its pending timer.
+    clearCopied();
     setRedFlagMessage(null);
     setErrorMessage(null);
     setErrorKind(null);
@@ -943,13 +955,20 @@ export function BetaPlanner() {
         className="beta-focus-target scroll-mt-24"
       >
         {/*
-          Hidden once the plan has arrived. Three chips all reading "complete"
-          sit directly above the thing the visitor came for and never change
-          again; the plan's own presence is the completion signal. While the
-          pipeline is still running they are the only feedback there is, so
-          they stay for exactly that long.
+          Hidden once the plan is FINISHED, not once text exists. Three chips
+          all reading "complete" above the thing the visitor came for are a
+          receipt nobody asked for, so they go — but only when there is
+          genuinely nothing left to wait for.
+          
+          Gating on `!planText` alone was wrong in the mode that ships. Under
+          `enforce` the api paints the whole validated plan before the coach
+          even starts, then buffers the coach for a measured p50 of 8.5s: the
+          chips vanished for that entire window, leaving a complete-looking
+          plan under a "Your plan" heading with no sign more was coming. At
+          mode `off` it is worse, since the coach streams live and they
+          vanished on the first token.
         */}
-        {showPipeline && !planText && (
+        {showPipeline && phase === 'running' && (
           <div className="mt-8">
             <h3 className="sr-only">Plan generation progress</h3>
             <ol className="flex flex-wrap items-center gap-2 p-0" aria-label="Pipeline stages">
@@ -1088,10 +1107,7 @@ export function BetaPlanner() {
         {phase === 'done' && (
           <div className="beta-card mt-6 p-6 sm:p-8">
             <h3 className="text-[length:var(--beta-text-lg)]">A starting point, not a finish line</h3>
-            <p className="mt-3 beta-measure">
-              This plan is drawn from common rehab patterns, not an assessment of you. Let pain set
-              the pace: if a stage stirs things up, drop back a stage and give it another week.
-            </p>
+            <p className="mt-3 beta-measure">{PLAN_PACING_RULE}</p>
             <div className="mt-4 beta-measure rounded-lg bg-[color:var(--beta-surface-2)] p-4">
               <p className="font-medium text-[color:var(--beta-ink)]">
                 {PLAN_STOP_CONDITIONS_HEADING}

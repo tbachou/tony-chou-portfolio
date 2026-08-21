@@ -34,6 +34,17 @@ export const PLAN_STOP_CONDITIONS = [
   'pain above 3 out of 10 that isn’t settling by the next morning, two sessions in a row',
 ] as const;
 
+/**
+ * The pacing rule shown directly above the stop conditions.
+ *
+ * Hoisted for the same reason they were: the copy carried the reasons to
+ * STOP but not the rule for how to PROGRESS, which is the one instruction
+ * governing every dose in the plan body. A screenshot of that card carries
+ * both, and the clipboard is meant to travel with the same context.
+ */
+export const PLAN_PACING_RULE =
+  'This plan is drawn from common rehab patterns, not an assessment of you. Let pain set the pace: if a stage stirs things up, drop back a stage and give it another week.';
+
 export const PLAN_STOP_CONDITIONS_HEADING =
   'Stop the plan and see a professional if any of these show up:';
 
@@ -53,6 +64,8 @@ export function buildPlanClipboardText(planText: string): string {
     PLAN_EDUCATIONAL_FRAMING,
     '',
     planText.trim(),
+    '',
+    PLAN_PACING_RULE,
     '',
     PLAN_STOP_CONDITIONS_HEADING,
     ...PLAN_STOP_CONDITIONS.map((c) => `- ${c}`),
