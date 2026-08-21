@@ -2,7 +2,7 @@
 
 **Date**: 2026-08-20
 **Revised**: 2026-08-21 (how the api gets the image, and where photos live)
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 
