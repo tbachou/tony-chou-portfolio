@@ -31,7 +31,7 @@ export class GradeController {
     short: { limit: 30, ttl: 60_000 },
     long: { limit: 300, ttl: 3_600_000 },
   })
-  today(): GradeToday {
+  async today(): Promise<GradeToday> {
     return this.gradeService.getToday();
   }
 

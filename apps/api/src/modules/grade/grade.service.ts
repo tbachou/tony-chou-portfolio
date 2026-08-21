@@ -3,14 +3,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GradeAnalysisService } from './grade-analysis.service';
 import {
   GRADE_SLOTS,
-  PHOTO_URL_PREFIX,
-  resolveWebOrigin,
+  gradeGameEnabled,
+  photoObjectUrl,
   type GradeConfidence,
 } from './grade.constants';
 import {
-  loadPhotoManifest,
+  partitionPool,
   photoForDate,
-  sortedPool,
   utcDateKey,
   type GradePhoto,
 } from './photo-pool';
@@ -69,6 +68,17 @@ const NO_PHOTOS_MESSAGE =
 export class GradeService {
   private readonly logger = new Logger(GradeService.name);
 
+  /**
+   * The last UTC date the licence exclusion was logged for (AC-18).
+   *
+   * The count has to be fresh, so it cannot be computed at startup: a photo
+   * toggled inactive without a redeploy would leave a boot-time number lying.
+   * Logging on every cycle resolution would be fresh but repeat on every
+   * request until the day's row exists, so it is emitted once per UTC date
+   * per process instead. A redeploy re-logging the same day is fine.
+   */
+  private lastExclusionLogDate: string | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly analysis: GradeAnalysisService,
@@ -80,14 +90,15 @@ export class GradeService {
    * `now` is injectable so the deterministic date cycle is testable without
    * faking the clock globally; production always uses the server clock.
    */
-  getToday(now: Date = new Date()): GradeToday {
-    const photo = this.requirePhoto(now);
+  async getToday(now: Date = new Date()): Promise<GradeToday> {
+    const date = utcDateKey(now);
+    const { photo, eligible } = await this.resolveDayPhoto(date, now);
 
     return {
-      date: utcDateKey(now),
-      imageUrl: this.imageUrlFor(photo),
-      ...(photo.note !== undefined && { note: photo.note }),
-      poolSize: sortedPool().length,
+      date,
+      imageUrl: photoObjectUrl(photo.objectKey),
+      ...(photo.note ? { note: photo.note } : {}),
+      poolSize: eligible.length,
     };
   }
 
@@ -103,11 +114,22 @@ export class GradeService {
     guess: number,
     now: Date = new Date(),
   ): Promise<GradeReveal> {
-    const photo = this.requirePhoto(now);
     const date = utcDateKey(now);
+    const { photo: candidate } = await this.resolveDayPhoto(date, now);
 
-    await this.ensureDayRow(date, photo.id);
+    await this.ensureDayRow(date, candidate.id);
     const row = await this.recordGuess(date, guess);
+
+    // The row is the authority on which photo this date is graded against
+    // (AC-20), not the candidate resolved above. The two differ only in a
+    // narrow race — a concurrent first guess created the row while the pool
+    // was changing underneath — but reading the row's own photo is what makes
+    // that race harmless instead of grading two visitors against two
+    // different problems under one histogram.
+    const photo =
+      row.photoId === candidate.id
+        ? candidate
+        : await this.requirePinnedPhoto(row.photoId);
 
     const model = await this.resolveAnalysis(row, photo);
 
@@ -121,8 +143,72 @@ export class GradeService {
       yourDistance: Math.abs(guess - photo.trueGrade),
       modelDistance:
         model === null ? null : Math.abs(model.grade - photo.trueGrade),
-      ...(photo.note !== undefined && { note: photo.note }),
+      ...(photo.note ? { note: photo.note } : {}),
     };
+  }
+
+  /**
+   * The photo this UTC date is graded against, and the pool it was drawn from.
+   *
+   * Two sources, in strict order. An existing GradeDay row wins outright and
+   * its photo is returned even if that photo has since been deactivated
+   * (AC-20): uploading or retiring a photo mid-day must not change the answer
+   * under visitors already playing. Only when no row exists does the
+   * deterministic cycle choose (AC-1).
+   *
+   * The pool is loaded either way because `poolSize` is reported from it, and
+   * it is the live eligible count rather than anything the row pinned.
+   */
+  private async resolveDayPhoto(
+    date: string,
+    now: Date,
+  ): Promise<{ photo: GradePhoto; eligible: GradePhoto[] }> {
+    const [pinned, active] = await Promise.all([
+      this.prisma.gradeDay.findUnique({
+        where: { date },
+        select: { photo: true },
+      }),
+      this.prisma.gradePhoto.findMany({ where: { active: true } }),
+    ]);
+
+    const { eligible, excluded } = partitionPool(active, gradeGameEnabled());
+    this.logExclusions(date, excluded.length);
+
+    if (pinned?.photo) return { photo: pinned.photo, eligible };
+
+    const photo = photoForDate(now, eligible);
+    if (!photo) {
+      // An empty pool is a deployment problem, not a visitor problem.
+      this.logger.error(
+        `No active photo available for ${date}; /grade is unplayable`,
+      );
+      throw new ServiceUnavailableException(NO_PHOTOS_MESSAGE);
+    }
+    return { photo, eligible };
+  }
+
+  /** The photo a GradeDay row pinned, whatever its current active state. */
+  private async requirePinnedPhoto(photoId: string): Promise<GradePhoto> {
+    const photo = await this.prisma.gradePhoto.findUnique({
+      where: { id: photoId },
+    });
+    if (!photo) {
+      // The foreign key is onDelete: Restrict, so a row's photo cannot be
+      // deleted out from under it. Reaching here means the constraint was
+      // bypassed by hand.
+      this.logger.error(`GradeDay row points at missing photo ${photoId}`);
+      throw new ServiceUnavailableException(NO_PHOTOS_MESSAGE);
+    }
+    return photo;
+  }
+
+  /** One line per UTC date naming how many photos the licence gate kept out (AC-18). */
+  private logExclusions(date: string, count: number): void {
+    if (count === 0 || this.lastExclusionLogDate === date) return;
+    this.lastExclusionLogDate = date;
+    this.logger.log(
+      `Grade photo licence gate: ${count} unlicensed_test photo(s) excluded from the ${date} cycle`,
+    );
   }
 
   /**
@@ -142,23 +228,8 @@ export class GradeService {
 
     return this.analysis.ensureAnalysis({
       date: row.date,
-      imageUrl: this.imageUrlFor(photo),
+      imageUrl: photoObjectUrl(photo.objectKey),
     });
-  }
-
-  /** The absolute URL both the page and the vision call resolve the photo at. */
-  imageUrlFor(photo: GradePhoto): string {
-    return `${resolveWebOrigin()}${PHOTO_URL_PREFIX}${photo.file}`;
-  }
-
-  private requirePhoto(now: Date): GradePhoto {
-    const photo = photoForDate(now, loadPhotoManifest());
-    if (!photo) {
-      // An empty pool is a deployment problem, not a visitor problem.
-      this.logger.error('Grade photo manifest is empty; /grade is unplayable');
-      throw new ServiceUnavailableException(NO_PHOTOS_MESSAGE);
-    }
-    return photo;
   }
 
   /**
