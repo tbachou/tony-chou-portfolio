@@ -33,6 +33,14 @@ const NETWORK_ERROR_MESSAGE =
 const RATE_LIMITED_FALLBACK =
   "You've been playing fast. Give it a minute and try again.";
 
+/**
+ * The api refused the guess because the UTC day rolled over between the page
+ * loading and the guess landing (AC-19). The guess never counted, so the fix
+ * is to pull the new day and let them play it.
+ */
+const DAY_ROLLED_OVER_MESSAGE =
+  "A new day started while you were looking. Here's today's problem.";
+
 export function GradeGame() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [today, setToday] = useState<GradeToday | null>(null);
@@ -43,12 +51,20 @@ export function GradeGame() {
 
   const { streak, recordPlay } = useGradeStreak();
 
-  const load = useCallback(async () => {
+  /**
+   * Fetch the day.
+   *
+   * `notice` is applied AFTER the fetch succeeds, never before: this function
+   * clears the message on entry, so a caller that set one first would have it
+   * wiped and the visitor would be left with no explanation for what happened.
+   */
+  const load = useCallback(async (notice?: string) => {
     setPhase('loading');
     setErrorMessage(null);
     try {
       setToday(await fetchToday());
       setPhase('ready');
+      if (notice) setErrorMessage(notice);
     } catch (error) {
       setErrorMessage(
         error instanceof GradeRequestError ? error.message : NETWORK_ERROR_MESSAGE
@@ -63,18 +79,30 @@ export function GradeGame() {
 
   const handleGuess = useCallback(
     async (grade: number) => {
+      // Checked before any state moves: bailing after setPhase('guessing')
+      // would strand the UI in a state nothing clears.
+      if (!today) return;
+
       setPending(grade);
       setPhase('guessing');
       setErrorMessage(null);
 
       try {
-        const result = await submitGuess(grade);
+        const result = await submitGuess(grade, today.date);
         setReveal(result);
         // The streak is recorded from the reveal's own date, so a play that
         // straddles UTC midnight counts for the day the server scored.
         recordPlay({ date: result.date, won: result.yourDistance === 0 });
         setPhase('revealed');
       } catch (error) {
+        if (error instanceof GradeRequestError && error.status === 409) {
+          // Midnight UTC passed mid-play. Reload rather than reporting a
+          // failure: the photo, the date and the answer have all moved on, and
+          // re-submitting against the stale date would only be refused again.
+          setPending(null);
+          await load(DAY_ROLLED_OVER_MESSAGE);
+          return;
+        }
         if (error instanceof GradeRequestError) {
           setErrorMessage(error.status === 429 ? RATE_LIMITED_FALLBACK : error.message);
         } else {
@@ -86,7 +114,7 @@ export function GradeGame() {
         setPending(null);
       }
     },
-    [recordPlay]
+    [recordPlay, today, load]
   );
 
   return (
@@ -144,9 +172,10 @@ export function GradeGame() {
                   will be calling it blind.
                 </div>
               ) : (
-                // Plain <img>: the photo is served from the api's configured web
-                // origin as an absolute URL, which is exactly the case next/image
-                // would need a remote-pattern allowlist for.
+                // Plain <img>: the src is a presigned S3 URL that carries a
+                // signature and expires in an hour, so it differs on every load.
+                // next/image would need a remote-pattern allowlist for a bucket
+                // it cannot read, and would have nothing stable to cache.
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={today.imageUrl}

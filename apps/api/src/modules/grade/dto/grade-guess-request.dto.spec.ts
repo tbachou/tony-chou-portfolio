@@ -7,10 +7,15 @@ import {
 import { plainToInstance } from 'class-transformer';
 import { GradeGuessRequestDto } from './grade-guess-request.dto';
 
+/** A valid shown date, so guess-focused cases are not tripped by AC-19's field. */
+const TODAY = '2026-08-20';
+
 async function errorsFor(
   payload: Record<string, unknown>,
 ): Promise<ValidationError[]> {
-  return validate(plainToInstance(GradeGuessRequestDto, payload));
+  return validate(
+    plainToInstance(GradeGuessRequestDto, { date: TODAY, ...payload }),
+  );
 }
 
 function constraintsOn(errors: ValidationError[], property: string): string[] {
@@ -56,16 +61,46 @@ describe('GradeGuessRequestDto (AC-8)', () => {
     expect(constraintsOn(await errorsFor({}), 'guess')).toContain('isInt');
   });
 
-  it('whitelists exactly one property, so the DTO carries no free text', () => {
+  describe('the shown date (AC-19)', () => {
+    it('accepts a UTC calendar date', async () => {
+      expect(constraintsOn(await errorsFor({ guess: 4 }), 'date')).toEqual([]);
+    });
+
+    it('is required, since an absent date would mean "assume today"', async () => {
+      // That fallback is precisely the silent regrade AC-19 exists to stop.
+      const errors = await validate(
+        plainToInstance(GradeGuessRequestDto, { guess: 4 }),
+      );
+      expect(constraintsOn(errors, 'date')).toContain('matches');
+    });
+
+    it.each([
+      ['a timestamp', '2026-08-20T12:00:00.000Z'],
+      ['a slashed date', '2026/08/20'],
+      ['a two-digit year', '26-08-20'],
+      ['prose', 'today'],
+      ['empty', ''],
+      ['a SQL fragment', "2026-08-20' OR '1'='1"],
+    ])('rejects %s', async (_label, date) => {
+      expect(constraintsOn(await errorsFor({ guess: 4, date }), 'date')).toContain(
+        'matches',
+      );
+    });
+  });
+
+  it('whitelists exactly two machine-shaped properties, and no free text', () => {
     // The whitelist is what forbidNonWhitelisted enforces against, so this is
-    // the assertion that keeps the feature's input surface a single integer
-    // (AC-6). A free-text field added here would show up as a second name.
+    // the assertion that keeps the feature's input surface closed (AC-6).
+    // `date` joined it in R4 and is not visitor prose: it is echoed back from
+    // /grade/today, pattern-constrained, compared against the server clock,
+    // never stored and never sent to a model. A genuine free-text field added
+    // here would show up as a third name.
     const whitelisted = new Set(
       getMetadataStorage()
         .getTargetValidationMetadatas(GradeGuessRequestDto, '', false, false)
         .map((meta) => meta.propertyName),
     );
 
-    expect([...whitelisted]).toEqual(['guess']);
+    expect([...whitelisted].sort()).toEqual(['date', 'guess']);
   });
 });

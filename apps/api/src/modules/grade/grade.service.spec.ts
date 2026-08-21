@@ -1,7 +1,12 @@
-import { Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { GradeService, normalizeHistogram } from './grade.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { GradeAnalysisService } from './grade-analysis.service';
+import type { PhotoStorageService } from '../grade-photos/photo-storage.service';
 import type { GradePhoto } from './photo-pool';
 
 // The real PrismaService pulls in the generated client and the pg adapter;
@@ -21,10 +26,13 @@ const PHOTO: GradePhoto = {
   note: 'Placeholder gym, north wall',
 };
 
+/** What the storage double signs URLs as; see makeService below. */
 const IMAGE_URL =
-  'https://portfolio-grade-photos-test.s3.us-east-2.amazonaws.com/photos/9f2c4ab1d0e37b58.webp';
+  'https://signed.example/photos/9f2c4ab1d0e37b58.webp?X-Amz-Expires=3600&X-Amz-Signature=sig';
 
 const NOW = new Date('2026-08-20T12:00:00.000Z');
+/** The UTC date NOW falls on, echoed back with every guess (AC-19). */
+const TODAY = '2026-08-20';
 
 function zeros(): number[] {
   return Array.from({ length: 9 }, () => 0);
@@ -98,11 +106,21 @@ function makePrisma(
  */
 let ensureAnalysis: jest.Mock;
 
+/** Records every object key the service asked to have signed. */
+let presignGet: jest.Mock;
+
 function makeService(prisma: PrismaService): GradeService {
   ensureAnalysis = jest.fn().mockResolvedValue(null);
-  return new GradeService(prisma, {
-    ensureAnalysis,
-  } as unknown as GradeAnalysisService);
+  presignGet = jest.fn((key: string) =>
+    Promise.resolve(
+      `https://signed.example/${key}?X-Amz-Expires=3600&X-Amz-Signature=sig`,
+    ),
+  );
+  return new GradeService(
+    prisma,
+    { ensureAnalysis } as unknown as GradeAnalysisService,
+    { presignGet } as unknown as PhotoStorageService,
+  );
 }
 
 describe('GradeService', () => {
@@ -163,7 +181,7 @@ describe('GradeService', () => {
       const today = await makeService(prisma).getToday(NOW);
 
       expect(today.imageUrl).not.toContain(PHOTO.id);
-      expect(today.imageUrl).toMatch(/photos\/[0-9a-f]+\.\w+$/);
+      expect(today.imageUrl).toMatch(/photos\/[0-9a-f]+\.\w+/);
     });
 
     it('omits note entirely when the photo has none', async () => {
@@ -175,16 +193,17 @@ describe('GradeService', () => {
       ).resolves.not.toHaveProperty('note');
     });
 
-    it('builds the image URL from the bucket and region, not the web origin', async () => {
-      process.env.GRADE_PHOTO_BUCKET = 'other-bucket';
-      process.env.AWS_REGION = 'eu-west-1';
+    it('takes the image URL from the presigner, building none of its own', async () => {
+      // R4 moved URL construction into PhotoStorageService, so the assertion
+      // moved with it: the service's job is to hand over the right object key
+      // and serve back whatever the signer returns.
       const { prisma } = makePrisma();
 
       const today = await makeService(prisma).getToday(NOW);
 
-      expect(today.imageUrl).toBe(
-        `https://other-bucket.s3.eu-west-1.amazonaws.com/${PHOTO.objectKey}`,
-      );
+      expect(presignGet).toHaveBeenCalledTimes(1);
+      expect(presignGet).toHaveBeenCalledWith(PHOTO.objectKey);
+      expect(today.imageUrl).toBe(await presignGet.mock.results[0].value);
     });
 
     it('serves 503 rather than a broken page when no photo is active', async () => {
@@ -217,6 +236,113 @@ describe('GradeService', () => {
     });
   });
 
+  describe('the presigned image URL (AC-14, AC-2)', () => {
+    it('signs the day photo rather than exposing a plain object URL', async () => {
+      const { prisma } = makePrisma();
+
+      const today = await makeService(prisma).getToday(NOW);
+
+      expect(presignGet).toHaveBeenCalledWith(PHOTO.objectKey);
+      expect(today.imageUrl).toContain('X-Amz-Signature');
+    });
+
+    it('signs exactly the pinned photo, not a recomputed one', async () => {
+      const retired: GradePhoto = { ...PHOTO, id: 'retired', objectKey: 'photos/old.webp' };
+      const { prisma } = makePrisma({
+        pool: [{ ...PHOTO, id: 'newcomer', objectKey: 'photos/new.webp' }],
+        pinned: { photo: retired },
+      });
+
+      await makeService(prisma).getToday(NOW);
+
+      expect(presignGet).toHaveBeenCalledWith('photos/old.webp');
+      expect(presignGet).not.toHaveBeenCalledWith('photos/new.webp');
+    });
+
+    it('still carries no grade anywhere, URL included', async () => {
+      // AC-2 re-verified because the response shape changed in R4: the signed
+      // URL is now part of the pre-guess surface, so it is asserted on rather
+      // than only the body's own fields.
+      const { prisma } = makePrisma();
+
+      const today = await makeService(prisma).getToday(NOW);
+
+      expect(today.imageUrl).not.toContain(PHOTO.id);
+      expect(today.imageUrl).not.toMatch(/trueGrade|grade=|v[0-8]\b/i);
+      expect(JSON.stringify(today)).not.toMatch(/trueGrade|model|reasoning/i);
+    });
+  });
+
+  describe('the day rollover guard (AC-19)', () => {
+    it('refuses a guess carrying yesterday\'s date, as a 409', async () => {
+      // The status is the contract, not just the exception class: the web
+      // client keys its "reload the day" branch on 409 specifically, so a
+      // change to a different 4xx would silently turn the rollover recovery
+      // into a plain error message.
+      const { prisma } = makePrisma();
+
+      const rejection = await makeService(prisma)
+        .submitGuess(3, '2026-08-19', NOW)
+        .catch((error: unknown) => error);
+
+      expect(rejection).toBeInstanceOf(ConflictException);
+      expect((rejection as ConflictException).getStatus()).toBe(409);
+    });
+
+    it('refuses tomorrow\'s date too, not just an older one', async () => {
+      const { prisma } = makePrisma();
+
+      await expect(
+        makeService(prisma).submitGuess(3, '2026-08-21', NOW),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('writes nothing at all when the date is stale', async () => {
+      // The guess must not land in any histogram: not yesterday's, and not
+      // today's. Refusing before the row is touched is what guarantees it.
+      const { prisma } = makePrisma();
+
+      await expect(
+        makeService(prisma).submitGuess(3, '2026-08-19', NOW),
+      ).rejects.toThrow(ConflictException);
+
+      expect(prisma.gradeDay.create).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.gradePhoto.findMany).not.toHaveBeenCalled();
+    });
+
+    it('accepts a guess made at the very start of the UTC day', async () => {
+      const firstMoment = new Date('2026-08-20T00:00:00.000Z');
+
+      const { prisma } = makePrisma();
+      const reveal = await makeService(prisma).submitGuess(5, TODAY, firstMoment);
+
+      expect(reveal.date).toBe(TODAY);
+    });
+
+    it('accepts a guess made at the very end of the UTC day', async () => {
+      const lastMoment = new Date('2026-08-20T23:59:59.999Z');
+
+      const { prisma } = makePrisma();
+      const reveal = await makeService(prisma).submitGuess(5, TODAY, lastMoment);
+
+      expect(reveal.date).toBe(TODAY);
+    });
+
+    it('refuses the 23:55 open, 00:02 guess that AC-19 exists for', async () => {
+      // Shown 2026-08-20 at 23:55, submitted two minutes after midnight. The
+      // photo has changed underneath; grading it against the new one would
+      // score the visitor on a problem they never saw.
+      const justAfterMidnight = new Date('2026-08-21T00:02:00.000Z');
+
+      const { prisma } = makePrisma();
+
+      await expect(
+        makeService(prisma).submitGuess(5, '2026-08-20', justAfterMidnight),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
   describe('the pinned day (AC-20)', () => {
     it('serves the row\'s photo even after that photo is deactivated', async () => {
       // The pool no longer contains the pinned photo at all, which is what a
@@ -241,7 +367,7 @@ describe('GradeService', () => {
         row: { photoId: 'retired' },
       });
 
-      const reveal = await makeService(prisma).submitGuess(8, NOW);
+      const reveal = await makeService(prisma).submitGuess(8, TODAY, NOW);
 
       // Truth comes from the pinned photo (V8), so a correct guess scores 0.
       // Against the newcomer (V1) this would have been a distance of 7.
@@ -259,7 +385,7 @@ describe('GradeService', () => {
         row: { photoId: 'other' },
       });
 
-      const reveal = await makeService(prisma).submitGuess(0, NOW);
+      const reveal = await makeService(prisma).submitGuess(0, TODAY, NOW);
 
       expect(prisma.gradePhoto.findUnique).toHaveBeenCalledWith({
         where: { id: 'other' },
@@ -270,7 +396,7 @@ describe('GradeService', () => {
     it('does not re-read the photo when the row agrees with the cycle', async () => {
       const { prisma } = makePrisma();
 
-      await makeService(prisma).submitGuess(3, NOW);
+      await makeService(prisma).submitGuess(3, TODAY, NOW);
 
       expect(prisma.gradePhoto.findUnique).not.toHaveBeenCalled();
     });
@@ -278,7 +404,7 @@ describe('GradeService', () => {
     it('serves 503 if the row points at a photo that is gone', async () => {
       const { prisma } = makePrisma({ row: { photoId: 'vanished' } });
 
-      await expect(makeService(prisma).submitGuess(3, NOW)).rejects.toThrow(
+      await expect(makeService(prisma).submitGuess(3, TODAY, NOW)).rejects.toThrow(
         ServiceUnavailableException,
       );
     });
@@ -295,7 +421,7 @@ describe('GradeService', () => {
       // Sorted first, so a cycle that ignored the gate would be likely to pick it.
       const { prisma, state } = makePrisma({ pool: [borrowed, PHOTO] });
 
-      await makeService(prisma).submitGuess(3, NOW);
+      await makeService(prisma).submitGuess(3, TODAY, NOW);
 
       expect(state.createCalls).toEqual([
         { date: '2026-08-20', photoId: PHOTO.id },
@@ -366,7 +492,7 @@ describe('GradeService', () => {
     it('returns truth, distances and the histogram on a fresh day', async () => {
       const { prisma, state } = makePrisma();
 
-      const reveal = await makeService(prisma).submitGuess(3, NOW);
+      const reveal = await makeService(prisma).submitGuess(3, TODAY, NOW);
 
       expect(reveal.trueGrade).toBe(5);
       expect(reveal.yourGuess).toBe(3);
@@ -383,7 +509,7 @@ describe('GradeService', () => {
     it('reports the model as null while the day has no analysis (AC-5)', async () => {
       const { prisma } = makePrisma();
 
-      const reveal = await makeService(prisma).submitGuess(4, NOW);
+      const reveal = await makeService(prisma).submitGuess(4, TODAY, NOW);
 
       expect(reveal.model).toBeNull();
       expect(reveal.modelDistance).toBeNull();
@@ -392,7 +518,7 @@ describe('GradeService', () => {
     it('asks for the day\'s vision call when the row has no analysis', async () => {
       const { prisma } = makePrisma();
 
-      await makeService(prisma).submitGuess(4, NOW);
+      await makeService(prisma).submitGuess(4, TODAY, NOW);
 
       expect(ensureAnalysis).toHaveBeenCalledWith({
         date: '2026-08-20',
@@ -410,7 +536,7 @@ describe('GradeService', () => {
         reasoning: 'Hard to read.',
       });
 
-      const reveal = await service.submitGuess(4, NOW);
+      const reveal = await service.submitGuess(4, TODAY, NOW);
 
       expect(reveal.model?.grade).toBe(6);
       expect(reveal.modelDistance).toBe(1);
@@ -426,7 +552,7 @@ describe('GradeService', () => {
         },
       });
 
-      const reveal = await makeService(prisma).submitGuess(4, NOW);
+      const reveal = await makeService(prisma).submitGuess(4, TODAY, NOW);
 
       expect(reveal.model).toEqual({
         grade: 7,
@@ -443,7 +569,7 @@ describe('GradeService', () => {
     it('scores a perfect guess as distance zero', async () => {
       const { prisma } = makePrisma();
 
-      const reveal = await makeService(prisma).submitGuess(5, NOW);
+      const reveal = await makeService(prisma).submitGuess(5, TODAY, NOW);
 
       expect(reveal.yourDistance).toBe(0);
     });
@@ -451,7 +577,7 @@ describe('GradeService', () => {
     it('increments the slot for the guessed grade, and plays, in one statement', async () => {
       const { prisma, state } = makePrisma();
 
-      await makeService(prisma).submitGuess(6, NOW);
+      await makeService(prisma).submitGuess(6, TODAY, NOW);
 
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
       // The interpolated values are [guess, date] in template order.
@@ -464,7 +590,7 @@ describe('GradeService', () => {
     it('sends nothing a visitor supplied to the database beyond the integer', async () => {
       const { prisma, state } = makePrisma();
 
-      await makeService(prisma).submitGuess(2, NOW);
+      await makeService(prisma).submitGuess(2, TODAY, NOW);
 
       // AC-6: the only visitor-derived value that reaches Prisma at all is
       // the grade integer itself.
@@ -478,7 +604,7 @@ describe('GradeService', () => {
     it('serves 503 rather than writing anything when no photo is active', async () => {
       const { prisma } = makePrisma({ pool: [] });
 
-      await expect(makeService(prisma).submitGuess(1, NOW)).rejects.toThrow(
+      await expect(makeService(prisma).submitGuess(1, TODAY, NOW)).rejects.toThrow(
         ServiceUnavailableException,
       );
       expect(prisma.gradeDay.create).not.toHaveBeenCalled();
@@ -504,8 +630,8 @@ describe('GradeService', () => {
 
       const service = makeService(prisma);
       const [a, b] = await Promise.all([
-        service.submitGuess(3, NOW),
-        service.submitGuess(4, NOW),
+        service.submitGuess(3, TODAY, NOW),
+        service.submitGuess(4, TODAY, NOW),
       ]);
 
       // Neither request errors, and both get a consistent reveal.
@@ -521,7 +647,7 @@ describe('GradeService', () => {
       );
 
       await expect(
-        makeService(prisma).submitGuess(1, NOW),
+        makeService(prisma).submitGuess(1, TODAY, NOW),
       ).rejects.toThrow('connection lost');
     });
   });
