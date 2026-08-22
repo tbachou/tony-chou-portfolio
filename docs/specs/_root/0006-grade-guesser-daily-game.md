@@ -352,7 +352,7 @@ R8. Content and gate: photograph and upload five to ten problems with each sourc
 - Image handling brings an image library into the api for resizing, on a free Render instance where memory is genuinely scarce, which is why the upload size cap is load bearing rather than decorative.
 
 **Neutral**:
-- New Prisma migration on the shared dev/prod database (the repo's known gotcha: dev runs consume nothing here since there are no caps, but the migration itself deploys with the api).
+- New Prisma migration. Dev and prod are SEPARATE databases as of 2026-08-21 (this bullet originally assumed the shared one): the migration is generated against the dev database and reaches production only through Render's `preDeployCommand: npx prisma migrate deploy`, which runs before the code swap so a failed migration aborts the deploy.
 - The histogram double count via incognito replay is accepted and documented.
 - The api gains its first S3 dependency. Its AWS credentials already exist for Bedrock, so this widens an existing trust boundary rather than opening a new one.
 - `photos.json`, its loader and its repo check are deleted. The AC-9 guarantee moves from a scan to an invariant, which is stronger but only as good as the rollback path's test.
@@ -360,7 +360,7 @@ R8. Content and gate: photograph and upload five to ten problems with each sourc
 
 ## Migration plan
 
-**Strategy**: feature flagged, and the flag is already off. `GRADE_GAME_ENABLED=false` means the api module is not registered and the web route 404s, so every phase below ships to production without a visitor ever reaching it. There is no live data to transform: the pool is empty, `photos.json` is an empty array (the file and its loader are removed in phase 2, not before), and `GradeDay` is empty, verified on 2026-08-21 by counting rows in the shared database rather than assuming it. The module was registered unconditionally when it was first merged, but that merge and the feature flag reached origin in the same push, so no deployed build ever served the route.
+**Strategy**: feature flagged, and the flag is already off. `GRADE_GAME_ENABLED=false` means the api module is not registered and the web route 404s, so every phase below ships to production without a visitor ever reaching it. There is no live data to transform: the pool is empty, `photos.json` is an empty array (the file and its loader are removed in phase 2, not before), and `GradeDay` is empty, verified on 2026-08-21 by counting rows rather than assuming it. The module was registered unconditionally when it was first merged, but that merge and the feature flag reached origin in the same push, so no deployed build ever served the route.
 
 **Phases**:
 1. Terraform apply: the bucket and the IAM policy. Nothing in the running api reads them yet, so this is inert on its own (R1).
