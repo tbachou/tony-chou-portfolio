@@ -10,29 +10,22 @@ Every line here exists because it failed at least once in this repo, and none of
 
 Run these first and report that you did. If any step fails, stop and say so rather than working around it.
 
-**1. Confirm where you are.** Your worktree may not be isolated even when it was requested.
+**1. Confirm where you are, and report the commit you started from.** Your worktree may not be isolated even when it was requested.
 
 ```bash
-pwd && git worktree list && git status --short
+pwd && git worktree list && git status --short && git log --oneline -1
 ```
 
-**2. Confirm your base is current.** Agents here are routinely seeded from a stale base, sometimes twenty commits behind, at a point where the file you were sent to fix did not exist yet.
+Your base is already correct: `worktree.baseRef` is set to `head` in `.claude/settings.json`, so your worktree branches from the engineer's current HEAD rather than from the remote default branch. Do not fetch or merge to "catch up". If the commit you land on is not the one the task describes, stop and report that instead of moving your own base.
 
-```bash
-git log --oneline -3
-git fetch --quiet && git merge --ff-only main
-```
-
-Report the commit you ended up on. If the fast forward refuses, stop and report that instead of merging some other way.
-
-**3. Use Node 22.** Your shell comes up on Node v20.17.0, and this repo dies on Node 20 with `ERR_REQUIRE_ESM`. Sourcing nvm is refused in your sandbox, so prefix the PATH instead:
+**2. Use Node 22.** Your shell comes up on Node v20.17.0, and this repo dies on Node 20 with `ERR_REQUIRE_ESM`. Sourcing nvm is refused in your sandbox, so prefix the PATH instead:
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH"
 node --version   # expect v22.x
 ```
 
-**4. If this is a fresh worktree, it has no dependencies and no generated Prisma client.**
+**3. If this is a fresh worktree, it has no dependencies and no generated Prisma client.**
 
 ```bash
 npm install
@@ -40,6 +33,8 @@ cd apps/api && DATABASE_URL="postgresql://x:x@localhost:5432/x" npx prisma gener
 ```
 
 The dummy connection string is fine. Generation reads the schema and never connects.
+
+Env files you do **not** need to create: `apps/api/.env`, `apps/web/.env.local` and `infra/terraform.tfvars` are copied into every worktree by `.worktreeinclude`. If one is missing, say so rather than writing your own.
 
 ---
 
@@ -71,7 +66,7 @@ The dummy connection string is fine. Generation reads the schema and never conne
 
 ## What to report back
 
-1. The commit you started from, and that the base check passed.
+1. The commit you started from, and that the worktree check passed.
 2. What you changed, by path.
 3. What proved it: the gate you ran, and the named test that failed on the deliberate revert.
 4. Anything you found and deliberately did not do.
