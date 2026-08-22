@@ -51,7 +51,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // data-theme on <html>, so the client markup legitimately differs
     // from what the server rendered. It applies to this element's
     // attributes only, not to the tree beneath it.
-    <html lang="en" suppressHydrationWarning>
+    // data-scroll-behavior: globals.css sets `html { scroll-behavior:
+    // smooth }` for anchor jumps. Next 15 silently forced that to `auto`
+    // during route transitions; Next 16 stopped, so without this attribute
+    // a nav click smooth-scrolls the whole page instead of landing at the
+    // top instantly. Opting back in keeps navigation feeling instant while
+    // in-page anchors stay smooth.
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
       <head>
         {/* Must stay a blocking inline script in <head>: it has to run
             before first paint to avoid a flash of the wrong theme.
