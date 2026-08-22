@@ -16,9 +16,9 @@ import { GradeGame } from './GradeGame';
  */
 const gradeGameEnabled = process.env.GRADE_GAME_ENABLED === 'true';
 
-const title = 'Grade Guesser — a daily climbing game';
+const title = 'Grade Guesser — a climbing grade game';
 const description =
-  "One boulder problem a day. Guess its V grade, then see the gym's answer, how everyone else guessed, and what Claude made of the same photo.";
+  "Read a real boulder problem and call its V grade, then see the gym's answer, how everyone else guessed, and what Claude made of the same photo.";
 
 export const metadata: Metadata = {
   title,
@@ -43,7 +43,7 @@ const HOW_IT_WORKS = [
   {
     step: 'The photo',
     detail:
-      'Every visitor sees the same problem on the same UTC day, picked from the pool by the date itself rather than by a scheduler. It changes at midnight UTC, and the pool cycles as it grows.'
+      'A fixed set of real problems, each one photographed and graded by hand. You work through them one at a time, in the same order everyone else gets, and the set grows when new walls are shot.'
   },
   {
     step: 'Your guess',
@@ -53,7 +53,7 @@ const HOW_IT_WORKS = [
   {
     step: "Claude's read",
     detail:
-      'The first guess of each day sends the photo to Claude with a forced structured response: a grade, a confidence, what it noticed on the wall, and why it landed where it did. That single answer is cached and shown to everyone else who plays that day.'
+      'The first guess on a problem sends the photo to Claude with a forced structured response: a grade, a confidence, what it noticed on the wall, and why it landed where it did. That single answer is cached and shown to everyone who plays that problem afterwards, so each problem costs exactly one model call, ever.'
   },
   {
     step: 'The verdict',
@@ -124,11 +124,12 @@ export default function GradePage() {
             </p>
             <h2 className="mt-4 text-term-xl font-bold text-term-ink">What gets stored</h2>
             <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
-              Per day, the server keeps one row: which photo it was, Claude&apos;s analysis of it,
-              a count of how many people guessed each grade, and how many played. That is the
-              whole record. There is no account, no cookie for the game, no identifier of any
-              kind, and no free-text field for anything to be typed into. Your streak and your
-              win/loss record live in this browser&apos;s local storage and are never transmitted.
+              Per problem, the server keeps one row: Claude&apos;s analysis of that photo, a count
+              of how many people guessed each grade, and how many played. That is the whole
+              record. There is no account, no cookie for the game, no identifier of any kind, and
+              no free-text field for anything to be typed into. Which problems you have read, and
+              the reveals themselves, live in this browser&apos;s local storage and are never
+              transmitted.
             </p>
           </section>
 

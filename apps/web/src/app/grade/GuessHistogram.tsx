@@ -10,7 +10,7 @@ type GuessHistogramProps = {
 };
 
 /**
- * How everyone guessed today.
+ * How everyone guessed this problem.
  *
  * Rows are marked with words rather than extra colours — the terminal system
  * has one accent and design.md forbids inventing a second, so "you", "truth"
@@ -34,8 +34,8 @@ export function GuessHistogram({
       </p>
       <p className="mt-2 text-term-sm text-term-body">
         {total === 1
-          ? 'You are the first to play today.'
-          : `${total.toLocaleString()} guesses so far today.`}
+          ? 'You are the first to play this one.'
+          : `${total.toLocaleString()} guesses on this problem so far.`}
       </p>
 
       <ul className="mt-4 space-y-1.5">

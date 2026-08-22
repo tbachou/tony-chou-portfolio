@@ -1,16 +1,22 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  fetchToday,
+  fetchProblems,
+  fetchProblemImage,
   submitGuess,
   GradeRequestError,
-  type GradeReveal,
-  type GradeToday
+  type GradeProblemList,
+  type GradeReveal
 } from '@/lib/grade-api';
 import { GuessPad } from './GuessPad';
 import { RevealPanel } from './RevealPanel';
-import { useGradeStreak } from './useGradeStreak';
+import {
+  countRead,
+  firstUnreadIndex,
+  useGradeProgress,
+  type GradeProgress
+} from './useGradeProgress';
 
 /**
  * Grade Guesser, the whole game (spec 0006).
@@ -23,9 +29,14 @@ import { useGradeStreak } from './useGradeStreak';
  * chrome and restyle it by redefining those variables, with no rebuild of
  * anything in here. Keep it that way: if this file ever needs something from
  * the portfolio's layout, take it as a prop instead.
+ *
+ * R7 rebuilt this for the fixed set. It shows ONE problem at a time with a
+ * control to move through them (AC-25), because the alternative — the whole
+ * set as a list — would mint a presigned URL per problem on load and let a
+ * visitor see ten photos they have not earned.
  */
 
-type Phase = 'loading' | 'ready' | 'guessing' | 'revealed' | 'error';
+type Phase = 'loading' | 'ready' | 'guessing' | 'error';
 
 const NETWORK_ERROR_MESSAGE =
   "Couldn't reach the game server. Check your connection and try again.";
@@ -33,38 +44,44 @@ const NETWORK_ERROR_MESSAGE =
 const RATE_LIMITED_FALLBACK =
   "You've been playing fast. Give it a minute and try again.";
 
-/**
- * The api refused the guess because the UTC day rolled over between the page
- * loading and the guess landing (AC-19). The guess never counted, so the fix
- * is to pull the new day and let them play it.
- */
-const DAY_ROLLED_OVER_MESSAGE =
-  "A new day started while you were looking. Here's today's problem.";
+/** The first guess on a problem pays for its vision call, and that takes a while. */
+const STUDYING_MESSAGE = 'Claude is studying the problem';
 
 export function GradeGame() {
   const [phase, setPhase] = useState<Phase>('loading');
-  const [today, setToday] = useState<GradeToday | null>(null);
-  const [reveal, setReveal] = useState<GradeReveal | null>(null);
+  const [list, setList] = useState<GradeProblemList | null>(null);
+  const [index, setIndex] = useState(0);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [liveReveal, setLiveReveal] = useState<GradeReveal | null>(null);
   const [pending, setPending] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [imageFailed, setImageFailed] = useState(false);
 
-  const { streak, recordPlay } = useGradeStreak();
+  const { progress, loaded: progressLoaded, recordReveal } = useGradeProgress();
 
-  /**
-   * Fetch the day.
-   *
-   * `notice` is applied AFTER the fetch succeeds, never before: this function
-   * clears the message on entry, so a caller that set one first would have it
-   * wiped and the visitor would be left with no explanation for what happened.
-   */
-  const load = useCallback(async (notice?: string) => {
+  // Memoised so the array identity is stable across renders. Without this the
+  // `?? []` fallback mints a new array every render, and any effect depending
+  // on it re-runs every render.
+  const problems = useMemo(() => list?.problems ?? [], [list]);
+  const problemIds = useMemo(() => problems.map((p) => p.publicId), [problems]);
+  const current = problems[index] ?? null;
+  const publicId = current?.publicId ?? null;
+
+  // The saved copy wins over the live one only when there is no live one: a
+  // guess just made must show its own fresh counts, not the older stored pair.
+  const cached = publicId ? progress.revealed[publicId] : undefined;
+  const reveal = liveReveal ?? cached ?? null;
+  const fromCache = liveReveal === null && cached !== undefined;
+
+  const readCount = countRead(progress, problemIds);
+
+  /** Load the set. Runs once; the set does not change under a visitor. */
+  const loadSet = useCallback(async () => {
     setPhase('loading');
     setErrorMessage(null);
     try {
-      setToday(await fetchToday());
+      setList(await fetchProblems());
       setPhase('ready');
-      if (notice) setErrorMessage(notice);
     } catch (error) {
       setErrorMessage(
         error instanceof GradeRequestError ? error.message : NETWORK_ERROR_MESSAGE
@@ -74,35 +91,74 @@ export function GradeGame() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadSet();
+  }, [loadSet]);
+
+  /**
+   * Open on the first problem the visitor has not read (AC-24's marker doing
+   * double duty). Waits for BOTH the set and the stored progress, because
+   * running before progress loads would always compute index 0 and drop the
+   * visitor back at the start of a set they were part way through.
+   */
+  const [startingIndexApplied, setStartingIndexApplied] = useState(false);
+  useEffect(() => {
+    if (startingIndexApplied || !progressLoaded || problemIds.length === 0) return;
+    setIndex(firstUnreadIndex(progress, problemIds));
+    setStartingIndexApplied(true);
+  }, [startingIndexApplied, progressLoaded, problemIds, progress]);
+
+  /**
+   * Mint this problem's image when it goes on screen (AC-25).
+   *
+   * Per problem rather than per set, so a visitor who reads two problems mints
+   * two URLs, and so a one hour presign cannot expire under a long sitting.
+   */
+  useEffect(() => {
+    if (!publicId) return;
+    let cancelled = false;
+    setImageUrl(null);
+    setImageError(null);
+
+    void (async () => {
+      try {
+        const { imageUrl: url } = await fetchProblemImage(publicId);
+        if (!cancelled) setImageUrl(url);
+      } catch (error) {
+        if (cancelled) return;
+        setImageError(
+          error instanceof GradeRequestError
+            ? error.message
+            : "Couldn't load this problem's photo."
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicId]);
+
+  /** Moving between problems clears the live reveal; the saved copy takes over. */
+  const goTo = useCallback((next: number) => {
+    setIndex(next);
+    setLiveReveal(null);
+    setErrorMessage(null);
+  }, []);
 
   const handleGuess = useCallback(
     async (grade: number) => {
-      // Checked before any state moves: bailing after setPhase('guessing')
-      // would strand the UI in a state nothing clears.
-      if (!today) return;
+      if (!publicId) return;
 
       setPending(grade);
       setPhase('guessing');
       setErrorMessage(null);
 
       try {
-        const result = await submitGuess(grade, today.date);
-        setReveal(result);
-        // The streak is recorded from the reveal's own date, so a play that
-        // straddles UTC midnight counts for the day the server scored.
-        recordPlay({ date: result.date, won: result.yourDistance === 0 });
-        setPhase('revealed');
+        const result = await submitGuess(grade, publicId);
+        setLiveReveal(result);
+        recordReveal(result);
+        setPhase('ready');
       } catch (error) {
-        if (error instanceof GradeRequestError && error.status === 409) {
-          // Midnight UTC passed mid-play. Reload rather than reporting a
-          // failure: the photo, the date and the answer have all moved on, and
-          // re-submitting against the stale date would only be refused again.
-          setPending(null);
-          await load(DAY_ROLLED_OVER_MESSAGE);
-          return;
-        }
         if (error instanceof GradeRequestError) {
           setErrorMessage(error.status === 429 ? RATE_LIMITED_FALLBACK : error.message);
         } else {
@@ -114,7 +170,7 @@ export function GradeGame() {
         setPending(null);
       }
     },
-    [recordPlay, today, load]
+    [publicId, recordReveal]
   );
 
   return (
@@ -122,19 +178,19 @@ export function GradeGame() {
       <header>
         <p className="text-term-sm text-term-muted">
           <span aria-hidden="true">$ </span>
-          ./grade-guesser --today
+          ./grade-guesser
         </p>
         <h1 className="mt-4 text-term-3xl font-bold text-term-ink terminal-glow sm:text-term-4xl">
           Grade Guesser
         </h1>
-        <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
-          One boulder problem a day. Read the wall, call the grade, then see how you did against
-          the gym&apos;s answer, against everyone else who played, and against Claude&apos;s own
-          look at the same photo.
+        <p className="mt-2 max-w-[70ch] text-term-base leading-relaxed text-term-body">
+          A set of real boulder problems. Read the wall, call the grade, then see how you did
+          against the gym&apos;s answer, against everyone else who played, and against
+          Claude&apos;s own look at the same photo.
         </p>
-        {today && (
+        {problems.length > 0 && (
           <p className="mt-3 text-term-xs uppercase tracking-wide text-term-muted">
-            {today.date} · drawn from a {today.poolSize}-problem pool · resets at midnight UTC
+            {readCount} of {problems.length} read
           </p>
         )}
       </header>
@@ -142,7 +198,7 @@ export function GradeGame() {
       {phase === 'loading' && (
         <p className="mt-10 text-term-base text-term-muted" role="status">
           <span aria-hidden="true">$ </span>
-          loading today&apos;s problem
+          loading the problem set
           <span className="terminal-cursor" aria-hidden="true">
             _
           </span>
@@ -154,79 +210,183 @@ export function GradeGame() {
           <p className="text-term-base text-term-error">{errorMessage}</p>
           <button
             type="button"
-            onClick={() => void load()}
-            className="mt-4 min-h-[44px] text-term-base font-bold text-term-ink transition-colors duration-term-instant hover:text-term-accent"
+            onClick={() => void loadSet()}
+            className="mt-4 min-h-[44px] text-term-base font-bold text-term-ink terminal-select transition-colors duration-term-instant focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent"
           >
             [ try again ]
           </button>
         </div>
       )}
 
-      {today && phase !== 'error' && phase !== 'loading' && (
-        <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10">
-          <figure className="m-0">
-            <div className="border border-term-border">
-              {imageFailed ? (
-                <div className="flex aspect-[3/4] items-center justify-center p-6 text-center text-term-sm text-term-muted">
-                  Today&apos;s photo could not be loaded. The guess buttons still work — but you
-                  will be calling it blind.
-                </div>
-              ) : (
-                // Plain <img>: the src is a presigned S3 URL that carries a
-                // signature and expires in an hour, so it differs on every load.
-                // next/image would need a remote-pattern allowlist for a bucket
-                // it cannot read, and would have nothing stable to cache.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={today.imageUrl}
-                  alt="Today's boulder problem. Guess its V grade from the holds and the wall angle."
-                  className="block h-auto w-full"
-                  onError={() => setImageFailed(true)}
-                />
-              )}
-            </div>
-            <figcaption className="mt-2 text-term-xs text-term-muted">
-              {phase === 'revealed' && reveal?.note
-                ? reveal.note
-                : 'Shot by Tony. The grade is the gym’s own.'}
-            </figcaption>
-          </figure>
+      {/* An empty set is the owner not having uploaded yet, not a fault. It gets
+          real copy rather than a spinner that never resolves or a bare error. */}
+      {phase !== 'loading' && phase !== 'error' && problems.length === 0 && (
+        <div className="mt-10 border border-term-border p-6">
+          <p className="text-term-sm text-term-muted">
+            <span aria-hidden="true">$ </span>
+            ls problems/
+          </p>
+          <p className="mt-3 max-w-[70ch] text-term-base leading-relaxed text-term-body">
+            No problems in the set yet. The pool is photographed and graded by hand, one wall at a
+            time, so it starts empty rather than with filler.
+          </p>
+          <p className="mt-3 max-w-[70ch] text-term-sm leading-relaxed text-term-muted">
+            Check back once the first set is up.
+          </p>
+        </div>
+      )}
 
-          <div>
-            {phase === 'revealed' && reveal ? (
-              <RevealPanel reveal={reveal} streak={streak} />
-            ) : (
-              <>
-                <GuessPad
-                  onGuess={(grade) => void handleGuess(grade)}
-                  disabled={phase === 'guessing'}
-                  pending={pending}
-                />
-                {phase === 'guessing' && (
-                  <p className="mt-4 text-term-sm text-term-muted" role="status">
+      {problems.length > 0 && phase !== 'loading' && phase !== 'error' && (
+        <>
+          <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10">
+            <figure className="m-0">
+              <figcaption className="mb-2 text-term-xs uppercase tracking-wide text-term-muted">
+                problem {index + 1} of {problems.length}
+                {cached && <span> · read</span>}
+              </figcaption>
+              <div className="border border-term-border">
+                {imageError ? (
+                  <div className="flex aspect-[3/4] items-center justify-center p-6 text-center text-term-sm text-term-muted">
+                    {imageError} The guess buttons still work, but you would be calling it blind.
+                  </div>
+                ) : imageUrl === null ? (
+                  <div
+                    className="flex aspect-[3/4] items-center justify-center p-6 text-center text-term-sm text-term-muted"
+                    role="status"
+                  >
                     <span aria-hidden="true">$ </span>
-                    scoring your guess
+                    loading photo
                     <span className="terminal-cursor" aria-hidden="true">
                       _
                     </span>
-                  </p>
+                  </div>
+                ) : (
+                  // Plain <img>: the src is a presigned S3 URL that carries a
+                  // signature and expires in an hour, so it differs on every load.
+                  // next/image would need a remote-pattern allowlist for a bucket
+                  // it cannot read, and would have nothing stable to cache.
+                  // Capped and centred rather than plain `w-full`: a tall
+                  // portrait shot otherwise runs far past the column beside it
+                  // and strands the guess pad in dead space.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={imageUrl}
+                    alt={`Boulder problem ${index + 1} of ${problems.length}. Guess its V grade from the holds and the wall angle.`}
+                    className="mx-auto block h-auto max-h-[560px] w-auto max-w-full"
+                    onError={() => setImageError("This problem's photo could not be loaded.")}
+                  />
                 )}
-                {errorMessage && (
-                  <p className="mt-4 text-term-sm text-term-error" role="alert">
-                    {errorMessage}
-                  </p>
-                )}
-                {streak.streak > 0 && (
-                  <p className="mt-6 border-t border-term-border pt-4 text-term-xs text-term-muted">
-                    Current streak: {streak.streak} day{streak.streak === 1 ? '' : 's'} · best{' '}
-                    {streak.bestStreak}
-                  </p>
-                )}
-              </>
-            )}
+              </div>
+              {reveal?.note && (
+                <p className="mt-2 text-term-xs text-term-muted">{reveal.note}</p>
+              )}
+            </figure>
+
+            <div>
+              {reveal ? (
+                <RevealPanel
+                  reveal={reveal}
+                  position={index + 1}
+                  total={problems.length}
+                  fromCache={fromCache}
+                />
+              ) : (
+                <>
+                  <GuessPad
+                    onGuess={(grade) => void handleGuess(grade)}
+                    disabled={phase === 'guessing'}
+                    pending={pending}
+                  />
+                  {phase === 'guessing' && (
+                    <p className="mt-4 text-term-sm text-term-muted" role="status">
+                      <span aria-hidden="true">$ </span>
+                      {STUDYING_MESSAGE}
+                      <span className="terminal-cursor" aria-hidden="true">
+                        _
+                      </span>
+                    </p>
+                  )}
+                  {errorMessage && (
+                    <p className="mt-4 text-term-sm text-term-error" role="alert">
+                      {errorMessage}
+                    </p>
+                  )}
+
+                  {/* Supporting content, not filler: the pad is nine buttons
+                      and a line of text, which leaves the column stranded
+                      beside a portrait photo. This says what the scale IS,
+                      which a non-climber needs and which gives away nothing
+                      about THIS problem. */}
+                  <section className="mt-8 border-t border-term-border pt-5">
+                    <p className="text-term-sm text-term-muted">
+                      <span aria-hidden="true">$ </span>
+                      man v-scale
+                    </p>
+                    <dl className="mt-3 space-y-2 text-term-sm leading-relaxed">
+                      <div>
+                        <dt className="inline font-bold text-term-ink">V0–V2 </dt>
+                        <dd className="inline text-term-body">
+                          big holds, mostly upright walls. Where most people start.
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="inline font-bold text-term-ink">V3–V5 </dt>
+                        <dd className="inline text-term-body">
+                          smaller holds, steeper ground, real body tension.
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="inline font-bold text-term-ink">V6+ </dt>
+                        <dd className="inline text-term-body">
+                          tiny holds, severe angles, moves most climbers cannot do.
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="mt-3 text-term-xs leading-relaxed text-term-muted">
+                      Grades are one gym&apos;s opinion, not a measurement. Being a grade off is
+                      normal, and disagreeing is most of the fun.
+                    </p>
+                  </section>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+
+          <nav
+            aria-label="Problem set"
+            className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-term-border pt-6"
+          >
+            <button
+              type="button"
+              onClick={() => goTo(index - 1)}
+              disabled={index === 0}
+              className="min-h-[44px] text-term-base font-bold text-term-ink terminal-select transition-colors duration-term-instant focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              [ ← previous ]
+            </button>
+            <p className="text-term-xs uppercase tracking-wide text-term-muted">
+              {readCount} of {problems.length} read
+            </p>
+            <button
+              type="button"
+              onClick={() => goTo(index + 1)}
+              disabled={index >= problems.length - 1}
+              className="min-h-[44px] text-term-base font-bold text-term-ink terminal-select transition-colors duration-term-instant focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              [ next problem → ]
+            </button>
+          </nav>
+
+          <p className="mt-6 max-w-[70ch] text-term-xs leading-relaxed text-term-muted">
+            Your progress and your saved reveals live in this browser only. They are never sent
+            anywhere, so clearing site data resets them and a different device starts fresh. The
+            server keeps an anonymous count per grade and nothing else.
+          </p>
+        </>
       )}
     </div>
   );
 }
+
+/** Re-exported so the progress type is reachable from tests without the hook. */
+export type { GradeProgress };
