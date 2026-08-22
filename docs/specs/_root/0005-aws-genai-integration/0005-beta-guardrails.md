@@ -1,6 +1,6 @@
 # 0005 child: in process safety layers on the Beta planner
 
-> **Closing decisions, 2026-08-22.** Beta was declared complete and closed to further investment (see [0004](../0004-beta-climbing-rehab-planner/index.md)). Two things this child left open are now settled as permanent rather than deferred.
+> **Closing decisions, 2026-08-22.** Beta is feature complete and still maintained (see [0004](../0004-beta-climbing-rehab-planner/index.md)): no new capabilities, but patching and defect repair continue. Two things this child left open are now settled as permanent rather than deferred. Both are aimed squarely at a maintainer, because a maintainer is exactly who would otherwise undo them during routine work.
 >
 > **The guard stays in `shadow`.** `enforce` is not being pursued. Its own gate (AC-G9's diagnosis bar) was never cleared, and the streaming follow up that would make `enforce`'s latency acceptable was specced and never built. Shadow evaluates, counts, and logs, and never reassigns `text`, so visitor output is byte identical to `off`. That is the steady state. Anyone turning `enforce` on later must first clear AC-G9 as written and build the streaming follow up, or accept roughly thirty percent added latency on a path already near twenty five seconds.
 >
