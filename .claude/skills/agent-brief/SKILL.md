@@ -65,7 +65,8 @@ Match the symptom before re assigning blame:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| "the file I was asked to fix does not exist" | seeded from a stale base | the preamble's base check |
+| "the file I was asked to fix does not exist" | seeded from a stale base | `worktree.baseRef` is `head` in `.claude/settings.json`; if this recurs, check it is still set |
+| a missing `.env`, `DATABASE_URL` or AWS credential | worktree carries tracked files only | `.worktreeinclude` at the repo root; add the path to it |
 | `Cannot find module '../../generated/prisma/client'` | fresh worktree, no install, no generated client | the preamble's install step |
 | an `ERR_REQUIRE_ESM` or a Node version error | the agent shell is Node 20 | the preamble's PATH prefix |
 | the suite went green and the bug survived | the test never exercised the invariant | the preamble's revert and confirm |
