@@ -11,14 +11,22 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  // .next/dev/types is Next 16: `next dev` and `next build` now write to
+  // separate output directories so they can run concurrently.
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
   // vitest.config.ts is build tooling, not app source, and it resolves Vite
   // types from vitest's own nested copy — which conflicts with the hoisted
   // one this project's tsconfig sees. Vitest still validates it at run time,
