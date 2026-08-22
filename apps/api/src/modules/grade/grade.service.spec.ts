@@ -535,6 +535,26 @@ describe('GradeService', () => {
       });
     });
 
+    it('still reveals when the photo bytes cannot be read, without failing the counted guess', async () => {
+      // The tally lands before the analysis is resolved, so an escaping error
+      // here would 500 a guess that WAS counted, and the page tells the
+      // visitor to retry, counting it again. A byte-read failure is just a
+      // day whose analysis has not landed yet (AC-5).
+      const { prisma } = makePrisma();
+      // makeService reassigns getBytes, so the mock has to be set on the
+      // instance it just built, not the previous one.
+      const service = makeService(prisma);
+      getBytes.mockRejectedValueOnce(new Error('S3 unavailable'));
+
+      const reveal = await service.submitGuess(4, TODAY, NOW);
+
+      expect(reveal.model).toBeNull();
+      expect(reveal.modelDistance).toBeNull();
+      expect(reveal.trueGrade).toBe(PHOTO.trueGrade);
+      expect(reveal.yourGuess).toBe(4);
+      expect(ensureAnalysis).not.toHaveBeenCalled();
+    });
+
     it('serves a freshly produced analysis in the same response', async () => {
       const { prisma } = makePrisma();
       const service = makeService(prisma);
