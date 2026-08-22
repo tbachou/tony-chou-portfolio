@@ -32,6 +32,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # eslint 10 is blocked by eslint-config-next@15, whose peer range stops
+      # at eslint ^9 (Vercel's `npm install` on PR #4 died on exactly this).
+      # eslint-config-next@16 widens it to >=9.0.0, so the unblock is the Next
+      # 16 major, not anything about eslint itself. Drop this entry in the
+      # same pull request that takes Next 16.
+      - dependency-name: eslint
+        update-types:
+          - version-update:semver-major
     commit-message:
       prefix: chore(deps)
       prefix-development: chore(deps-dev)
