@@ -1,5 +1,11 @@
 # 0005 child: in process safety layers on the Beta planner
 
+> **Closing decisions, 2026-08-22.** Beta was declared complete and closed to further investment (see [0004](../0004-beta-climbing-rehab-planner/index.md)). Two things this child left open are now settled as permanent rather than deferred.
+>
+> **The guard stays in `shadow`.** `enforce` is not being pursued. Its own gate (AC-G9's diagnosis bar) was never cleared, and the streaming follow up that would make `enforce`'s latency acceptable was specced and never built. Shadow evaluates, counts, and logs, and never reassigns `text`, so visitor output is byte identical to `off`. That is the steady state. Anyone turning `enforce` on later must first clear AC-G9 as written and build the streaming follow up, or accept roughly thirty percent added latency on a path already near twenty five seconds.
+>
+> **The `claude-sonnet-5` pin is load bearing and must not be changed casually.** Beta injects the concrete `AnthropicService` and runs on the direct Anthropic API, not the `AI_PROVIDER` token, because this AWS account cannot invoke Sonnet 5 on Bedrock. The model is not an implementation detail here: it carries the clinical priors that produce the plans, and those priors are not grounded in any external source (spec 0008 established that a citable corpus does not exist). Changing the model therefore changes Beta's clinical behaviour with nothing watching, because the guard is in shadow and there is no evidence layer. Treat a model migration as a change requiring a fresh corpus harness run, not a version bump.
+
 ## Summary
 
 Beta gets an output side safety layer it does not currently have, built in process with no new dependency and no AWS footprint. Beta stays on the direct Anthropic API on Sonnet 5, and the umbrella's data boundary promise survives untouched: Beta visitor content never leaves Render and Anthropic.

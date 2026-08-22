@@ -1,7 +1,9 @@
 # 0004. Beta, a return to climbing rehab planner
 
 **Date**: 2026-08-18
-**Status**: In Progress
+**Status**: Accepted
+
+> **Beta is complete and closed to further investment (2026-08-22).** It is built, verified, and deployed, and it stays running. The remaining backlog was retired rather than finished, because every item on it depended on something Beta does not have. The streaming follow up and production shadow mode both needed traffic that an unadvertised surface does not generate. `enforce` mode stayed blocked on its own diagnosis bar. The clinical evidence checker (spec 0008) died because the citable corpus does not exist. Four initiatives, one root cause, discovered four times. Two consequences are now permanent decisions rather than deferred ones, recorded in [0005 child: in process safety layers](../0005-aws-genai-integration/0005-beta-guardrails.md): the guard stays in `shadow`, and the `claude-sonnet-5` pin is not to be changed casually.
 
 ## Summary
 

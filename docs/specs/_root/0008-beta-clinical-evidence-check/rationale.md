@@ -114,6 +114,26 @@ Gathered during the design conversation to keep the store and corpus decisions f
 
 **Corpus licensing.** The PMC open access subset spans several licence families including CC0, CC BY, CC BY SA, and CC BY NC. Only the first three are safe for committing quoted passages to a public repository, and CC BY NC explicitly forbids commercial use. Licence metadata is machine readable in the article XML, so filtering is practical. The PMC FTP service ends in August 2026, leaving the PMC Cloud Service on AWS, OAI PMH, and E utilities as bulk routes. Of four climbing sources surfaced during the check, one was already CC BY NC SA, so this constraint bites immediately rather than theoretically.
 
+## Curation sweep, 2026-08-22, and why this spec was dropped
+
+Three parallel researchers swept the open literature for sources that state a week timeline for the final rehabilitation stage, one per injury Beta serves, restricted to the `CC0`, `CC-BY`, `CC-BY-SA` rule in AC-2. The result is the reason this spec was rejected, and it is recorded in full so nobody repeats the search.
+
+| Injury | Usable sources | What they actually give |
+|---|---|---|
+| `finger_pulley` | 1 | Larsson, Nordeman, Blomdahl (2022), *BMC Sports Science, Medicine and Rehabilitation* 14:148, CC BY 4.0. Return to sport 6 to 8 weeks (grade 1 to 2), about 3 months (grade 3) |
+| `elbow_tendinopathy` | 0 | Nothing satisfies week explicit, permissively licensed, and upper limb at once |
+| `shoulder_impingement` | 3 | Programme duration only (8, 10, and 12 to 16 weeks), general adult population, no return to sport clearance |
+
+**The binding constraint is the licence rule, not the literature.** The evidence exists and is well established. Schöffl's grade based pulley timelines are the field standard. But the primary papers are Elsevier or Sage with no Creative Commons grant, so AC-2 excludes all of them: Schöffl and Schöffl (2006, *J Hand Surg Am*; 2007, *J Hand Ther*), Miro, vanSonnenberg, Sabb, Schöffl (2021, *Wilderness & Environmental Medicine*), Lum and Park (2019, *J Orthopaedics*), Hartnett, Bondoc, Feretti (2023, *J Hand Ther*), Crowley (2012, *J Hand Microsurg*). Do not re research these; they are closed.
+
+Three findings worth keeping even though the spec died:
+
+- **A curation pattern nobody anticipated.** The single usable pulley source is a CC BY systematic review that *reports* Schöffl's closed access numbers. Quoting the open review rather than the closed primary is ordinary scholarly practice and satisfies AC-2 cleanly. If any evidence work is ever revived, this is the technique that makes it viable.
+- **The elbow's emptiness is a true statement about the field, not a gap in the search.** A CC BY climbing scoping review protocol (PMC12927343) states that rehabilitation content at each stage is "poorly documented" in the literature it surveys. So `no_evidence` for elbow tendinopathy would have been Beta correctly reporting the state of the evidence.
+- **The shoulder sources break the predicate.** AC-13 requires every timeline passage to answer when the final stage begins. The shoulder papers answer how long a programme runs, which is a different question. Treating "12 to 16 week programme" as "final stage starts at week 12" is exactly the quiet mismatch that produces a confident wrong verdict, and is the same class of error as R2 and R8.
+
+The decisive argument against building is arithmetic rather than principle. With roughly four usable ranges across three injuries, the auditability this spec was built to deliver is obtainable by writing four citations into `drafter.md` and stating plainly where none exists. The machinery would have existed to hold four facts.
+
 ## References
 
 **Project sources** (verifiable, in this repo):
