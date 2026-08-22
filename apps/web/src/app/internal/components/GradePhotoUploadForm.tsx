@@ -1,13 +1,15 @@
 'use client';
 
-import { useId, useRef, useState } from 'react';
+import { useId } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
   GRADE_PHOTO_SOURCES,
   MAX_UPLOAD_BYTES,
   SOURCE_LABELS,
   uploadGradePhoto,
-  type GradePhoto,
-  type GradePhotoSource
+  type GradePhoto
 } from '@/lib/grade-photos-api';
 
 const GRADES = Array.from({ length: 9 }, (_, i) => i);
@@ -15,21 +17,67 @@ const GRADES = Array.from({ length: 9 }, (_, i) => i);
 /** The api's own rule, mirrored so the field can reject before a round trip. */
 const SLUG_PATTERN = '[a-z0-9][a-z0-9-]{2,63}';
 
+/**
+ * z.custom rather than z.instanceof(FileList): this module is evaluated on
+ * the server during prerender, where FileList does not exist, and
+ * z.instanceof would dereference it at module scope. Inside the predicate
+ * the reference is only reached in the browser.
+ */
+const fileListSchema = z.custom<FileList>(
+  (value) => typeof FileList !== 'undefined' && value instanceof FileList
+);
+
+const uploadSchema = z.object({
+  file: fileListSchema
+    .refine((list) => list.length > 0, 'Choose an image first.')
+    // Checked here as well as by the api so an oversized file fails
+    // instantly instead of after a 10 MB upload the server was always
+    // going to refuse.
+    .refine((list) => !list[0] || list[0].size <= MAX_UPLOAD_BYTES, {
+      // Names the actual size: "over the limit" alone leaves the admin
+      // guessing how much to shrink it by.
+      error: (issue) =>
+        `That image is ${formatBytes(
+          (issue.input as FileList)[0]?.size ?? 0
+        )}, over the 10 MB limit.`
+    }),
+  id: z
+    .string()
+    .regex(
+      new RegExp(`^${SLUG_PATTERN}$`),
+      'Use lowercase letters, digits and hyphens, 3 to 64 characters.'
+    ),
+  trueGrade: z.number().int().min(0).max(8),
+  source: z.enum(GRADE_PHOTO_SOURCES),
+  sourceNote: z.string().max(500),
+  note: z.string().max(200)
+});
+
+type UploadValues = z.infer<typeof uploadSchema>;
+
 interface GradePhotoUploadFormProps {
   onUploaded: (photo: GradePhoto) => void;
 }
 
 export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) {
-  const [file, setFile] = useState<File | null>(null);
-  const [id, setId] = useState('');
-  const [trueGrade, setTrueGrade] = useState(4);
-  const [source, setSource] = useState<GradePhotoSource>('own_photo');
-  const [sourceNote, setSourceNote] = useState('');
-  const [note, setNote] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    setError,
+    formState: { errors, isSubmitting }
+  } = useForm<UploadValues>({
+    resolver: zodResolver(uploadSchema),
+    defaultValues: {
+      id: '',
+      trueGrade: 4,
+      source: 'own_photo',
+      sourceNote: '',
+      note: ''
+    }
+  });
 
-  const fileInput = useRef<HTMLInputElement>(null);
   const fileId = useId();
   const slugId = useId();
   const gradeId = useId();
@@ -38,50 +86,45 @@ export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) 
   const noteId = useId();
   const errorId = useId();
 
-  function reset() {
-    setFile(null);
-    setId('');
-    setTrueGrade(4);
-    setSource('own_photo');
-    setSourceNote('');
-    setNote('');
-    if (fileInput.current) fileInput.current.value = '';
-  }
+  // Both drive rendering rather than the request, so they have to be
+  // subscribed to: the chosen file's name and size, and the provenance
+  // warning. useWatch rather than watch(), which returns a function React
+  // Compiler cannot memoize safely.
+  const fileList = useWatch({ control, name: 'file' });
+  const file = fileList?.[0] ?? null;
+  const source = useWatch({ control, name: 'source' });
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!file) {
-      setError('Choose an image first.');
-      return;
-    }
-    // Checked here as well as by the api so an oversized file fails instantly
-    // instead of after a 10 MB upload the server was always going to refuse.
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError(`That image is ${formatBytes(file.size)}, over the 10 MB limit.`);
-      return;
-    }
+  const formError = errors.root?.message;
+  // One line carries whichever field failed, matching the single error slot
+  // this form has always had above the button.
+  const fieldError =
+    errors.file?.message ??
+    errors.id?.message ??
+    errors.trueGrade?.message ??
+    errors.source?.message ??
+    errors.sourceNote?.message ??
+    errors.note?.message;
+  const shownError = fieldError ?? formError;
 
-    setIsSubmitting(true);
-    setError(null);
+  async function onSubmit(values: UploadValues) {
     try {
       const created = await uploadGradePhoto({
-        file,
-        id,
-        trueGrade,
-        source,
-        sourceNote: sourceNote.trim() || undefined,
-        note: note.trim() || undefined
+        file: values.file[0],
+        id: values.id,
+        trueGrade: values.trueGrade,
+        source: values.source,
+        sourceNote: values.sourceNote.trim() || undefined,
+        note: values.note.trim() || undefined
       });
       onUploaded(created);
       reset();
     } catch (uploadError) {
-      setError(
-        uploadError instanceof Error
-          ? uploadError.message
-          : 'The upload failed. Try again.'
-      );
-    } finally {
-      setIsSubmitting(false);
+      setError('root', {
+        message:
+          uploadError instanceof Error
+            ? uploadError.message
+            : 'The upload failed. Try again.'
+      });
     }
   }
 
@@ -97,24 +140,23 @@ export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) 
         carries GPS coordinates, and visitors get the stored file itself.
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-5" noValidate>
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="mt-6 flex flex-col gap-5"
+        noValidate
+      >
         <div className="flex flex-col gap-1.5">
           <label htmlFor={fileId} className="text-term-sm text-term-muted">
             image: <span className="text-term-xs">(jpeg, png or webp, max 10 MB)</span>
           </label>
           <input
-            ref={fileInput}
             id={fileId}
-            name="file"
             type="file"
             accept="image/*"
-            required
             disabled={isSubmitting}
-            onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
-              setError(null);
-            }}
+            aria-invalid={errors.file ? true : undefined}
             className="border border-term-border bg-term-surface px-3 py-2 text-term-sm text-term-body file:mr-3 file:border file:border-term-border file:bg-transparent file:px-2 file:py-1 file:text-term-sm file:text-term-ink disabled:cursor-not-allowed disabled:opacity-60"
+            {...register('file')}
           />
           {file ? (
             <p className="text-term-xs text-term-muted">
@@ -130,15 +172,13 @@ export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) 
             </label>
             <input
               id={slugId}
-              name="id"
               type="text"
-              required
               pattern={SLUG_PATTERN}
-              value={id}
-              onChange={(event) => setId(event.target.value)}
               disabled={isSubmitting}
+              aria-invalid={errors.id ? true : undefined}
               placeholder="north-gym-blue-prow"
               className="border border-term-border bg-term-surface px-3 py-2 text-term-base text-term-ink outline-none placeholder:text-term-muted disabled:cursor-not-allowed disabled:opacity-60"
+              {...register('id')}
             />
             <p className="text-term-xs text-term-muted">
               lowercase, digits and hyphens, 3 to 64 characters. Permanent once set.
@@ -151,11 +191,9 @@ export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) 
             </label>
             <select
               id={gradeId}
-              name="trueGrade"
-              value={trueGrade}
-              onChange={(event) => setTrueGrade(Number(event.target.value))}
               disabled={isSubmitting}
               className="border border-term-border bg-term-surface px-3 py-2 text-term-base text-term-ink outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              {...register('trueGrade', { valueAsNumber: true })}
             >
               {GRADES.map((grade) => (
                 <option key={grade} value={grade}>
@@ -175,11 +213,9 @@ export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) 
           </label>
           <select
             id={sourceId}
-            name="source"
-            value={source}
-            onChange={(event) => setSource(event.target.value as GradePhotoSource)}
             disabled={isSubmitting}
             className="border border-term-border bg-term-surface px-3 py-2 text-term-base text-term-ink outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            {...register('source')}
           >
             {GRADE_PHOTO_SOURCES.map((value) => (
               <option key={value} value={value}>
@@ -207,14 +243,12 @@ export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) 
             </label>
             <input
               id={sourceNoteId}
-              name="sourceNote"
               type="text"
               maxLength={500}
-              value={sourceNote}
-              onChange={(event) => setSourceNote(event.target.value)}
               disabled={isSubmitting}
               placeholder="shot on my phone, 2026-08"
               className="border border-term-border bg-term-surface px-3 py-2 text-term-base text-term-ink outline-none placeholder:text-term-muted disabled:cursor-not-allowed disabled:opacity-60"
+              {...register('sourceNote')}
             />
           </div>
 
@@ -224,14 +258,12 @@ export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) 
             </label>
             <input
               id={noteId}
-              name="note"
               type="text"
               maxLength={200}
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
               disabled={isSubmitting}
               placeholder="North wall, blue circuit"
               className="border border-term-border bg-term-surface px-3 py-2 text-term-base text-term-ink outline-none placeholder:text-term-muted disabled:cursor-not-allowed disabled:opacity-60"
+              {...register('note')}
             />
             <p className="text-term-xs text-term-muted">
               never a grade hint — visitors see it after they guess.
@@ -239,17 +271,17 @@ export function GradePhotoUploadForm({ onUploaded }: GradePhotoUploadFormProps) 
           </div>
         </div>
 
-        {error ? (
+        {shownError ? (
           <p id={errorId} role="alert" className="text-term-sm text-term-error">
             <span aria-hidden="true">!! </span>
-            {error}
+            {shownError}
           </p>
         ) : null}
 
         <button
           type="submit"
           disabled={isSubmitting}
-          aria-describedby={error ? errorId : undefined}
+          aria-describedby={shownError ? errorId : undefined}
           className="mt-1 self-start border border-term-border px-4 py-2 text-term-base text-term-ink transition-colors duration-term-instant hover:border-term-accent focus-visible:border-term-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isSubmitting ? (
