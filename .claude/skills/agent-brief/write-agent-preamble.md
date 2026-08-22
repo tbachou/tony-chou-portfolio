@@ -25,14 +25,29 @@ export PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH"
 node --version   # expect v22.x
 ```
 
-**3. If this is a fresh worktree, it has no dependencies and no generated Prisma client.**
+**3. A fresh worktree has no dependencies and no generated Prisma client. Link them, do not install them.**
 
 ```bash
-npm install
-cd apps/api && DATABASE_URL="postgresql://x:x@localhost:5432/x" npx prisma generate
+MAIN=$(git worktree list --porcelain | head -1 | cut -d' ' -f2-)
+ln -s "$MAIN/node_modules"           node_modules
+ln -s "$MAIN/apps/api/node_modules"  apps/api/node_modules
+ln -s "$MAIN/apps/web/node_modules"  apps/web/node_modules
+ln -s "$MAIN/apps/api/src/generated" apps/api/src/generated
+mkdir -p .agents && ln -s "$MAIN/.agents/skills" .agents/skills
+
+EX="$(git rev-parse --git-path info/exclude)"
+for p in /node_modules /apps/api/node_modules /apps/web/node_modules /apps/api/src/generated /.agents; do
+  grep -qxF "$p" "$EX" || echo "$p" >> "$EX"
+done
 ```
 
-The dummy connection string is fine. Generation reads the schema and never connects.
+Installing instead would copy 1.3 GB per agent. Linking takes a second, and the whole gate passes against it: both typechecks, lint, 581 api and 36 web tests.
+
+The exclude loop is not optional. A symlink named `node_modules` is not a directory, so the `node_modules/` pattern in `.gitignore` does not match it, and without the exclude a `git add -A` commits your links. That file is shared with the main checkout, so the loop adds only what is missing rather than appending duplicates on every run.
+
+The `.agents/skills` link matters more than it looks. Five of this repo's skills are committed as symlinks into a gitignored directory, so without that link those five are dead in your worktree.
+
+**You are borrowing the engineer's `node_modules`, not your own copy.** Never run `npm install`, `npm ci`, `npm add` or `npm uninstall` in a worktree: it writes through the link into the main checkout and changes the tree the engineer is working in. If your task needs a dependency that is not installed, stop and report it. Adding it is the engineer's call, in the main checkout.
 
 Env files you do **not** need to create: `apps/api/.env`, `apps/web/.env.local` and `infra/terraform.tfvars` are copied into every worktree by `.worktreeinclude`. If one is missing, say so rather than writing your own.
 
