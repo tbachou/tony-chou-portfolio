@@ -167,7 +167,10 @@ export class GradePhotosService {
       note: photo.note,
       active: photo.active,
       createdAt: photo.createdAt,
-      imageUrl: await this.storage.presignGet(photo.objectKey),
+      // Same reasoning as create: the update has already committed, so a
+      // signer failure must not report it as a failure. The pool page would
+      // keep rendering the stale active state while the database disagrees.
+      imageUrl: await this.storage.presignGet(photo.objectKey).catch(() => ''),
     };
   }
 }

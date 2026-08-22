@@ -59,21 +59,29 @@ function makePrisma(
     createCalls: [] as Record<string, unknown>[],
     queryValues: [] as unknown[][],
     rowOverride: options.row,
-    // The pinned row is stateful rather than fixed, because that is how the
-    // real table behaves: it is absent when the day's first guess looks, and
+    // The pinned rows are stateful rather than fixed, because that is how the
+    // real table behaves: a date is absent when its first guess looks, and
     // present the moment any request's insert wins. A static mock cannot model
     // the losing-insert branch at all.
-    pinned: (options.pinned ?? null) as { photo: GradePhoto | null } | null,
+    //
+    // Keyed by date, not one shared slot. GradeDay's primary key IS the date,
+    // and a single slot would hand a test that spans two UTC days the wrong
+    // day's row and pass for the wrong reason.
+    pinnedByDate: new Map<string, { photo: GradePhoto | null }>(
+      options.pinned ? [[TODAY, options.pinned]] : [],
+    ),
   };
 
   const prisma = {
     gradeDay: {
-      findUnique: jest.fn(() => Promise.resolve(state.pinned)),
+      findUnique: jest.fn((args: { where: { date: string } }) =>
+        Promise.resolve(state.pinnedByDate.get(args.where.date) ?? null),
+      ),
       create: jest.fn((args: { data: Record<string, unknown> }) => {
         state.createCalls.push(args.data);
-        state.pinned = {
+        state.pinnedByDate.set(args.data.date as string, {
           photo: pool.find((p) => p.id === args.data.photoId) ?? null,
-        };
+        });
         return Promise.resolve(args.data);
       }),
     },
@@ -413,6 +421,18 @@ describe('GradeService', () => {
 
       // One read, in resolveDayPhoto. Winning the insert means the candidate
       // IS the pin, so there is nothing to go back for.
+      expect(prisma.gradeDay.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not insert at all when the day is already pinned', async () => {
+      const { prisma } = makePrisma({ pinned: { photo: PHOTO } });
+
+      await makeService(prisma).submitGuess(3, TODAY, NOW);
+
+      // Without this, making resolveDayPhoto always report pinned:false would
+      // pass the whole suite while issuing a doomed INSERT plus a second
+      // SELECT on every guess of an already-pinned day.
+      expect(prisma.gradeDay.create).not.toHaveBeenCalled();
       expect(prisma.gradeDay.findUnique).toHaveBeenCalledTimes(1);
     });
 

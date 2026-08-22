@@ -1,4 +1,4 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
 import { OriginCheckGuard } from './origin-check.guard';
 
 /**
@@ -26,6 +26,13 @@ describe('OriginCheckGuard', () => {
   beforeEach(() => {
     guard = new OriginCheckGuard();
     process.env.CORS_ORIGIN = `${ALLOWED}, ${OTHER_ALLOWED}`;
+    // Every rejection warns by design; without this the full-suite run is
+    // noisy with expected output, which is how real warnings get ignored.
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(() => {
