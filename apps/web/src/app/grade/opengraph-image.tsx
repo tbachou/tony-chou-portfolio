@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og';
+import { notFound } from 'next/navigation';
 import { loadIbmPlexMono } from '@/lib/og-font';
 
 // OG card in the portfolio's terminal identity (AC-10): CRT canvas, one
@@ -9,6 +10,23 @@ import { loadIbmPlexMono } from '@/lib/og-font';
 // Deliberately names no grade and shows no photo. The card is the pre-guess
 // surface as much as the page is, and a V-grade on a shared link would hand
 // the answer over before anyone played (AC-2).
+
+/**
+ * Gated on the same flag as the route, and that is not belt and braces.
+ *
+ * An `opengraph-image` file is its OWN route in the App Router: `page.tsx`
+ * calling `notFound()` does nothing for it, so while the game was dark this
+ * card was served as a 200 to anyone who requested it. That is precisely the
+ * failure spec 0006 already took once, when the feature flag gated the route
+ * and the api module but NOT the static seed photos, and they sat on the open
+ * internet for the whole time the game was supposedly hidden.
+ *
+ * The card carries no photo and no grade, so nothing here was sensitive. It
+ * still advertised an unreleased feature, and the rule the earlier incident
+ * bought is that the flag governs everything the route serves, not just the
+ * page component.
+ */
+const gradeGameEnabled = process.env.GRADE_GAME_ENABLED === 'true';
 
 export const alt = 'Grade Guesser — call the grade on a real boulder problem, then see how Claude read it';
 export const size = { width: 1200, height: 630 };
@@ -30,6 +48,8 @@ const MUTED = '#608c60';
 const BORDER = '#458045';
 
 export default async function Image() {
+  if (!gradeGameEnabled) notFound();
+
   const [regular, bold] = await Promise.all([
     loadIbmPlexMono(400, PROMPT + SUBTITLE + GRADES.join('')),
     loadIbmPlexMono(700, HEADLINE + GRADES.join('')),
