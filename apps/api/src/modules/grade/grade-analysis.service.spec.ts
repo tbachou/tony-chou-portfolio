@@ -17,7 +17,21 @@ jest.mock('./skill-loader', () => ({
   loadGradeSkill: jest.fn(() => '# Grade Guesser grader\nstub prompt'),
 }));
 
-const DATE = '2026-08-20';
+/**
+ * The two ids that travel together, and are not interchangeable.
+ *
+ * `photoId` is the owner's slug and keys both the row and the in-flight map;
+ * `publicId` is the opaque hex the outside world uses and the ONLY one that
+ * may be logged, because a slug names the gym circuit colour and a circuit
+ * colour names a grade band (AC-23).
+ */
+const PHOTO_ID = 'north-gym-blue-prow';
+const PUBLIC_ID = '9f2c4ab1d0e37b58';
+const PROBLEM = { photoId: PHOTO_ID, publicId: PUBLIC_ID };
+
+/** A second problem, for the "separate problems, separate calls" guard. */
+const OTHER_PROBLEM = { photoId: 'south-cave-roof', publicId: 'a1b2c3d4e5f60789' };
+
 /** The base64 bytes the seam now carries, not a URL (AC-15). */
 const IMAGE = { data: 'aW1hZ2UtYnl0ZXM=', mediaType: 'image/webp' };
 
@@ -33,7 +47,7 @@ function goodPayload(overrides: Record<string, unknown> = {}) {
 
 function makeHarness(options: { input?: unknown } = {}) {
   const updateMany = jest.fn().mockResolvedValue({ count: 1 });
-  const prisma = { gradeDay: { updateMany } } as unknown as PrismaService;
+  const prisma = { gradeProblem: { updateMany } } as unknown as PrismaService;
 
   const forceToolCall = jest.fn().mockResolvedValue({
     input: options.input ?? goodPayload(),
@@ -95,7 +109,7 @@ describe('GradeAnalysisService', () => {
       process.env.AI_PROVIDER = 'bedrock';
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(h.forceToolCall.mock.calls[0][0].model).toBe(GRADER_MODEL_BEDROCK);
     });
@@ -104,7 +118,7 @@ describe('GradeAnalysisService', () => {
       process.env.AI_PROVIDER = 'anthropic';
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(h.forceToolCall.mock.calls[0][0].model).toBe(
         GRADER_MODEL_ANTHROPIC,
@@ -115,7 +129,7 @@ describe('GradeAnalysisService', () => {
       process.env.AI_PROVIDER = 'bedrock';
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       const sent = h.forceToolCall.mock.calls[0][0].model as string;
       expect(sent).not.toBe(GRADER_MODEL_ANTHROPIC);
@@ -129,7 +143,7 @@ describe('GradeAnalysisService', () => {
       process.env.BEDROCK_MODEL_ID = 'us.anthropic.claude-haiku-4-5-cheap';
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(h.forceToolCall.mock.calls[0][0].model).toBe(GRADER_MODEL_BEDROCK);
     });
@@ -138,7 +152,7 @@ describe('GradeAnalysisService', () => {
       process.env.AI_PROVIDER = 'bedrock';
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       const params = h.forceToolCall.mock.calls[0][0];
       expect(params.image).toEqual(IMAGE);
@@ -146,13 +160,13 @@ describe('GradeAnalysisService', () => {
       expect(JSON.stringify(params)).not.toMatch(/https?:\/\//);
     });
 
-    it('records the id actually sent on the day row', async () => {
+    it('records the id actually sent on the problem row', async () => {
       // A row claiming the first party id while Bedrock served the call is how
       // a provider bug stays invisible for months.
       process.env.AI_PROVIDER = 'bedrock';
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(h.updateMany.mock.calls[0][0].data.model).toBe(
         GRADER_MODEL_BEDROCK,
@@ -161,11 +175,11 @@ describe('GradeAnalysisService', () => {
   });
 
   describe('the happy path (AC-3)', () => {
-    it('returns the parsed analysis and stores it on the day row', async () => {
+    it('returns the parsed analysis and stores it on the problem row', async () => {
       const h = makeHarness();
 
       const analysis = await h.service.ensureAnalysis({
-        date: DATE,
+        ...PROBLEM,
         image: IMAGE,
       });
 
@@ -185,7 +199,7 @@ describe('GradeAnalysisService', () => {
     it('forces the report_grade tool and sends the photo as image bytes', async () => {
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       const params = h.forceToolCall.mock.calls[0][0];
       expect(params.toolName).toBe('report_grade');
@@ -208,22 +222,27 @@ describe('GradeAnalysisService', () => {
     it('sends the model the photo and nothing about the pool or the answer', async () => {
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       const params = h.forceToolCall.mock.calls[0][0];
       // Spec 0006: "the model receives only the photo, never the manifest note
       // or pool metadata, so its guess is honestly blind."
       expect(params.userMessage).not.toMatch(/note|pool|grade is|answer/i);
-      expect(JSON.stringify(params.userMessage)).not.toContain(DATE);
+      // Neither id reaches the prompt. The slug matters most: it names the gym
+      // circuit colour, which encodes the grade band, so leaking it into the
+      // prompt would stop the model's read being blind at all (AC-23).
+      const sent = JSON.stringify(params);
+      expect(sent).not.toContain(PHOTO_ID);
+      expect(sent).not.toContain(PUBLIC_ID);
     });
 
-    it('writes the analysis only while the day still has none', async () => {
+    it('writes the analysis only while the problem still has none', async () => {
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(h.updateMany).toHaveBeenCalledWith({
-        where: { date: DATE, modelGrade: null },
+        where: { photoId: PHOTO_ID, modelGrade: null },
         data: expect.objectContaining({
           modelGrade: 5,
           modelConfidence: 'medium',
@@ -237,13 +256,13 @@ describe('GradeAnalysisService', () => {
     it('logs one structured line per call, with no visitor content in it', async () => {
       const h = makeHarness();
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(logged).toHaveLength(1);
       expect(JSON.parse(logged[0])).toMatchObject({
         agent: 'grade-grader',
         model: GRADER_MODEL_ANTHROPIC,
-        date: DATE,
+        problem: PUBLIC_ID,
         inputTokens: 1500,
         outputTokens: 200,
         grade: 5,
@@ -254,30 +273,30 @@ describe('GradeAnalysisService', () => {
     });
   });
 
-  describe('one call per day under concurrency (AC-4)', () => {
+  describe('one call per problem under concurrency (AC-4)', () => {
     it('collapses simultaneous first guesses into a single model call', async () => {
       const h = makeHarness();
 
       const [a, b, c] = await Promise.all([
-        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
-        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
-        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
+        h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE }),
+        h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE }),
+        h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE }),
       ]);
 
       expect(h.forceToolCall).toHaveBeenCalledTimes(1);
       expect(h.updateMany).toHaveBeenCalledTimes(1);
-      // Every concurrent caller gets the same answer, so the day's reveals
-      // agree with each other.
+      // Every concurrent caller gets the same answer, so the problem's
+      // reveals agree with each other.
       expect(a).toEqual(b);
       expect(b).toEqual(c);
     });
 
-    it('keeps separate days on separate calls', async () => {
+    it('keeps separate problems on separate calls', async () => {
       const h = makeHarness();
 
       await Promise.all([
-        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
-        h.service.ensureAnalysis({ date: '2026-08-21', image: IMAGE }),
+        h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE }),
+        h.service.ensureAnalysis({ ...OTHER_PROBLEM, image: IMAGE }),
       ]);
 
       expect(h.forceToolCall).toHaveBeenCalledTimes(2);
@@ -292,7 +311,7 @@ describe('GradeAnalysisService', () => {
       );
 
       await expect(
-        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
+        h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE }),
       ).resolves.toBeNull();
       expect(h.updateMany).not.toHaveBeenCalled();
     });
@@ -308,7 +327,7 @@ describe('GradeAnalysisService', () => {
         });
 
       const analysis = await h.service.ensureAnalysis({
-        date: DATE,
+        ...PROBLEM,
         image: IMAGE,
       });
 
@@ -323,7 +342,7 @@ describe('GradeAnalysisService', () => {
         Object.assign(new Error('bad'), { name: 'BadRequestError' }),
       );
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(h.forceToolCall).toHaveBeenCalledTimes(1);
     });
@@ -336,7 +355,7 @@ describe('GradeAnalysisService', () => {
         }),
       );
 
-      await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(logged).toHaveLength(1);
       const line = JSON.parse(logged[0]);
@@ -350,8 +369,8 @@ describe('GradeAnalysisService', () => {
         Object.assign(new Error('down'), { name: 'BadRequestError' }),
       );
 
-      const first = await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
-      const second = await h.service.ensureAnalysis({ date: DATE, image: IMAGE });
+      const first = await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
+      const second = await h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE });
 
       expect(first).toBeNull();
       expect(second?.grade).toBe(5);
@@ -362,7 +381,7 @@ describe('GradeAnalysisService', () => {
       const h = makeHarness({ input: { grade: 'V5', confidence: 'medium' } });
 
       await expect(
-        h.service.ensureAnalysis({ date: DATE, image: IMAGE }),
+        h.service.ensureAnalysis({ ...PROBLEM, image: IMAGE }),
       ).resolves.toBeNull();
       expect(h.updateMany).not.toHaveBeenCalled();
     });

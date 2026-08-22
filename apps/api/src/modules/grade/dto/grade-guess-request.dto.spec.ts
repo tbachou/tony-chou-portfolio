@@ -7,14 +7,14 @@ import {
 import { plainToInstance } from 'class-transformer';
 import { GradeGuessRequestDto } from './grade-guess-request.dto';
 
-/** A valid shown date, so guess-focused cases are not tripped by AC-19's field. */
-const TODAY = '2026-08-20';
+/** A valid public id, so guess-focused cases are not tripped by the id field. */
+const PUBLIC_ID = '9f2c4ab1d0e37b58';
 
 async function errorsFor(
   payload: Record<string, unknown>,
 ): Promise<ValidationError[]> {
   return validate(
-    plainToInstance(GradeGuessRequestDto, { date: TODAY, ...payload }),
+    plainToInstance(GradeGuessRequestDto, { publicId: PUBLIC_ID, ...payload }),
   );
 }
 
@@ -61,46 +61,54 @@ describe('GradeGuessRequestDto (AC-8)', () => {
     expect(constraintsOn(await errorsFor({}), 'guess')).toContain('isInt');
   });
 
-  describe('the shown date (AC-19)', () => {
-    it('accepts a UTC calendar date', async () => {
-      expect(constraintsOn(await errorsFor({ guess: 4 }), 'date')).toEqual([]);
+  describe('the problem id (AC-23)', () => {
+    it('accepts a fixed-length lowercase hex id', async () => {
+      expect(constraintsOn(await errorsFor({ guess: 4 }), 'publicId')).toEqual(
+        [],
+      );
     });
 
-    it('is required, since an absent date would mean "assume today"', async () => {
-      // That fallback is precisely the silent regrade AC-19 exists to stop.
+    it('is required: a guess has to name the problem it is against', async () => {
+      // Replaced the UTC date on 2026-08-22. The id is a stronger identity
+      // than the date ever was — there is no "which photo is today" left to
+      // get wrong, which is why the dropped AC-19 has no successor.
       const errors = await validate(
         plainToInstance(GradeGuessRequestDto, { guess: 4 }),
       );
-      expect(constraintsOn(errors, 'date')).toContain('matches');
+      expect(constraintsOn(errors, 'publicId')).toContain('matches');
     });
 
     it.each([
-      ['a timestamp', '2026-08-20T12:00:00.000Z'],
-      ['a slashed date', '2026/08/20'],
-      ['a two-digit year', '26-08-20'],
-      ['prose', 'today'],
+      ['a slug, which would encode the grade band', 'north-gym-blue-prow'],
+      ['uppercase hex', '9F2C4AB1D0E37B58'],
+      ['one character short', '9f2c4ab1d0e37b5'],
+      ['one character long', '9f2c4ab1d0e37b58a'],
+      ['non-hex characters', '9f2c4ab1d0e37bzz'],
+      ['a path traversal', '../../etc/passwd'],
+      ['an object key rather than its basename', 'photos/9f2c4ab1d0e37b58.webp'],
+      ['a UTC date, the field this replaced', '2026-08-20'],
       ['empty', ''],
-      ['a SQL fragment', "2026-08-20' OR '1'='1"],
-    ])('rejects %s', async (_label, date) => {
-      expect(constraintsOn(await errorsFor({ guess: 4, date }), 'date')).toContain(
-        'matches',
-      );
+      ['a SQL fragment', "9f2c4ab1d0e37b58' OR '1'='1"],
+    ])('rejects %s', async (_label, publicId) => {
+      expect(
+        constraintsOn(await errorsFor({ guess: 4, publicId }), 'publicId'),
+      ).toContain('matches');
     });
   });
 
   it('whitelists exactly two machine-shaped properties, and no free text', () => {
     // The whitelist is what forbidNonWhitelisted enforces against, so this is
     // the assertion that keeps the feature's input surface closed (AC-6).
-    // `date` joined it in R4 and is not visitor prose: it is echoed back from
-    // /grade/today, pattern-constrained, compared against the server clock,
-    // never stored and never sent to a model. A genuine free-text field added
-    // here would show up as a third name.
+    // `publicId` is not visitor prose: it is echoed back from /grade/problems,
+    // pattern-constrained here, resolved against the photo table rather than
+    // trusted, and never sent to a model. A genuine free-text field added here
+    // would show up as a third name.
     const whitelisted = new Set(
       getMetadataStorage()
         .getTargetValidationMetadatas(GradeGuessRequestDto, '', false, false)
         .map((meta) => meta.propertyName),
     );
 
-    expect([...whitelisted].sort()).toEqual(['date', 'guess']);
+    expect([...whitelisted].sort()).toEqual(['guess', 'publicId']);
   });
 });

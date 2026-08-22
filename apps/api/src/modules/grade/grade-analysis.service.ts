@@ -24,17 +24,24 @@ const USER_MESSAGE =
   'Estimate the V grade of the boulder problem in this photograph, and report it with the report_grade tool.';
 
 /**
- * The day's one vision call (spec 0006, AC-4 and AC-5).
+ * One problem's one vision call, ever (spec 0006, AC-4 and AC-5).
  *
  * Separated from GradeService so the guess path depends on an interface it can
  * be handed a stub of, and so the single-caller guard has one obvious home.
+ *
+ * Rekeyed from the UTC date to the problem on 2026-08-22, with the cadence.
+ * Two ids travel together and they are not interchangeable: `photoId` is the
+ * owner's slug and is what the row is keyed by, and `publicId` is the opaque
+ * hex the outside world uses. Only the second may be logged — a slug like
+ * `north-gym-blue` names the circuit colour, which encodes the grade band
+ * (AC-23).
  */
 @Injectable()
 export class GradeAnalysisService {
   private readonly logger = new Logger(GradeAnalysisService.name);
 
   /**
-   * One in-flight call per UTC date.
+   * One in-flight call per problem, keyed by `photoId`.
    *
    * This is the AC-4 guard for concurrent first guesses. It works because the
    * get and the set below are not separated by an await: JavaScript's single
@@ -43,9 +50,9 @@ export class GradeAnalysisService {
    * both get the same answer back.
    *
    * The atomic row insert in GradeService is the other half — it is what stops
-   * two requests both believing they created the day. Across *instances* the
-   * conditional write at the end of runCall is the backstop: a second instance
-   * that raced could pay for a call, but only one answer is ever stored.
+   * two requests both believing they created the problem. Across *instances*
+   * the conditional write at the end of runCall is the backstop: a second
+   * instance that raced could pay for a call, but only one answer is stored.
    */
   private readonly inFlight = new Map<string, Promise<GradeModelAnalysis | null>>();
 
@@ -55,28 +62,31 @@ export class GradeAnalysisService {
   ) {}
 
   /**
-   * Fill the day's analysis, or return null if it could not be produced.
+   * Fill this problem's analysis, or return null if it could not be produced.
    *
    * Never throws. A failed vision call must leave the visitor with a working
    * reveal — the true grade and the histogram are unaffected — and a later
-   * guess retries, because nothing marks the day as permanently failed (AC-5).
+   * guess retries, because nothing marks a problem as permanently failed
+   * (AC-5).
    */
   async ensureAnalysis(params: {
-    date: string;
+    photoId: string;
+    publicId: string;
     image: { data: string; mediaType: string };
   }): Promise<GradeModelAnalysis | null> {
-    const existing = this.inFlight.get(params.date);
+    const existing = this.inFlight.get(params.photoId);
     if (existing) return existing;
 
     const call = this.runCall(params).finally(() => {
-      this.inFlight.delete(params.date);
+      this.inFlight.delete(params.photoId);
     });
-    this.inFlight.set(params.date, call);
+    this.inFlight.set(params.photoId, call);
     return call;
   }
 
   private async runCall(params: {
-    date: string;
+    photoId: string;
+    publicId: string;
     image: { data: string; mediaType: string };
   }): Promise<GradeModelAnalysis | null> {
     const startedAt = Date.now();
@@ -109,7 +119,7 @@ export class GradeAnalysisService {
       // The id actually sent, not the first party constant: under Bedrock
       // those differ, and a row claiming the wrong one is how a provider bug
       // stays invisible.
-      await this.persist(params.date, analysis, result, model);
+      await this.persist(params.photoId, analysis, result, model);
 
       // One JSON line per model call, matching the api's convention. Nothing
       // visitor-supplied exists in this feature to leak into it.
@@ -118,7 +128,7 @@ export class GradeAnalysisService {
           agent: 'grade-grader',
           model,
           provider,
-          date: params.date,
+          problem: params.publicId,
           durationMs: Date.now() - startedAt,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
@@ -136,7 +146,7 @@ export class GradeAnalysisService {
           agent: 'grade-grader',
           model,
           provider,
-          date: params.date,
+          problem: params.publicId,
           durationMs: Date.now() - startedAt,
           retried,
           outcome: 'error',
@@ -199,20 +209,20 @@ export class GradeAnalysisService {
   }
 
   /**
-   * Store the analysis, but only if the day still has none.
+   * Store the analysis, but only if this problem still has none.
    *
    * `modelGrade: null` in the where clause is what makes a cross-instance
    * double call harmless: the second writer updates nothing rather than
    * overwriting an answer visitors have already seen (AC-4).
    */
   private async persist(
-    date: string,
+    photoId: string,
     analysis: GradeModelAnalysis,
     result: { inputTokens: number; outputTokens: number },
     model: string,
   ): Promise<void> {
-    await this.prisma.gradeDay.updateMany({
-      where: { date, modelGrade: null },
+    await this.prisma.gradeProblem.updateMany({
+      where: { photoId, modelGrade: null },
       data: {
         modelGrade: analysis.grade,
         modelConfidence: analysis.confidence,

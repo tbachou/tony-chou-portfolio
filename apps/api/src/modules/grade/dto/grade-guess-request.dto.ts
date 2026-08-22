@@ -1,22 +1,20 @@
 import { IsInt, Matches, Max, Min } from 'class-validator';
 import { GRADE_MAX, GRADE_MIN } from '../grade.constants';
-
-/** UTC calendar date, `YYYY-MM-DD`. Shape only; the server checks the value. */
-const UTC_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+import { PUBLIC_ID_LENGTH, PUBLIC_ID_PATTERN } from '../photo-pool';
 
 /**
- * The entire request body for POST /grade/guess (spec 0006, AC-8).
+ * The entire request body for POST /grade/guess (spec 0006, AC-8, AC-23).
  *
- * One validated integer and one machine-shaped date are the whole input
+ * One validated integer and one machine-shaped id are the whole input
  * surface for the feature, which is the point: with no free-text field
  * anywhere, the game has no prompt injection surface and nothing a visitor
  * typed can reach the database or a log line by construction (AC-6). Do not
  * add a free-text field here without a spec change.
  *
- * `date` is not visitor prose either — it is echoed back from the api's own
- * /grade/today response, constrained to `YYYY-MM-DD` here, and compared
- * against the server's clock rather than trusted (AC-19). It is never stored
- * and never reaches a model.
+ * `publicId` is not visitor prose either — it is echoed back from the api's
+ * own /grade/problems response, constrained to fixed-length hex here, and
+ * resolved against the photo table rather than trusted. It is never stored as
+ * given and never reaches a model.
  *
  * The global ValidationPipe runs whitelist + forbidNonWhitelisted, so an
  * unexpected extra property is a 400 rather than being quietly dropped, and
@@ -30,13 +28,18 @@ export class GradeGuessRequestDto {
   guess: number;
 
   /**
-   * The UTC date the visitor was actually shown, echoed from /grade/today.
+   * Which problem is being guessed, by its opaque public id (AC-23).
    *
-   * Required rather than optional: an absent date would have to fall back to
-   * "assume today", which is exactly the silent regrade AC-19 exists to stop.
+   * Replaced the UTC date on 2026-08-22 with the daily cadence. Required, and
+   * a stronger identity than the date ever was: the guess names its problem
+   * outright, so there is no "which photo is today" question left to get
+   * wrong and no rollover to guard against (the dropped AC-19).
+   *
+   * Never the photo's `id` slug, which would carry the gym circuit colour and
+   * hand over the grade band before the guess.
    */
-  @Matches(UTC_DATE_PATTERN, {
-    message: 'date must be a UTC calendar date in YYYY-MM-DD form',
+  @Matches(PUBLIC_ID_PATTERN, {
+    message: `publicId must be ${PUBLIC_ID_LENGTH} lowercase hex characters`,
   })
-  date: string;
+  publicId: string;
 }
