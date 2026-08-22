@@ -8,6 +8,7 @@ import type {
 // so this module stays the one import site for anything Beta-shaped.
 export {
   DISCIPLINES,
+  RED_FLAG_SYMPTOMS,
   EQUIPMENT_ACCESS,
   INJURY_AREAS,
   PAIN_BEHAVIORS,
@@ -29,12 +30,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 
 
-export const RED_FLAG_SYMPTOMS: readonly Symptom[] = [
-  'sudden_pop_with_swelling',
-  'numbness_or_tingling',
-  'cannot_bear_weight_or_grip',
-  'night_pain',
-];
+
 
 
 

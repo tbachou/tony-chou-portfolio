@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BetaSseEvent } from '@/lib/beta-api';
+import type { BetaPlanPayload, BetaSseEvent } from '@/lib/beta-api';
 
 /**
  * The guarantees that live in the planner shell rather than in the renderer.
@@ -19,13 +19,16 @@ let streamThrowsAfter: number | null = null;
 /** Resolve to let a held-open stream finish; leave pending to keep it running. */
 let releaseStream: (() => void) | null = null;
 let holdStreamOpen = false;
+/** What the form actually handed the api on the last submit. */
+let lastPayload: BetaPlanPayload | null = null;
 
 vi.mock('@/lib/beta-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/beta-api')>();
   return {
     ...actual,
     fetchBetaStatus: vi.fn(async () => ({ available: true, reason: 'ok' as const })),
-    streamBetaPlan: async function* () {
+    streamBetaPlan: async function* (payload: BetaPlanPayload) {
+      lastPayload = payload;
       for (const [i, event] of events.entries()) {
         if (streamThrowsAfter !== null && i === streamThrowsAfter) {
           throw new Error('stream died mid-plan');
@@ -92,11 +95,45 @@ beforeEach(() => {
   streamThrowsAfter = null;
   holdStreamOpen = false;
   releaseStream = null;
+  lastPayload = null;
   // The planner remembers the disclaimer acknowledgement, so without this a
   // later test inherits the gate state of an earlier one.
   localStorage.clear();
 });
 afterEach(cleanup);
+
+describe('the submitted payload', () => {
+  /**
+   * The step that turns a checked box into `symptoms: ['sudden_pop_with_swelling']`
+   * used to be repo code (useState + a toggle helper) and is now react-hook-form's
+   * checkbox collection. That contract is sharp: the same code path returns a
+   * BOOLEAN, not an array, when a name has only one registered checkbox. A
+   * symptoms array that silently became `true` would fail the client schema and,
+   * because the api is never called, would never reach the red-flag block that
+   * exists to stop exactly this input. Hence an assertion on the wire shape.
+   */
+  it('sends a checked red-flag symptom as an array of enum values', async () => {
+    events.push({ type: 'done' });
+    await submitPlan();
+
+    await waitFor(() => expect(lastPayload).not.toBeNull());
+    expect(lastPayload).toMatchObject({
+      injuryArea: 'finger_pulley',
+      onsetWeeksAgo: 9,
+      symptoms: ['sudden_pop_with_swelling'],
+      preInjuryGrade: 'V5',
+    });
+    expect(Array.isArray(lastPayload?.symptoms)).toBe(true);
+  });
+
+  it('omits the optional free text rather than sending an empty string', async () => {
+    events.push({ type: 'done' });
+    await submitPlan();
+
+    await waitFor(() => expect(lastPayload).not.toBeNull());
+    expect(lastPayload).not.toHaveProperty('goals');
+  });
+});
 
 describe('Copy plan', () => {
   it('is offered on a finished plan', async () => {

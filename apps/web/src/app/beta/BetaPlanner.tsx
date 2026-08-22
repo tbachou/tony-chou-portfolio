@@ -575,7 +575,14 @@ export function BetaPlanner() {
   const showPipeline = phase !== 'idle';
   // A failure with plan text already on screen means the stream died mid-plan.
   const planCutOff = phase === 'error' && planText.length > 0;
-  const errorCount = FIELD_ORDER.filter((field) => errors[field]).length;
+  // Every error, not just the ones FIELD_ORDER anchors. Counting only the
+  // anchored six meant an error on any other field (the two arrays, goals)
+  // rendered no summary, announced nothing, and moved no focus — the submit
+  // button would simply do nothing, which is the worst thing this form can
+  // do to somebody who is hurt. Unreachable with today's schema; a rule
+  // added to one of those fields would reach it.
+  const errorFields = Object.keys(errors) as (keyof typeof errors)[];
+  const errorCount = errorFields.length;
 
   return (
     <div>
@@ -652,6 +659,13 @@ export function BetaPlanner() {
                     </a>
                   </li>
                 ))}
+                {/* Anything without an anchor to link to still gets listed,
+                    so no error can fail silently. */}
+                {errorFields
+                  .filter((field) => !(field in FIELD_ANCHORS))
+                  .map((field) => (
+                    <li key={field}>{errors[field]?.message}</li>
+                  ))}
               </ul>
             </div>
           )}
@@ -742,7 +756,11 @@ export function BetaPlanner() {
               </p>
               <div className="grid gap-3 md:grid-cols-2">
                 {SYMPTOMS.map((symptom) => {
-                  const isRedFlag = RED_FLAG_SYMPTOMS.includes(symptom);
+                  // Widened from the four-value literal: this asks "is this one of them",
+                  // which is a question about any Symptom.
+                  const isRedFlag = (RED_FLAG_SYMPTOMS as readonly Symptom[]).includes(
+                    symptom,
+                  );
                   return (
                     <label key={symptom} className="beta-choice">
                       <input
