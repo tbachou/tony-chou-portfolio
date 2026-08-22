@@ -113,6 +113,17 @@ describe('OriginCheckGuard', () => {
       );
     });
 
+    it('allows a context with no request object at all', () => {
+      // The guard optional-chains through the request; without this case that
+      // chaining is unpinned, and dropping it passes every other test.
+      const context = {
+        getType: () => 'http',
+        switchToHttp: () => ({ getRequest: () => undefined }),
+      } as unknown as ExecutionContext;
+
+      expect(guard.canActivate(context)).toBe(true);
+    });
+
     it('ignores non-http contexts', () => {
       expect(
         guard.canActivate(

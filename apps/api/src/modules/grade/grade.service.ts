@@ -136,22 +136,31 @@ export class GradeService {
       throw new ConflictException(STALE_DATE_MESSAGE);
     }
 
-    const { photo: candidate } = await this.resolveDayPhoto(date, now);
+    const { photo: candidate, pinned } = await this.resolveDayPhoto(date, now);
 
-    await this.ensureDayRow(date, candidate.id);
+    // Settle which photo this date is graded against BEFORE the tally, because
+    // the tally is the point of no return: once guessCounts and plays are
+    // incremented, an error escaping this method returns a 500 for a guess
+    // that was in fact counted, and the page treats any non-409 as "the guess
+    // never counted, so let them retry" (GradeGame.tsx), which counts it
+    // again. Every fallible step therefore belongs above `recordGuess`.
+    //
+    // The row is the authority, not the candidate resolved above (AC-20). They
+    // differ only in a narrow race: this request found no row, and a
+    // concurrent first guess created one while the pool was changing
+    // underneath. Reading the row's own photo is what keeps that race harmless
+    // instead of grading two visitors against two problems under one
+    // histogram. When `resolveDayPhoto` already read a pinned row, the
+    // candidate IS that authority and no second read is needed.
+    let photo = candidate;
+    if (!pinned) {
+      const created = await this.ensureDayRow(date, candidate.id);
+      if (!created) photo = await this.requirePinnedPhoto(date);
+    }
+
     const row = await this.recordGuess(date, guess);
 
-    // The row is the authority on which photo this date is graded against
-    // (AC-20), not the candidate resolved above. The two differ only in a
-    // narrow race — a concurrent first guess created the row while the pool
-    // was changing underneath — but reading the row's own photo is what makes
-    // that race harmless instead of grading two visitors against two
-    // different problems under one histogram.
-    const photo =
-      row.photoId === candidate.id
-        ? candidate
-        : await this.requirePinnedPhoto(row.photoId);
-
+    // Nothing below may throw. resolveAnalysis is written not to.
     const model = await this.resolveAnalysis(row, photo);
 
     return {
@@ -183,7 +192,7 @@ export class GradeService {
   private async resolveDayPhoto(
     date: string,
     now: Date,
-  ): Promise<{ photo: GradePhoto; eligible: GradePhoto[] }> {
+  ): Promise<{ photo: GradePhoto; eligible: GradePhoto[]; pinned: boolean }> {
     const [pinned, active] = await Promise.all([
       this.prisma.gradeDay.findUnique({
         where: { date },
@@ -195,7 +204,9 @@ export class GradeService {
     const { eligible, excluded } = partitionPool(active, gradeGameEnabled());
     this.logExclusions(date, excluded.length);
 
-    if (pinned?.photo) return { photo: pinned.photo, eligible };
+    // `pinned` is reported so the guess path knows whether this photo is
+    // already the row's own answer, and can skip a second read.
+    if (pinned?.photo) return { photo: pinned.photo, eligible, pinned: true };
 
     const photo = photoForDate(now, eligible);
     if (!photo) {
@@ -205,19 +216,27 @@ export class GradeService {
       );
       throw new ServiceUnavailableException(NO_PHOTOS_MESSAGE);
     }
-    return { photo, eligible };
+    return { photo, eligible, pinned: false };
   }
 
-  /** The photo a GradeDay row pinned, whatever its current active state. */
-  private async requirePinnedPhoto(photoId: string): Promise<GradePhoto> {
-    const photo = await this.prisma.gradePhoto.findUnique({
-      where: { id: photoId },
+  /**
+   * The photo the day's row pinned, whatever its current active state.
+   *
+   * Reads by date rather than by photo id because the caller needs this before
+   * the tally, where it has no row in hand yet.
+   */
+  private async requirePinnedPhoto(date: string): Promise<GradePhoto> {
+    const pinned = await this.prisma.gradeDay.findUnique({
+      where: { date },
+      select: { photo: true },
     });
+    const photo = pinned?.photo;
     if (!photo) {
-      // The foreign key is onDelete: Restrict, so a row's photo cannot be
-      // deleted out from under it. Reaching here means the constraint was
-      // bypassed by hand.
-      this.logger.error(`GradeDay row points at missing photo ${photoId}`);
+      // ensureDayRow reported that a concurrent request created this row, so
+      // it exists, and the foreign key is onDelete: Restrict, so its photo
+      // cannot be deleted out from under it. Reaching here means the row
+      // vanished or the constraint was bypassed by hand.
+      this.logger.error(`No pinned photo readable for ${date}`);
       throw new ServiceUnavailableException(NO_PHOTOS_MESSAGE);
     }
     return photo;
@@ -288,15 +307,18 @@ export class GradeService {
    *
    * The insert races by design: whichever concurrent first guess wins the
    * primary key creates the row and every other one takes the unique-violation
-   * branch. Nothing downstream depends on *which* request won — the vision
-   * call's single-caller guard is separate (GradeAnalysisService) — so this
-   * only has to be safe, not informative.
+   * branch. It returns which happened, because the loser has to go and read
+   * the winner's photo before it may count anything (AC-20). The vision call's
+   * single-caller guard is separate (GradeAnalysisService).
    */
-  private async ensureDayRow(date: string, photoId: string): Promise<void> {
+  private async ensureDayRow(date: string, photoId: string): Promise<boolean> {
     try {
       await this.prisma.gradeDay.create({ data: { date, photoId } });
+      return true;
     } catch (error) {
-      if (isUniqueViolation(error)) return;
+      // Someone else won the primary key. Their photo is the day's answer, not
+      // ours, so the caller has to go read it.
+      if (isUniqueViolation(error)) return false;
       throw error;
     }
   }

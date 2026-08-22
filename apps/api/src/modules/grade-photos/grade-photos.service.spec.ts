@@ -226,12 +226,15 @@ describe('GradePhotosService', () => {
       const { service, storage, prisma } = makeDeps();
       storage.presignGet.mockRejectedValueOnce(new Error('signer unavailable'));
 
-      await expect(service.create(DTO, await realJpeg())).rejects.toThrow(
-        'signer unavailable',
-      );
+      const created = await service.create(DTO, await realJpeg());
 
       expect(prisma.gradePhoto.create).toHaveBeenCalledTimes(1);
       expect(storage.deleteQuietly).not.toHaveBeenCalled();
+      // And the committed upload reports as the success it was. Reporting a
+      // failure would send the admin back to retry the same slug, where the
+      // unique constraint answers 409 for a photo that is already there.
+      expect(created.id).toBe(DTO.id);
+      expect(created.imageUrl).toBe('');
     });
   });
 
