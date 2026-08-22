@@ -44,7 +44,7 @@ In this repo the genuinely shared files are few, and they are what to check a sc
 
 Everything above those in edit frequency is feature local (`beta.service.ts`, `terminal.css`, `BetaPlanner.tsx`), which is the shape that parallelizes safely. One agent per module does not collide. Two agents both registering a module do.
 
-**A worktree isolates tracked files and nothing else.** `node_modules`, the generated Prisma client, `.agents/skills` and `.git/info/exclude` are shared by link, and the dev database is shared outright. So a dependency change, a migration, or anything that writes to the dev database cannot be made safe by isolating it. Those run in the main tree, one at a time.
+**A worktree isolates tracked files and nothing else.** `node_modules`, the generated Prisma client and `.git/info/exclude` are shared by link, and the dev database is shared outright. So a dependency change, a migration, or anything that writes to the dev database cannot be made safe by isolating it. Those run in the main tree, one at a time.
 
 ## Step 2: Pick the model explicitly
 

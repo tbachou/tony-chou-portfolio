@@ -23,9 +23,3 @@ npm-debug.log*
 # Prisma generated client
 src/generated/prisma/
 
-# Locally installed community agent skills (npx skills add), not committed.
-# The .agents/skills content is covered generally; each symlink under
-# .claude/skills still needs its own line (gitignore can't match "symlinks only").
-.agents/skills/
-.claude/skills/better-auth-best-practices
-.claude/skills/vercel-react-best-practices
