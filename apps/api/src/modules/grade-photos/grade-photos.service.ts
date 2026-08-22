@@ -89,8 +89,14 @@ export class GradePhotosService {
     const objectKey = newObjectKey(processed.extension);
     await this.storage.put(objectKey, processed.buffer, processed.contentType);
 
+    // The rollback catch wraps the insert and NOTHING else. It used to span
+    // the presign and the response build too, so a presign failure after a
+    // committed row deleted that row's object and left the exact state AC-9
+    // forbids: a row naming an object that is gone. Anything below this block
+    // runs with the row already durable, so a failure there must not delete.
+    let photo;
     try {
-      const photo = await this.prisma.gradePhoto.create({
+      photo = await this.prisma.gradePhoto.create({
         data: {
           id: dto.id,
           objectKey,
@@ -101,21 +107,6 @@ export class GradePhotosService {
           note: dto.note ?? null,
         },
       });
-
-      this.logger.log(
-        `Grade photo added: ${photo.id} (${processed.width}x${processed.height}, ${processed.buffer.length} bytes, source ${photo.source})`,
-      );
-
-      return {
-        id: photo.id,
-        trueGrade: photo.trueGrade,
-        source: photo.source,
-        sourceNote: photo.sourceNote,
-        note: photo.note,
-        active: photo.active,
-        createdAt: photo.createdAt,
-        imageUrl: await this.storage.presignGet(photo.objectKey),
-      };
     } catch (error) {
       // The row did not land, so its object must not survive. This can only
       // remove the key generated moments ago in this same call.
@@ -128,6 +119,21 @@ export class GradePhotosService {
       }
       throw error;
     }
+
+    this.logger.log(
+      `Grade photo added: ${photo.id} (${processed.width}x${processed.height}, ${processed.buffer.length} bytes, source ${photo.source})`,
+    );
+
+    return {
+      id: photo.id,
+      trueGrade: photo.trueGrade,
+      source: photo.source,
+      sourceNote: photo.sourceNote,
+      note: photo.note,
+      active: photo.active,
+      createdAt: photo.createdAt,
+      imageUrl: await this.storage.presignGet(photo.objectKey),
+    };
   }
 
   /** Deactivate or reactivate one photo (AC-17). Rows are never deleted. */

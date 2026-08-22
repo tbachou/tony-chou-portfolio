@@ -218,6 +218,21 @@ describe('GradePhotosService', () => {
       expect(created.active).toBe(true);
       expect(created.imageUrl).toContain('X-Amz-Signature');
     });
+
+    it('never deletes the object of a row that committed, even if presigning fails', async () => {
+      // The rollback used to be scoped over the presign as well, so a presign
+      // failure after a durable row deleted that row's object and produced the
+      // one state AC-9 forbids: a committed row naming an object that is gone.
+      const { service, storage, prisma } = makeDeps();
+      storage.presignGet.mockRejectedValueOnce(new Error('signer unavailable'));
+
+      await expect(service.create(DTO, await realJpeg())).rejects.toThrow(
+        'signer unavailable',
+      );
+
+      expect(prisma.gradePhoto.create).toHaveBeenCalledTimes(1);
+      expect(storage.deleteQuietly).not.toHaveBeenCalled();
+    });
   });
 
   describe('list', () => {
