@@ -16,7 +16,9 @@
     "build:api": "npm run build --workspace=apps/api",
     "build:feedback-classifier": "npm run build --workspace=infra/lambda/feedback-classifier",
     "lint": "eslint . --max-warnings 25",
-    "check:skills": "node scripts/check-skills.mjs"
+    "check:skills": "node scripts/check-skills.mjs",
+    "build:shared": "npm run build --workspace=@portfolio/shared",
+    "postinstall": "npm run build:shared"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

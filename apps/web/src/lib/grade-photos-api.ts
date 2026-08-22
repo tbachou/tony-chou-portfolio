@@ -1,3 +1,11 @@
+import type { GradePhotoSourceValue as GradePhotoSource } from '@portfolio/shared';
+
+// Owned by @portfolio/shared, alongside the schema the api validates with.
+export {
+  GRADE_PHOTO_SOURCES,
+  type GradePhotoSourceValue as GradePhotoSource,
+} from '@portfolio/shared';
+
 // Client for the Grade Guesser photo pool admin api (spec 0006 R3). Mirrors
 // apps/api/src/modules/grade-photos' response types exactly — same convention
 // as api.ts, beta-api.ts and grade-api.ts.
@@ -10,14 +18,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 /** Kept in step with the api's MAX_UPLOAD_BYTES, so the form can say so up front. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-export const GRADE_PHOTO_SOURCES = [
-  'own_photo',
-  'permission_given',
-  'licensed',
-  'unlicensed_test'
-] as const;
-
-export type GradePhotoSource = (typeof GRADE_PHOTO_SOURCES)[number];
 
 /** How each provenance value reads in the UI, and what it means for release. */
 export const SOURCE_LABELS: Record<GradePhotoSource, string> = {

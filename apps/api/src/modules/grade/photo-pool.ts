@@ -62,10 +62,10 @@ export const UNLICENSED_TEST: GradePhotoSource = 'unlicensed_test';
  * doubled at each use, because the DTO pattern needs a literal length and a
  * wrong one here would reject every real id.
  */
-export const PUBLIC_ID_LENGTH = 16;
+export { PUBLIC_ID_LENGTH } from '@portfolio/shared';
 
 /** Exactly the shape `newObjectKey` produces: lowercase hex, fixed length. */
-export const PUBLIC_ID_PATTERN = new RegExp(`^[0-9a-f]{${PUBLIC_ID_LENGTH}}$`);
+export { PUBLIC_ID_PATTERN } from '@portfolio/shared';
 
 /**
  * The public id for a photo: the random hex basename of its object key
