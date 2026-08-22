@@ -239,6 +239,14 @@ export class GradeService {
    * first guess of the day pays for the call and everyone after gets it from
    * the row. `ensureAnalysis` never throws, so a failed call simply leaves
    * this null and a later guess retries (AC-5).
+   *
+   * Nothing in here may throw either, and that is load bearing rather than
+   * tidy. The caller has already incremented this day's histogram and play
+   * count by the time it runs, so an escaping error returns a 500 for a guess
+   * that was in fact counted, and the page invites a retry that counts it
+   * again. `ensureAnalysis` was always safe; the S3 read added in R6 sat in
+   * front of it and was not, so it is caught here and treated as exactly what
+   * it is, a day whose analysis has not landed yet (AC-5).
    */
   private async resolveAnalysis(
     row: GradeDayRow,
@@ -252,7 +260,19 @@ export class GradeService {
     // why the vision path could never have run in production before R5. It
     // also means the model sees the same object the visitor's presigned URL
     // points at, without the model needing to reach a public origin.
-    const bytes = await this.storage.getBytes(photo.objectKey);
+    let bytes: Buffer;
+    try {
+      bytes = await this.storage.getBytes(photo.objectKey);
+    } catch (error) {
+      // Name only, never a raw SDK message (api logging convention). No
+      // visitor-supplied value exists on this path to leak into it.
+      this.logger.error(
+        `Could not read photo bytes for ${row.date}: ${
+          error instanceof Error ? error.name : 'unknown error'
+        }`,
+      );
+      return null;
+    }
 
     return this.analysis.ensureAnalysis({
       date: row.date,
