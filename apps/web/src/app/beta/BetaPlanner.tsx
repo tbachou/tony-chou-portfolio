@@ -1,9 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
   BetaRequestError,
   DISCIPLINES,
+  INJURY_AREAS,
   EQUIPMENT_ACCESS,
   PAIN_BEHAVIORS,
   RED_FLAG_SYMPTOMS,
@@ -127,8 +131,6 @@ type FieldName =
   | 'discipline'
   | 'sessionsPerWeek';
 
-type FieldErrors = Partial<Record<FieldName, string>>;
-
 // DOM order, so the error summary reads the form top to bottom.
 const FIELD_ORDER: FieldName[] = [
   'injuryArea',
@@ -152,6 +154,71 @@ const FIELD_ANCHORS: Record<FieldName, string> = {
 
 const GRADE_PATTERN = /^[A-Za-z0-9 .+/-]+$/;
 
+/**
+ * Every rule the form enforces, in one place. The values are the api's enum
+ * values and the server re-validates all of them with IsIn (spec 0004) —
+ * this schema is the first gate, never the only one.
+ *
+ * The two numeric answers stay strings: their inputs are text-like, an empty
+ * box has to stay distinguishable from a deliberate zero, and Number('') is
+ * 0. The three required choices have no default, so an untouched group fails
+ * its enum and reports the sentence written here rather than "invalid
+ * option".
+ */
+const plannerSchema = z.object({
+  injuryArea: z.enum(INJURY_AREAS, { error: 'Choose the area that hurts.' }),
+  onsetWeeks: z.string().superRefine((value, ctx) => {
+    const weeks = value.trim();
+    if (weeks === '') {
+      ctx.addIssue({ code: 'custom', message: 'Enter how many weeks ago it started.' });
+      return;
+    }
+    const parsed = Number(weeks);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 520) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Enter a whole number of weeks between 0 and 520.',
+      });
+    }
+  }),
+  symptoms: z.array(z.enum(SYMPTOMS)),
+  painBehavior: z.enum(PAIN_BEHAVIORS, {
+    error: 'Choose the pattern that best fits your pain.',
+  }),
+  grade: z.string().superRefine((value, ctx) => {
+    const entered = value.trim();
+    if (entered === '') {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Enter the grade you were climbing before the injury.',
+      });
+      return;
+    }
+    if (!GRADE_PATTERN.test(entered)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Use a plain climbing grade like V5, 5.11a, or 6b+.',
+      });
+    }
+  }),
+  discipline: z.enum(DISCIPLINES, { error: 'Choose your main discipline.' }),
+  goals: z.string(),
+  sessionsPerWeek: z.string().superRefine((value, ctx) => {
+    const sessions = value.trim();
+    if (sessions === '') return;
+    const parsed = Number(sessions);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 14) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Enter a whole number of sessions between 0 and 14, or leave this blank.',
+      });
+    }
+  }),
+  equipment: z.array(z.enum(EQUIPMENT_ACCESS)),
+});
+
+type PlannerValues = z.infer<typeof plannerSchema>;
+
 function errorId(field: FieldName) {
   return `beta-error-${field}`;
 }
@@ -162,8 +229,7 @@ function describedBy(...ids: (string | false | undefined)[]) {
 
 /** Persistent, per-control error text. Never colour alone: it carries an
  *  icon and bold weight too, and the control gets aria-invalid. */
-function FieldError({ field, errors }: { field: FieldName; errors: FieldErrors }) {
-  const message = errors[field];
+function FieldError({ field, message }: { field: FieldName; message?: string }) {
   if (!message) return null;
   return (
     <p id={errorId(field)} className="beta-field-error">
@@ -224,17 +290,31 @@ export function BetaPlanner() {
   const [errorKind, setErrorKind] = useState<'limit' | 'failure' | null>(null);
   const [announcement, setAnnouncement] = useState('');
 
-  // Form state.
-  const [injuryArea, setInjuryArea] = useState<InjuryArea | ''>('');
-  const [onsetWeeks, setOnsetWeeks] = useState('');
-  const [symptoms, setSymptoms] = useState<Symptom[]>([]);
-  const [painBehavior, setPainBehavior] = useState<PainBehavior | ''>('');
-  const [grade, setGrade] = useState('');
-  const [discipline, setDiscipline] = useState<Discipline | ''>('');
-  const [goals, setGoals] = useState('');
-  const [sessionsPerWeek, setSessionsPerWeek] = useState('');
-  const [equipment, setEquipment] = useState<EquipmentAccess[]>([]);
-  const [errors, setErrors] = useState<FieldErrors>({});
+  // Form state. shouldFocusError is off because a failed submit sends focus
+  // to the error summary instead of the first bad field — the summary lists
+  // everything that is wrong, which one field cannot.
+  const {
+    register,
+    handleSubmit: submitWithValidation,
+    control,
+    formState: { errors, submitCount },
+  } = useForm<PlannerValues>({
+    resolver: zodResolver(plannerSchema),
+    shouldFocusError: false,
+    defaultValues: {
+      onsetWeeks: '',
+      symptoms: [],
+      grade: '',
+      goals: '',
+      sessionsPerWeek: '',
+      equipment: [],
+    },
+  });
+
+  // Only the live character counter reads a value during typing. useWatch
+  // rather than watch(), which returns a function React Compiler cannot
+  // memoize safely.
+  const goals = useWatch({ control, name: 'goals' });
 
   const runIdRef = useRef(0);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -242,7 +322,6 @@ export function BetaPlanner() {
   const errorRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
-  const focusSummaryRef = useRef(false);
   // Only true when the visitor just dismissed the gate or reset the result —
   // never when the gate is skipped from localStorage on load, which must not
   // steal focus from wherever the visitor actually is on the page.
@@ -304,63 +383,13 @@ export function BetaPlanner() {
   }
 
   // A failed submit puts focus on the summary, so the visitor hears what is
-  // wrong and can jump straight to any of it.
+  // wrong and can jump straight to any of it. Keyed on submitCount rather
+  // than on the errors themselves: this has to fire once per attempt, not
+  // again every time the visitor clears one of the errors by typing. On a
+  // clean submit the summary is not rendered and focusContainer no-ops.
   useEffect(() => {
-    if (focusSummaryRef.current && Object.keys(errors).length > 0) {
-      focusSummaryRef.current = false;
-      focusContainer(errorSummaryRef.current);
-    }
-  }, [errors]);
-
-  function validateForm(): FieldErrors {
-    const found: FieldErrors = {};
-
-    if (!injuryArea) found.injuryArea = 'Choose the area that hurts.';
-
-    const onset = onsetWeeks.trim();
-    if (onset === '') {
-      found.onsetWeeks = 'Enter how many weeks ago it started.';
-    } else if (!Number.isInteger(Number(onset)) || Number(onset) < 0 || Number(onset) > 520) {
-      found.onsetWeeks = 'Enter a whole number of weeks between 0 and 520.';
-    }
-
-    if (!painBehavior) found.painBehavior = 'Choose the pattern that best fits your pain.';
-
-    const trimmedGrade = grade.trim();
-    if (trimmedGrade === '') {
-      found.grade = 'Enter the grade you were climbing before the injury.';
-    } else if (!GRADE_PATTERN.test(trimmedGrade)) {
-      found.grade = 'Use a plain climbing grade like V5, 5.11a, or 6b+.';
-    }
-
-    if (!discipline) found.discipline = 'Choose your main discipline.';
-
-    const sessions = sessionsPerWeek.trim();
-    if (
-      sessions !== '' &&
-      (!Number.isInteger(Number(sessions)) || Number(sessions) < 0 || Number(sessions) > 14)
-    ) {
-      found.sessionsPerWeek =
-        'Enter a whole number of sessions between 0 and 14, or leave this blank.';
-    }
-
-    return found;
-  }
-
-  // Clear a field's error as soon as it is touched — re-validating an
-  // untouched field mid-typing would nag.
-  function clearFieldError(field: FieldName) {
-    setErrors((prev) => {
-      if (!prev[field]) return prev;
-      const next = { ...prev };
-      delete next[field];
-      return next;
-    });
-  }
-
-  function toggleInList<T>(list: T[], value: T): T[] {
-    return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
-  }
+    if (submitCount > 0) focusContainer(errorSummaryRef.current);
+  }, [submitCount]);
 
   /**
    * Copies the plan the visitor is looking at, WITH the context the screen
@@ -421,31 +450,22 @@ export function BetaPlanner() {
     });
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleValid(values: PlannerValues) {
     if (phase === 'running' || capNotice) return;
 
-    const found = validateForm();
-    setErrors(found);
-    if (Object.keys(found).length > 0) {
-      focusSummaryRef.current = true;
-      return;
-    }
-    // Narrowing for the payload below; validateForm already proved these.
-    if (!injuryArea || !painBehavior || !discipline) return;
-
     const payload: BetaPlanPayload = {
-      injuryArea,
-      onsetWeeksAgo: Number(onsetWeeks),
-      symptoms,
-      painBehavior,
-      preInjuryGrade: grade.trim(),
-      discipline,
+      injuryArea: values.injuryArea,
+      onsetWeeksAgo: Number(values.onsetWeeks.trim()),
+      symptoms: values.symptoms,
+      painBehavior: values.painBehavior,
+      preInjuryGrade: values.grade.trim(),
+      discipline: values.discipline,
     };
-    const trimmedGoals = goals.trim();
+    const trimmedGoals = values.goals.trim();
     if (trimmedGoals) payload.goals = trimmedGoals;
-    if (sessionsPerWeek !== '') payload.sessionsPerWeek = Number(sessionsPerWeek);
-    if (equipment.length > 0) payload.equipmentAccess = equipment;
+    const sessions = values.sessionsPerWeek.trim();
+    if (sessions !== '') payload.sessionsPerWeek = Number(sessions);
+    if (values.equipment.length > 0) payload.equipmentAccess = values.equipment;
 
     // Move focus before the render that disables the fieldset, otherwise the
     // focused submit button is disabled out from under the visitor and focus
@@ -555,7 +575,7 @@ export function BetaPlanner() {
   const showPipeline = phase !== 'idle';
   // A failure with plan text already on screen means the stream died mid-plan.
   const planCutOff = phase === 'error' && planText.length > 0;
-  const errorCount = Object.keys(errors).length;
+  const errorCount = FIELD_ORDER.filter((field) => errors[field]).length;
 
   return (
     <div>
@@ -610,7 +630,7 @@ export function BetaPlanner() {
           ref={formRef}
           aria-label="Draft your plan"
           noValidate
-          onSubmit={handleSubmit}
+          onSubmit={(event) => void submitWithValidation(handleValid)(event)}
           className="beta-card beta-focus-target p-6 sm:p-8"
         >
           {/* Outside the disabled fieldset so its links stay operable. */}
@@ -628,7 +648,7 @@ export function BetaPlanner() {
                 {FIELD_ORDER.filter((field) => errors[field]).map((field) => (
                   <li key={field}>
                     <a href={`#${FIELD_ANCHORS[field]}`} className="beta-error-summary-link">
-                      {errors[field]}
+                      {errors[field]?.message}
                     </a>
                   </li>
                 ))}
@@ -663,14 +683,9 @@ export function BetaPlanner() {
                     <input
                       id={`beta-injury-${option.value}`}
                       type="radio"
-                      name="injuryArea"
                       value={option.value}
-                      checked={injuryArea === option.value}
-                      onChange={() => {
-                        setInjuryArea(option.value);
-                        clearFieldError('injuryArea');
-                      }}
                       required
+                      {...register('injuryArea')}
                     />
                     <span>
                       <span className="block font-medium text-[color:var(--beta-ink)]">
@@ -681,7 +696,7 @@ export function BetaPlanner() {
                   </label>
                 ))}
               </div>
-              <FieldError field="injuryArea" errors={errors} />
+              <FieldError field="injuryArea" message={errors.injuryArea?.message} />
             </fieldset>
 
             {/* Onset */}
@@ -711,16 +726,12 @@ export function BetaPlanner() {
                     !!errors.onsetWeeks && errorId('onsetWeeks'),
                   )}
                   aria-invalid={errors.onsetWeeks ? true : undefined}
-                  value={onsetWeeks}
-                  onChange={(e) => {
-                    setOnsetWeeks(e.target.value);
-                    clearFieldError('onsetWeeks');
-                  }}
                   placeholder="6"
+                  {...register('onsetWeeks')}
                 />
                 <span className="text-[color:var(--beta-muted)]">weeks ago</span>
               </div>
-              <FieldError field="onsetWeeks" errors={errors} />
+              <FieldError field="onsetWeeks" message={errors.onsetWeeks?.message} />
             </div>
 
             {/* Symptoms */}
@@ -736,10 +747,8 @@ export function BetaPlanner() {
                     <label key={symptom} className="beta-choice">
                       <input
                         type="checkbox"
-                        name="symptoms"
                         value={symptom}
-                        checked={symptoms.includes(symptom)}
-                        onChange={() => setSymptoms((prev) => toggleInList(prev, symptom))}
+                        {...register('symptoms')}
                       />
                       <span>
                         <span className="block font-medium text-[color:var(--beta-ink)]">
@@ -780,14 +789,9 @@ export function BetaPlanner() {
                     <input
                       id={`beta-pain-${behavior}`}
                       type="radio"
-                      name="painBehavior"
                       value={behavior}
-                      checked={painBehavior === behavior}
-                      onChange={() => {
-                        setPainBehavior(behavior);
-                        clearFieldError('painBehavior');
-                      }}
                       required
+                      {...register('painBehavior')}
                     />
                     <span className="font-medium text-[color:var(--beta-ink)]">
                       {PAIN_BEHAVIOR_LABELS[behavior]}
@@ -795,7 +799,7 @@ export function BetaPlanner() {
                   </label>
                 ))}
               </div>
-              <FieldError field="painBehavior" errors={errors} />
+              <FieldError field="painBehavior" message={errors.painBehavior?.message} />
             </fieldset>
 
             {/* Grade + discipline */}
@@ -820,14 +824,10 @@ export function BetaPlanner() {
                   maxLength={12}
                   pattern="[A-Za-z0-9 .+\/\-]+"
                   title="A plain climbing grade like V5, 5.11a, or 6b+"
-                  value={grade}
-                  onChange={(e) => {
-                    setGrade(e.target.value);
-                    clearFieldError('grade');
-                  }}
                   placeholder="V5 or 5.11a or 6b+"
+                  {...register('grade')}
                 />
-                <FieldError field="grade" errors={errors} />
+                <FieldError field="grade" message={errors.grade?.message} />
               </div>
               <fieldset
                 className="beta-fieldset"
@@ -851,14 +851,9 @@ export function BetaPlanner() {
                       <input
                         id={`beta-discipline-${d}`}
                         type="radio"
-                        name="discipline"
                         value={d}
-                        checked={discipline === d}
-                        onChange={() => {
-                          setDiscipline(d);
-                          clearFieldError('discipline');
-                        }}
                         required
+                        {...register('discipline')}
                       />
                       <span className="font-medium text-[color:var(--beta-ink)]">
                         {DISCIPLINE_LABELS[d]}
@@ -866,7 +861,7 @@ export function BetaPlanner() {
                     </label>
                   ))}
                 </div>
-                <FieldError field="discipline" errors={errors} />
+                <FieldError field="discipline" message={errors.discipline?.message} />
               </fieldset>
             </div>
 
@@ -885,9 +880,8 @@ export function BetaPlanner() {
                 maxLength={200}
                 rows={3}
                 aria-describedby="beta-goals-hint beta-goals-counter"
-                value={goals}
-                onChange={(e) => setGoals(e.target.value)}
                 placeholder="Back to steep bouldering by autumn…"
+                {...register('goals')}
               />
               <p id="beta-goals-counter" className="beta-hint mt-1.5">
                 {goals.length}/200
@@ -917,14 +911,10 @@ export function BetaPlanner() {
                     !!errors.sessionsPerWeek && errorId('sessionsPerWeek'),
                   )}
                   aria-invalid={errors.sessionsPerWeek ? true : undefined}
-                  value={sessionsPerWeek}
-                  onChange={(e) => {
-                    setSessionsPerWeek(e.target.value);
-                    clearFieldError('sessionsPerWeek');
-                  }}
                   placeholder="3"
+                  {...register('sessionsPerWeek')}
                 />
-                <FieldError field="sessionsPerWeek" errors={errors} />
+                <FieldError field="sessionsPerWeek" message={errors.sessionsPerWeek?.message} />
               </div>
               <fieldset className="beta-fieldset" aria-describedby="beta-equipment-hint">
                 <legend className="beta-legend">
@@ -939,10 +929,8 @@ export function BetaPlanner() {
                     <label key={item} className="beta-choice beta-choice--chip">
                       <input
                         type="checkbox"
-                        name="equipmentAccess"
                         value={item}
-                        checked={equipment.includes(item)}
-                        onChange={() => setEquipment((prev) => toggleInList(prev, item))}
+                        {...register('equipment')}
                       />
                       <span className="font-medium text-[color:var(--beta-ink)]">
                         {EQUIPMENT_LABELS[item]}
