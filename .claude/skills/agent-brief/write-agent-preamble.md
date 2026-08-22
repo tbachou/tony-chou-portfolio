@@ -10,11 +10,13 @@ Every line here exists because it failed at least once in this repo, and none of
 
 Run these first and report that you did. If any step fails, stop and say so rather than working around it.
 
-**1. Confirm where you are, and report the commit you started from.** Your worktree may not be isolated even when it was requested.
+**1. Confirm where you are, and report the commit you started from.** You are either in the engineer's main checkout or in a worktree of your own, and which one is deliberate. Find out before you write, because it decides whether step 3 applies.
 
 ```bash
 pwd && git worktree list && git status --short && git log --oneline -1
 ```
+
+If a worktree was requested and `pwd` is the main checkout, isolation did not take. Stop and report it rather than writing into the main tree.
 
 Your base is already correct: `worktree.baseRef` is set to `head` in `.claude/settings.json`, so your worktree branches from the engineer's current HEAD rather than from the remote default branch. Do not fetch or merge to "catch up". If the commit you land on is not the one the task describes, stop and report that instead of moving your own base.
 

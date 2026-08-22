@@ -25,6 +25,27 @@ Pick the weight first:
 - **Read only** (scout, finder, researcher, auditor): no preflight, no git, no verification bar. Just the question and the return shape.
 - **Write** (builder, fixer, refactorer): everything in [`write-agent-preamble.md`](write-agent-preamble.md), inlined into the prompt verbatim.
 
+## Step 1b: Isolate by collision, not by whether it writes
+
+Isolation is not free. A worktree starts with tracked files only, so it needs the preamble's link step before it can do anything, and it leaves build output behind when it goes. Pay that only when two agents would actually fight.
+
+- **Read only, or one writer at a time**: main tree, no isolation.
+- **Several writers whose file scopes you can state and that do not overlap**: main tree, no isolation. They get the real dependencies, env, Prisma client and skills with no setup at all.
+- **Writers that would touch the same file**: `isolation: "worktree"` for each, and the preamble's link step.
+
+In this repo the genuinely shared files are few, and they are what to check a scope against:
+
+| File | Why it collides |
+|---|---|
+| `apps/api/prisma/schema.prisma` | every model change lands here |
+| `apps/api/src/app.module.ts` | every new module registers here |
+| `package-lock.json` | any dependency change rewrites it |
+| the four `AGENTS.md` files | any convention change edits one |
+
+Everything above those in edit frequency is feature local (`beta.service.ts`, `terminal.css`, `BetaPlanner.tsx`), which is the shape that parallelizes safely. One agent per module does not collide. Two agents both registering a module do.
+
+**A worktree isolates tracked files and nothing else.** `node_modules`, the generated Prisma client, `.agents/skills` and `.git/info/exclude` are shared by link, and the dev database is shared outright. So a dependency change, a migration, or anything that writes to the dev database cannot be made safe by isolating it. Those run in the main tree, one at a time.
+
 ## Step 2: Pick the model explicitly
 
 Never let a subagent inherit the session model. State it on the Agent call.
