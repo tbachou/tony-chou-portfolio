@@ -47,6 +47,24 @@ export const SYMPTOMS = [
 ] as const;
 export type Symptom = (typeof SYMPTOMS)[number];
 
+/**
+ * The four symptoms that hard-block a plan (AC-2).
+ *
+ * Here rather than in either app because both sides read it and they must
+ * agree: the api blocks on this list in code before any model call, and the
+ * form labels exactly these checkboxes "Warning sign — we'll stop and point
+ * you to a pro". A symptom the form promises will stop the planner but the
+ * api does not block is a visitor told to expect a professional handoff who
+ * gets a rehab plan instead.
+ */
+export const RED_FLAG_SYMPTOMS = [
+  'sudden_pop_with_swelling',
+  'numbness_or_tingling',
+  'cannot_bear_weight_or_grip',
+  'night_pain',
+] as const satisfies readonly Symptom[];
+export type RedFlagSymptom = (typeof RED_FLAG_SYMPTOMS)[number];
+
 export const PAIN_BEHAVIORS = [
   'none_at_rest_hurts_under_load',
   'warms_up_then_fine',
