@@ -15,7 +15,8 @@
     "build:web": "npm run build --workspace=apps/web",
     "build:api": "npm run build --workspace=apps/api",
     "build:feedback-classifier": "npm run build --workspace=infra/lambda/feedback-classifier",
-    "lint": "eslint . --max-warnings 25"
+    "lint": "eslint . --max-warnings 25",
+    "check:skills": "node scripts/check-skills.mjs"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",

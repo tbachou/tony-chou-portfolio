@@ -2,9 +2,10 @@
 # including subagent worktrees. .gitignore syntax; only files that are
 # BOTH matched here and gitignored are copied.
 #
-# Small config only. Large or derived trees (node_modules, the generated
-# Prisma client, .agents/skills) are linked instead, not copied -- see
-# .claude/skills/agent-brief/write-agent-preamble.md.
+# Small config only. Large or derived trees (node_modules and the generated
+# Prisma client) are linked instead, not copied -- see
+# .claude/skills/agent-brief/write-agent-preamble.md. Skills are committed
+# real files now (spec 0007), so they need neither copying nor linking.
 #
 # Deliberately NOT copied: .claude/settings.local.json. It pre-approves
 # Bash(git push *), and agents are forbidden to push.

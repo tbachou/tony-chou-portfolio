@@ -35,10 +35,9 @@ ln -s "$MAIN/node_modules"           node_modules
 ln -s "$MAIN/apps/api/node_modules"  apps/api/node_modules
 ln -s "$MAIN/apps/web/node_modules"  apps/web/node_modules
 ln -s "$MAIN/apps/api/src/generated" apps/api/src/generated
-mkdir -p .agents && ln -s "$MAIN/.agents/skills" .agents/skills
 
 EX="$(git rev-parse --git-path info/exclude)"
-for p in /node_modules /apps/api/node_modules /apps/web/node_modules /apps/api/src/generated /.agents; do
+for p in /node_modules /apps/api/node_modules /apps/web/node_modules /apps/api/src/generated; do
   grep -qxF "$p" "$EX" || echo "$p" >> "$EX"
 done
 ```
@@ -47,7 +46,7 @@ Installing instead would copy 1.3 GB per agent. Linking takes a second, and the 
 
 The exclude loop is not optional. A symlink named `node_modules` is not a directory, so the `node_modules/` pattern in `.gitignore` does not match it, and without the exclude a `git add -A` commits your links. That file is shared with the main checkout, so the loop adds only what is missing rather than appending duplicates on every run.
 
-The `.agents/skills` link matters more than it looks. Five of this repo's skills are committed as symlinks into a gitignored directory, so without that link those five are dead in your worktree.
+Skills need no link. Every skill under `.claude/skills/` is a committed real file, so a fresh worktree gets all of them from the checkout itself (spec 0007). This step used to link `.agents/skills` because five skills were symlinks into a gitignored directory; that storage is gone and the link with it.
 
 **You are borrowing the engineer's `node_modules`, not your own copy.** Never run `npm install`, `npm ci`, `npm add` or `npm uninstall` in a worktree: it writes through the link into the main checkout and changes the tree the engineer is working in. If your task needs a dependency that is not installed, stop and report it. Adding it is the engineer's call, in the main checkout.
 

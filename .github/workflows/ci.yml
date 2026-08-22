@@ -27,6 +27,13 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Before the expensive steps: this one needs no dependencies and no
+      # network, and it catches the skill-layout drift that would otherwise
+      # reach every clone and worktree (spec 0007). The local pre-commit run
+      # is the primary gate; this is the backstop.
+      - name: Check skill layout
+        run: npm run check:skills
+
       - name: Typecheck API
         run: npx tsc --noEmit -p apps/api/tsconfig.json
 
