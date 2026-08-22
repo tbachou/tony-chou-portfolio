@@ -32,6 +32,19 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # eslint 10 does not work here yet. The visible symptom is the peer
+      # range on eslint-config-next@15, which stops at eslint ^9 and is what
+      # killed Vercel's `npm install` on PR #4. eslint-config-next@16 widens
+      # that to >=9.0.0, but taking it only moves the failure later: the
+      # config bundles eslint-plugin-react, whose newest release (7.37.5)
+      # still peers eslint ^9.7 and throws `contextOrFilename.getFilename is
+      # not a function` on every apps/web file under eslint 10. Verified by
+      # trial install, 2026-08-22. Lift this when eslint-plugin-react ships
+      # eslint 10 support (typescript-eslint already has it, from 8.67).
+      - dependency-name: eslint
+        update-types:
+          - version-update:semver-major
     commit-message:
       prefix: chore(deps)
       prefix-development: chore(deps-dev)
