@@ -2,11 +2,21 @@
 
 import { formatGrade, type GradeReveal } from '@/lib/grade-api';
 import { GuessHistogram } from './GuessHistogram';
-import type { GradeStreak } from './useGradeStreak';
+import { ShareButton } from './ShareButton';
+import { useTypewriter } from './useTypewriter';
 
 type RevealPanelProps = {
   reveal: GradeReveal;
-  streak: GradeStreak;
+  /** 1 based position in the set, for the share summary (AC-11). */
+  position: number;
+  total: number;
+  /**
+   * True when this reveal came from the browser's saved copy rather than from
+   * a guess just made (AC-26). It changes the framing, not the content: the
+   * counts are as they stood when this visitor played, and saying so is more
+   * honest than showing stale numbers as if they were live.
+   */
+  fromCache: boolean;
 };
 
 function verdict(distance: number): string {
@@ -23,9 +33,32 @@ function comparison(yours: number, model: number | null): string {
   return 'You and Claude were equally close.';
 }
 
-export function RevealPanel({ reveal, streak }: RevealPanelProps) {
-  const total = reveal.plays;
+/**
+ * Claude's reasoning, printed rather than pasted.
+ *
+ * The animated copy is `aria-hidden` and the real string sits beside it in a
+ * visually hidden element, so a screen reader gets the whole paragraph once
+ * instead of a string growing two characters at a time.
+ */
+function TypedReasoning({ text }: { text: string }) {
+  const { visible, done } = useTypewriter(text);
 
+  return (
+    <p className="mt-4 max-w-[70ch] text-term-base leading-relaxed text-term-body">
+      <span aria-hidden="true">
+        {visible}
+        {!done && (
+          <span className="terminal-cursor" aria-hidden="true">
+            _
+          </span>
+        )}
+      </span>
+      <span className="sr-only">{text}</span>
+    </p>
+  );
+}
+
+export function RevealPanel({ reveal, position, total, fromCache }: RevealPanelProps) {
   return (
     <div>
       {/* The reveal replaces the pad, so announce it rather than leaving a
@@ -56,9 +89,7 @@ export function RevealPanel({ reveal, streak }: RevealPanelProps) {
               {reveal.model ? formatGrade(reveal.model.grade) : '—'}
             </p>
             <p className="mt-1 text-term-xs text-term-muted">
-              {reveal.modelDistance === null
-                ? 'No analysis yet.'
-                : verdict(reveal.modelDistance)}
+              {reveal.modelDistance === null ? 'No analysis yet.' : verdict(reveal.modelDistance)}
             </p>
           </div>
         </div>
@@ -68,84 +99,64 @@ export function RevealPanel({ reveal, streak }: RevealPanelProps) {
         </p>
       </div>
 
-      {reveal.model ? (
-        <section className="mt-10">
-          <p className="text-term-sm text-term-muted">
-            <span aria-hidden="true">$ </span>
-            cat claude-analysis.txt
-          </p>
-          <p className="mt-2 text-term-xs uppercase tracking-wide text-term-muted">
-            confidence: <span className="text-term-ink">{reveal.model.confidence}</span>
-          </p>
+      <section className="mt-10">
+        <p className="text-term-sm text-term-muted">
+          <span aria-hidden="true">$ </span>
+          cat claude-analysis.txt
+        </p>
 
-          {reveal.model.observations.length > 0 && (
-            <ul className="mt-4 space-y-2">
-              {reveal.model.observations.map((observation) => (
-                <li
-                  key={observation}
-                  className="border-l border-term-border pl-4 text-term-sm leading-relaxed text-term-body"
-                >
-                  {observation}
-                </li>
-              ))}
-            </ul>
-          )}
+        {reveal.model ? (
+          <>
+            <p className="mt-2 text-term-xs uppercase tracking-wide text-term-muted">
+              confidence: <span className="text-term-ink">{reveal.model.confidence}</span>
+            </p>
 
-          <p className="mt-4 max-w-prose text-term-base leading-relaxed text-term-body">
-            {reveal.model.reasoning}
-          </p>
-        </section>
-      ) : (
-        <section className="mt-10">
-          <p className="text-term-sm text-term-muted">
-            <span aria-hidden="true">$ </span>
-            cat claude-analysis.txt
-          </p>
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-muted">
+            {reveal.model.observations.length > 0 && (
+              <ul className="mt-4 space-y-2">
+                {reveal.model.observations.map((observation) => (
+                  <li
+                    key={observation}
+                    className="border-l border-term-border pl-4 text-term-sm leading-relaxed text-term-body"
+                  >
+                    {observation}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <TypedReasoning text={reveal.model.reasoning} />
+          </>
+        ) : (
+          <p className="mt-2 max-w-[70ch] text-term-sm leading-relaxed text-term-muted">
             Claude&apos;s read of this problem isn&apos;t available right now. The answer and the
             community numbers above are unaffected — the analysis fills in on a later play.
           </p>
-        </section>
-      )}
+        )}
+      </section>
 
       <section className="mt-10">
         <GuessHistogram
           counts={reveal.guessCounts}
-          total={total}
+          total={reveal.plays}
           yourGuess={reveal.yourGuess}
           trueGrade={reveal.trueGrade}
           modelGrade={reveal.model?.grade ?? null}
         />
+        {fromCache && (
+          <p className="mt-3 text-term-xs text-term-muted">
+            These counts are from when you played this one. Others have kept guessing since.
+          </p>
+        )}
       </section>
-
-      {/* The day's note is reveal content, but it belongs to the photo — the
-          host renders it as the figure's caption once the reveal lands, so it
-          is deliberately not repeated here. */}
 
       <section className="mt-10 border-t border-term-border pt-6">
         <p className="text-term-sm text-term-muted">
           <span aria-hidden="true">$ </span>
-          cat streak.txt
+          ./share
         </p>
-        <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-3">
-          {[
-            { label: 'Current streak', value: `${streak.streak} day${streak.streak === 1 ? '' : 's'}` },
-            { label: 'Best streak', value: `${streak.bestStreak}` },
-            { label: 'Exact hits', value: `${streak.wins}` },
-            { label: 'Misses', value: `${streak.losses}` }
-          ].map((stat) => (
-            <div key={stat.label}>
-              <dt className="text-term-xs uppercase tracking-wide text-term-muted">{stat.label}</dt>
-              <dd className="mt-0.5 text-term-lg font-bold tabular-nums text-term-ink">
-                {stat.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-3 text-term-xs text-term-muted">
-          Kept in this browser only. It is never sent anywhere, so clearing site data resets it and
-          a different device starts fresh.
-        </p>
+        <div className="mt-3">
+          <ShareButton reveal={reveal} position={position} total={total} />
+        </div>
       </section>
     </div>
   );

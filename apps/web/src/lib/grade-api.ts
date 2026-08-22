@@ -1,6 +1,11 @@
-// Client for the Grade Guesser daily game api (spec 0006). Mirrors
+// Client for the Grade Guesser api (spec 0006). Mirrors
 // apps/api/src/modules/grade's response types exactly — same convention as
 // beta-api.ts and feedback-api.ts.
+//
+// Rewritten for R7 when the daily cadence was dropped. The game serves a fixed
+// SET of problems now: one call lists their opaque ids, a second presigns one
+// problem's image at the moment it is shown (AC-25), and a guess names its
+// problem by that id rather than by a date.
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -18,16 +23,24 @@ export function formatGrade(grade: number): string {
 }
 
 /**
- * The pre-guess payload. Deliberately carries no grade — the api will not
- * send one until a guess is submitted (AC-2), so there is nothing here for a
- * curious visitor to read out of the network tab or the page source.
+ * One problem in the set, as the pre-guess list names it.
+ *
+ * A public id and nothing else. Not the photo's slug — that would carry the
+ * gym circuit colour, which encodes the grade band (AC-23) — and not an image
+ * URL, which is minted per problem below.
  */
-export type GradeToday = {
-  date: string;
-  /** Presigned and good for one hour; a page left open overnight needs a reload. */
+export type GradeProblemSummary = {
+  publicId: string;
+};
+
+export type GradeProblemList = {
+  problems: GradeProblemSummary[];
+  count: number;
+};
+
+export type GradeProblemImage = {
+  /** Presigned and good for one hour, minted when the problem is shown. */
   imageUrl: string;
-  note?: string;
-  poolSize: number;
 };
 
 export type GradeConfidence = 'low' | 'medium' | 'high';
@@ -40,9 +53,9 @@ export type GradeModelAnalysis = {
 };
 
 export type GradeReveal = {
-  date: string;
+  publicId: string;
   trueGrade: number;
-  /** Null when the day's vision call has not landed; the reveal still works. */
+  /** Null when this problem's vision call has not landed; the reveal still works. */
   model: GradeModelAnalysis | null;
   guessCounts: number[];
   plays: number;
@@ -52,7 +65,7 @@ export type GradeReveal = {
   note?: string;
 };
 
-/** Thrown by both calls below, carrying the api's own status and message. */
+/** Thrown by every call below, carrying the api's own status and message. */
 export class GradeRequestError extends Error {
   readonly status: number;
 
@@ -83,10 +96,34 @@ async function toError(res: Response, fallback: string): Promise<GradeRequestErr
   return new GradeRequestError(res.status, message ?? fallback);
 }
 
-export async function fetchToday(): Promise<GradeToday> {
-  const res = await fetch(`${API_URL}/grade/today`, { cache: 'no-store' });
+/**
+ * The whole playable set, in a stable order.
+ *
+ * An empty array is a normal answer, not a failure: it means the owner has not
+ * uploaded any problems yet, and the page says so in words rather than showing
+ * an error (AC-22).
+ */
+export async function fetchProblems(): Promise<GradeProblemList> {
+  const res = await fetch(`${API_URL}/grade/problems`, { cache: 'no-store' });
   if (!res.ok) {
-    throw await toError(res, "Couldn't load today's problem. Please try again.");
+    throw await toError(res, "Couldn't load the problem set. Please try again.");
+  }
+  return res.json();
+}
+
+/**
+ * One problem's image, presigned on demand (AC-25).
+ *
+ * Fetched when the problem goes on screen rather than with the list, so a
+ * visitor who reads two problems mints two URLs rather than ten, and so a one
+ * hour presign cannot expire under someone sitting on the page.
+ */
+export async function fetchProblemImage(publicId: string): Promise<GradeProblemImage> {
+  const res = await fetch(`${API_URL}/grade/problems/${publicId}/image`, {
+    cache: 'no-store'
+  });
+  if (!res.ok) {
+    throw await toError(res, "Couldn't load this problem's photo.");
   }
   return res.json();
 }
@@ -94,17 +131,16 @@ export async function fetchToday(): Promise<GradeToday> {
 /**
  * Submit a guess and get the reveal.
  *
- * The body is one integer and the UTC date the page was showing — no free-text
- * field anywhere, and nothing identifying the visitor is ever sent (AC-6,
- * AC-7). `date` is echoed straight back from fetchToday so the server can
- * refuse a guess made after the day rolled over, rather than silently scoring
- * it against a problem the visitor never saw (AC-19).
+ * The body is one integer and one opaque id — no free-text field anywhere, and
+ * nothing identifying the visitor is ever sent (AC-6). The id is echoed
+ * straight back from fetchProblems, so the guess names its own problem and
+ * there is no "which photo is this" question for the server to get wrong.
  */
-export async function submitGuess(guess: number, date: string): Promise<GradeReveal> {
+export async function submitGuess(guess: number, publicId: string): Promise<GradeReveal> {
   const res = await fetch(`${API_URL}/grade/guess`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ guess, date })
+    body: JSON.stringify({ guess, publicId })
   });
 
   if (!res.ok) {

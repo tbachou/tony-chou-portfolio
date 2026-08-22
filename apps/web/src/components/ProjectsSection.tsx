@@ -42,6 +42,19 @@ const PROJECTS: Project[] = [
   }
 ];
 
+/**
+ * The one line teaser for Grade Guesser (spec 0006, AC-12).
+ *
+ * Read server side, exactly as `/grade/page.tsx` reads it, so the teaser and
+ * the route it points at appear and disappear together. Absent means OFF, so
+ * the link cannot outlive the page and leave a 404 on the front door.
+ *
+ * A callout rather than a fifth entry in the list above, because the list is
+ * case studies and this is a thing you play. Wording carries no "today":
+ * there is no daily problem any more (AC-12, revised 2026-08-22).
+ */
+const gradeGameEnabled = process.env.GRADE_GAME_ENABLED === 'true';
+
 export function ProjectsSection() {
   return (
     <section
@@ -86,6 +99,24 @@ export function ProjectsSection() {
             </li>
           ))}
         </ul>
+
+        {gradeGameEnabled && (
+          <p className="mt-6 border-t border-term-border pt-5 text-term-sm leading-relaxed text-term-body">
+            <span aria-hidden="true" className="text-term-muted">
+              ${' '}
+            </span>
+            Or play one:{' '}
+            <Link
+              href="/grade"
+              className="text-term-ink underline-offset-4 hover:underline"
+            >
+              [ grade guesser → ]
+            </Link>{' '}
+            <span className="text-term-muted">
+              read a real boulder problem, call its grade, then see how Claude read the same photo.
+            </span>
+          </p>
+        )}
       </TerminalWindow>
     </section>
   );
