@@ -29,11 +29,19 @@ describe('AppModule wiring', () => {
     // conditional is the likelier one under deploy pressure, and the match
     // above cannot tell the two apart. A CSRF control with an off switch is
     // not a control.
-    expect(source).not.toMatch(
-      /\?[^\n]*\[\][^\n]*:[^\n]*\{\s*provide:\s*APP_GUARD/,
+    //
+    // Asserting on the SHAPE of the providers block rather than pattern
+    // matching the off switch, because the first version of this test did the
+    // latter and missed the obvious multi-line form. Any conditional here has
+    // to use a spread or a ternary, so banning both is the check that cannot
+    // be worded around.
+    const start = source.indexOf('providers: [');
+    const providersBlock = source.slice(start, source.indexOf('],', start));
+
+    expect(providersBlock).toContain(
+      '{ provide: APP_GUARD, useClass: OriginCheckGuard },',
     );
-    expect(source).not.toMatch(
-      /\{\s*provide:\s*APP_GUARD,\s*useClass:\s*OriginCheckGuard\s*\}[^\n]*\]\s*:\s*\[\]/,
-    );
+    expect(providersBlock).not.toContain('...');
+    expect(providersBlock).not.toContain('?');
   });
 });

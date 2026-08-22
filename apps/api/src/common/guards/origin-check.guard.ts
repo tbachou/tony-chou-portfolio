@@ -59,9 +59,17 @@ export class OriginCheckGuard implements CanActivate {
     // rejected request and a 403 would otherwise leave no trace at all. If a
     // CORS_ORIGIN edit ever started refusing real traffic, the symptom would
     // be requests silently ceasing to arrive with nothing to correlate.
-    // Method and path only, never the attacker-supplied origin (api logging
-    // convention: no untrusted value in a log line).
-    this.logger.warn(`Rejected cross-origin ${method} ${request?.url ?? ''}`);
+    //
+    // The origin is not logged: it is the attacker's own string and adds
+    // nothing an operator needs. The URL is, and it IS caller-chosen, so it
+    // goes through JSON.stringify exactly as LoggingInterceptor does with the
+    // same field. Today that is belt and braces (a raw CR, LF or ESC in a
+    // request target is rejected by the HTTP parser before any of this runs,
+    // and a percent-encoded one is never decoded here), but the escaping is
+    // what keeps it true if this ever reads a decoded path instead.
+    this.logger.warn(
+      `Rejected cross-origin ${method} ${JSON.stringify(request?.url ?? '')}`,
+    );
 
     // The origin is not echoed back either: it is attacker-chosen, and the
     // caller already knows what it sent.
