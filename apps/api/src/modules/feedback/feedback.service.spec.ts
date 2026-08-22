@@ -3,7 +3,7 @@ import { FeedbackService } from './feedback.service';
 import { FEEDBACK_IP_DAILY_CAP, FEEDBACK_RATE_LIMIT_MESSAGE } from './feedback.constants';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { FeedbackSnsPublisher } from './feedback-sns.publisher';
-import type { CreateFeedbackDto } from './dto/create-feedback.dto';
+import type { CreateFeedback } from '@portfolio/shared';
 
 // The real PrismaService pulls in the generated client and the pg adapter;
 // these tests must never touch a database, so the module is stubbed and the
@@ -67,7 +67,7 @@ describe('FeedbackService', () => {
           hashedIp: 'hashed-ip',
           createdAt: new Date('2026-08-19T15:30:00.000Z'),
         });
-        const dto: CreateFeedbackDto = {
+        const dto: CreateFeedback = {
           message: 'the button breaks on mobile',
           category: 'bug',
           source,

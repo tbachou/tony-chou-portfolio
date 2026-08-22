@@ -1,3 +1,5 @@
+import { betaPlanRequestSchema, type BetaPlanRequest } from '@portfolio/shared';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   Body,
   Controller,
@@ -20,7 +22,6 @@ import { writeSseEvent } from '../conversation/sse.util';
 import { BetaThrottlerGuard } from './beta-throttler.guard';
 import { BetaService } from './beta.service';
 import { BetaUsageService, type BetaStatus } from './beta-usage.service';
-import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
 
 @Controller('beta')
 @AllowAnonymous()
@@ -46,7 +47,7 @@ export class BetaController {
   // module default; the hourly cap is the real constraint.
   @Throttle({ long: { limit: 3, ttl: 3_600_000 } })
   async plan(
-    @Body() body: BetaPlanRequestDto,
+    @Body(new ZodValidationPipe(betaPlanRequestSchema)) body: BetaPlanRequest,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {

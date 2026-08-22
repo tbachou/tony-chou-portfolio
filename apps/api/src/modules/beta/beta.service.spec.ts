@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { BetaService, parseDraftPlan, __testing } from './beta.service';
 import { renderPlanFallback } from './beta-output-guard';
-import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
+import type { BetaPlanRequest } from '@portfolio/shared';
 import {
   CONSTANT_REST_PAIN_MESSAGE,
   COACH_MODEL,
@@ -39,8 +39,8 @@ jest.mock('../prisma/prisma.service', () => ({
 type EmittedEvent = [string, unknown];
 
 function makeInput(
-  overrides: Partial<BetaPlanRequestDto> = {},
-): BetaPlanRequestDto {
+  overrides: Partial<BetaPlanRequest> = {},
+): BetaPlanRequest {
   return {
     injuryArea: 'finger_pulley',
     onsetWeeksAgo: 4,
@@ -172,7 +172,7 @@ function makeHarness() {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type JsonSchema = Record<string, any>;
 
-function schemaFor(overrides: Partial<BetaPlanRequestDto> = {}): JsonSchema {
+function schemaFor(overrides: Partial<BetaPlanRequest> = {}): JsonSchema {
   return __testing.buildDrafterSchema(makeInput(overrides)) as JsonSchema;
 }
 
@@ -311,7 +311,7 @@ describe('layer 1: parseDraftPlan explicit prohibitions (AC-G4)', () => {
     stageIndex: number,
     name: string,
     input = pulley,
-  ): { raw: unknown; input: BetaPlanRequestDto } {
+  ): { raw: unknown; input: BetaPlanRequest } {
     const stages = [1, 2, 3, 4].map(makeStage);
     stages[stageIndex].exercises[0].name = name;
     return { raw: { stages }, input };
@@ -1112,7 +1112,7 @@ describe('BetaService.generatePlan', () => {
     async function run(
       mode: string | undefined,
       coachText: string,
-      overrides: Partial<BetaPlanRequestDto> = {},
+      overrides: Partial<BetaPlanRequest> = {},
     ) {
       if (mode === undefined) delete process.env.BETA_OUTPUT_GUARD_MODE;
       else process.env.BETA_OUTPUT_GUARD_MODE = mode;

@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AnthropicService } from '../anthropic/anthropic.service';
 import { BetaUsageService } from './beta-usage.service';
 import { loadBetaSkill } from './skill-loader';
-import { BetaPlanRequestDto } from './dto/beta-plan-request.dto';
+import type { BetaPlanRequest } from '@portfolio/shared';
 import {
   AGENT_CALL_TIMEOUT_MS,
   COACH_MODEL,
@@ -86,7 +86,7 @@ export class BetaService {
    * Counters increment only on reaching done.
    */
   async generatePlan(params: {
-    input: BetaPlanRequestDto;
+    input: BetaPlanRequest;
     hashedIp: string;
     emit: EmitFn;
   }): Promise<void> {
@@ -200,7 +200,7 @@ export class BetaService {
   }
 
   private async runScreener(
-    input: BetaPlanRequestDto,
+    input: BetaPlanRequest,
   ): Promise<ScreeningResult> {
     const result = await this.timedAgentCall('screener', SCREENER_MODEL, () =>
       this.anthropic.forceToolCall({
@@ -254,7 +254,7 @@ export class BetaService {
   }
 
   private async runDrafter(
-    input: BetaPlanRequestDto,
+    input: BetaPlanRequest,
   ): Promise<{ plan: DraftPlan; tokens: number }> {
     // One params object, used by both the first attempt and the redraft: two
     // copies would drift the moment anyone changed the model or maxTokens.
@@ -354,7 +354,7 @@ export class BetaService {
    * rendered from the validated drafter object, not a half-streamed one.
    */
   private async runCoach(
-    input: BetaPlanRequestDto,
+    input: BetaPlanRequest,
     plan: DraftPlan,
     emit: EmitFn,
   ): Promise<number> {
@@ -583,7 +583,7 @@ const BETA_PROVIDER = 'anthropic';
  * a delimited section that every skill file instructs the agents to treat
  * strictly as data (AC-7).
  */
-function buildVisitorProfile(input: BetaPlanRequestDto): string {
+function buildVisitorProfile(input: BetaPlanRequest): string {
   return [
     '<visitor_profile>',
     `injury_area: ${input.injuryArea}`,
@@ -629,7 +629,7 @@ export function containsInjectionAttempt(goals: string | undefined): boolean {
  * is nothing to transcribe — we do not know what they have — so the enum stays
  * the full list rather than narrowing to `none`, which would be a decision.
  */
-function allowedEquipment(input: BetaPlanRequestDto): string[] {
+function allowedEquipment(input: BetaPlanRequest): string[] {
   const reported = input.equipmentAccess ?? [];
   if (reported.length === 0) return [...EQUIPMENT_ACCESS];
   return EQUIPMENT_ACCESS.filter(
@@ -647,7 +647,7 @@ function allowedEquipment(input: BetaPlanRequestDto): string[] {
  * out of scope, and drafter.md's injury lists are illustrative, not exhaustive.
  */
 function buildDrafterSchema(
-  input: BetaPlanRequestDto,
+  input: BetaPlanRequest,
 ): Record<string, unknown> {
   // "a MANDATORY `overallCaution` (never omit it for this pain behavior)"
   const cautionMandatory = input.painBehavior === 'constant_even_at_rest';
@@ -797,7 +797,7 @@ function isValidDose(dose: unknown): dose is DoseSpec {
  */
 function assertExplicitProhibitions(
   stages: PlanStage[],
-  input: BetaPlanRequestDto,
+  input: BetaPlanRequest,
 ): void {
   if (input.injuryArea === 'finger_pulley') {
     stages.forEach((stage, index) => {
@@ -830,7 +830,7 @@ function assertExplicitProhibitions(
 
 export function parseDraftPlan(
   raw: unknown,
-  input: BetaPlanRequestDto,
+  input: BetaPlanRequest,
 ): DraftPlan {
   const candidate = raw as DraftPlan | null;
   const stages = candidate?.stages;

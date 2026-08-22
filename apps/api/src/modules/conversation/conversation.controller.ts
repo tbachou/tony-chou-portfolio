@@ -1,4 +1,9 @@
 import {
+  conversationTurnRequestSchema,
+  type ConversationTurnRequest,
+} from '@portfolio/shared';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import {
   BadRequestException,
   Body,
   Controller,
@@ -12,7 +17,6 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import type { Request, Response } from 'express';
 import { ConversationService } from './conversation.service';
-import { ConversationTurnRequestDto } from './dto/conversation-turn-request.dto';
 import { hashIp, resolveClientIp } from '../../common/utils/ip-hash.util';
 import { writeSseEvent } from './sse.util';
 
@@ -28,7 +32,8 @@ export class ConversationController {
     long: { limit: 30, ttl: 3_600_000 },
   })
   async turn(
-    @Body() body: ConversationTurnRequestDto,
+    @Body(new ZodValidationPipe(conversationTurnRequestSchema))
+    body: ConversationTurnRequest,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {

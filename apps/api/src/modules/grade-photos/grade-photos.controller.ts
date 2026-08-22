@@ -1,4 +1,11 @@
 import {
+  createGradePhotoSchema,
+  setPhotoActiveSchema,
+  type CreateGradePhoto,
+  type SetPhotoActive,
+} from '@portfolio/shared';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import {
   BadRequestException,
   Body,
   Controller,
@@ -11,8 +18,6 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { CreateGradePhotoDto } from './dto/create-grade-photo.dto';
-import { SetPhotoActiveDto } from './dto/set-photo-active.dto';
 import { MAX_UPLOAD_BYTES } from './grade-photos.constants';
 import {
   GradePhotosService,
@@ -76,7 +81,7 @@ export class GradePhotosController {
     FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } }),
   )
   async create(
-    @Body() body: CreateGradePhotoDto,
+    @Body(new ZodValidationPipe(createGradePhotoSchema)) body: CreateGradePhoto,
     @UploadedFile() file?: UploadedImage,
   ): Promise<GradePhotoListItem> {
     if (!file) {
@@ -89,7 +94,7 @@ export class GradePhotosController {
   @Patch(':id/active')
   setActive(
     @Param('id') id: string,
-    @Body() body: SetPhotoActiveDto,
+    @Body(new ZodValidationPipe(setPhotoActiveSchema)) body: SetPhotoActive,
   ): Promise<GradePhotoListItem> {
     return this.gradePhotos.setActive(id, body.active);
   }

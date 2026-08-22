@@ -1,8 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { validationExceptionFactory } from './common/pipes/validation-exception-factory';
 import { resolveAllowedOrigins } from './common/utils/allowed-origins.util';
 
 async function bootstrap() {
@@ -17,14 +15,11 @@ async function bootstrap() {
   // advanced.ipAddress.trustedProxies) — change both together.
   app.set('trust proxy', 1);
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      exceptionFactory: validationExceptionFactory,
-    }),
-  );
+  // No global pipe: every route that takes input names its own schema from
+  // @portfolio/shared through ZodValidationPipe, so the contract the web app
+  // builds to and the one the server enforces are the same object. A route
+  // added without one validates nothing — that is the tradeoff for dropping
+  // the blanket pipe, and the reason each @Body below carries a schema.
 
   // Same resolver OriginCheckGuard uses, so the CORS list and the CSRF list
   // cannot drift; a CSRF check trusting an origin CORS does not would be

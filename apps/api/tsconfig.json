@@ -15,7 +15,7 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "@portfolio/shared": ["../../packages/shared/types.ts"]
+      "@portfolio/shared": ["../../packages/shared/index.ts"]
     },
     "incremental": true,
     "skipLibCheck": true,

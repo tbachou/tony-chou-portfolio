@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../grade/grade.service';
-import type { CreateGradePhotoDto } from './dto/create-grade-photo.dto';
+import type { CreateGradePhoto } from '@portfolio/shared';
 import { processUpload, UndecodableImageError } from './image-pipeline';
 import { newObjectKey, PhotoStorageService } from './photo-storage.service';
 
@@ -71,7 +71,7 @@ export class GradePhotosService {
    * pointing at it.
    */
   async create(
-    dto: CreateGradePhotoDto,
+    dto: CreateGradePhoto,
     file: Buffer,
   ): Promise<GradePhotoListItem> {
     // Decode before touching storage, so an undecodable file costs nothing

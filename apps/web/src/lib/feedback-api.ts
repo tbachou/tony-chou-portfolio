@@ -1,3 +1,17 @@
+import type {
+  FeedbackCategoryValue as FeedbackCategory,
+  FeedbackSourceValue as FeedbackSource,
+} from '@portfolio/shared';
+
+// Owned by @portfolio/shared, alongside the schema the api validates with.
+export {
+  FEEDBACK_CATEGORIES,
+  FEEDBACK_MESSAGE_MAX_LENGTH,
+  FEEDBACK_SOURCES,
+  type FeedbackCategoryValue as FeedbackCategory,
+  type FeedbackSourceValue as FeedbackSource,
+} from '@portfolio/shared';
+
 // Client for the anonymous feedback intake API, spec 0005 child:
 // feedback-intake. Mirrors apps/api/src/modules/feedback/feedback.constants.ts
 // exactly — the server validates with IsIn against those arrays, so any
@@ -5,13 +19,8 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-export const FEEDBACK_CATEGORIES = ['bug', 'feature', 'other'] as const;
-export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
 
-export const FEEDBACK_SOURCES = ['beta', 'portfolio'] as const;
-export type FeedbackSource = (typeof FEEDBACK_SOURCES)[number];
 
-export const FEEDBACK_MESSAGE_MAX_LENGTH = 2000;
 
 export type FeedbackPayload = {
   message: string;
