@@ -1,8 +1,10 @@
+import { GRADE_MAX, GRADE_MIN } from '@portfolio/shared';
 import type { ProviderName } from '../anthropic/ai-provider.interface';
 
 /** The V scale, as far as this game goes. Both bounds are inclusive. */
-export const GRADE_MIN = 0;
-export const GRADE_MAX = 8;
+// Bounds live in @portfolio/shared, next to the schemas that enforce them,
+// and are re-exported here because this module's own code reads them too.
+export { GRADE_MAX, GRADE_MIN };
 
 /** Histogram width: one slot per grade, index = grade (AC-6). */
 export const GRADE_SLOTS = GRADE_MAX - GRADE_MIN + 1;

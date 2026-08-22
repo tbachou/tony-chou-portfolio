@@ -1,3 +1,25 @@
+import type {
+  BetaPlanRequest as BetaPlanPayload,
+  Symptom,
+} from '@portfolio/shared';
+
+// The request enums and the plan payload are the contract, and it is owned
+// by @portfolio/shared — the same schema the api validates with. Re-exported
+// so this module stays the one import site for anything Beta-shaped.
+export {
+  DISCIPLINES,
+  EQUIPMENT_ACCESS,
+  INJURY_AREAS,
+  PAIN_BEHAVIORS,
+  SYMPTOMS,
+  type BetaPlanRequest as BetaPlanPayload,
+  type Discipline,
+  type EquipmentAccess,
+  type InjuryArea,
+  type PainBehavior,
+  type Symptom,
+} from '@portfolio/shared';
+
 // Client for the Beta (return-to-climbing rehab planner) API, spec 0004.
 // The enum value lists mirror apps/api/src/modules/beta/beta.constants.ts
 // exactly — the server validates with IsIn against those arrays, so any
@@ -5,27 +27,7 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-export const INJURY_AREAS = [
-  'finger_pulley',
-  'elbow_tendinopathy',
-  'shoulder_impingement',
-] as const;
-export type InjuryArea = (typeof INJURY_AREAS)[number];
 
-export const SYMPTOMS = [
-  // The first four are red flags — the screener hard-blocks on these (AC-2).
-  'sudden_pop_with_swelling',
-  'numbness_or_tingling',
-  'cannot_bear_weight_or_grip',
-  'night_pain',
-  'pain_with_specific_holds_or_moves',
-  'pain_at_session_start_that_warms_up',
-  'morning_stiffness',
-  'mild_swelling',
-  'tenderness_to_touch',
-  'weakness_or_early_fatigue',
-] as const;
-export type Symptom = (typeof SYMPTOMS)[number];
 
 export const RED_FLAG_SYMPTOMS: readonly Symptom[] = [
   'sudden_pop_with_swelling',
@@ -34,43 +36,14 @@ export const RED_FLAG_SYMPTOMS: readonly Symptom[] = [
   'night_pain',
 ];
 
-export const PAIN_BEHAVIORS = [
-  'none_at_rest_hurts_under_load',
-  'warms_up_then_fine',
-  'worsens_as_session_goes_on',
-  'constant_even_at_rest',
-] as const;
-export type PainBehavior = (typeof PAIN_BEHAVIORS)[number];
 
-export const DISCIPLINES = ['bouldering', 'sport', 'trad', 'indoor_gym'] as const;
-export type Discipline = (typeof DISCIPLINES)[number];
 
-export const EQUIPMENT_ACCESS = [
-  'climbing_gym',
-  'home_wall',
-  'hangboard',
-  'resistance_bands',
-  'weights',
-  'none',
-] as const;
-export type EquipmentAccess = (typeof EQUIPMENT_ACCESS)[number];
 
 export type BetaStatus = {
   available: boolean;
   reason: 'ok' | 'daily_cap';
 };
 
-export type BetaPlanPayload = {
-  injuryArea: InjuryArea;
-  onsetWeeksAgo: number;
-  symptoms: Symptom[];
-  painBehavior: PainBehavior;
-  preInjuryGrade: string;
-  discipline: Discipline;
-  goals?: string;
-  sessionsPerWeek?: number;
-  equipmentAccess?: EquipmentAccess[];
-};
 
 export type BetaStage = 'screening' | 'drafting' | 'coaching';
 

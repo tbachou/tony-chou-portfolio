@@ -1,4 +1,4 @@
-import type { BetaPlanRequestDto } from '../src/modules/beta/dto/beta-plan-request.dto';
+import type { BetaPlanRequest } from '@portfolio/shared';
 
 /**
  * AC-G9 corpus: at least 30 realistic profiles across the three injury areas,
@@ -16,7 +16,7 @@ export type CorpusProfile = {
   id: string;
   /** What this profile is here to stress. Reported alongside any firing. */
   tags: string[];
-  request: BetaPlanRequestDto;
+  request: BetaPlanRequest;
 };
 
 export const CORPUS: CorpusProfile[] = [

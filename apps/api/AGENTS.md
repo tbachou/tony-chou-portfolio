@@ -36,7 +36,7 @@ docker rm -f mig; unset DATABASE_URL
 
 ## Conventions
 
-- DTOs in `dto/` with class-validator; the global ValidationPipe (main.ts) enforces whitelist + forbidNonWhitelisted.
+- Request shapes are zod schemas in `@portfolio/shared`, not DTO classes. A controller applies one with `@Body(new ZodValidationPipe(theSchema))`; `.strict()` on the schema is what rejects unknown properties. The web app builds its payloads to the same schema, so a field cannot be tightened on one side only.
 - SSE via `writeSseEvent` (conversation/sse.util.ts): open the stream only after all plain-HTTP failure checks; after that, failures are SSE `error` events.
 - Per-agent structured logging: one JSON line per model call (agent, model, durationMs, tokens, outcome). SDK errors log name + status only, never raw messages.
 - Tests never touch network or DB: PrismaService, AnthropicService, and skill loaders are mocked.

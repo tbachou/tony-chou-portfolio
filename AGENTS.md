@@ -3,7 +3,7 @@
 ## Stack
 
 - **Language / Runtime**: TypeScript, Node >= 22 (hard requirement: Node 20 dies with ERR_REQUIRE_ESM via better-auth)
-- **Monorepo**: npm workspaces — `apps/web` (Next.js 15, React 19, Tailwind, React Three Fiber), `apps/api` (NestJS 11, Prisma 7 on Prisma Postgres, Anthropic SDK), `packages/shared` (hand-written shared types)
+- **Monorepo**: npm workspaces — `apps/web` (Next.js 15, React 19, Tailwind, React Three Fiber), `apps/api` (NestJS 11, Prisma 7 on Prisma Postgres, Anthropic SDK), `packages/shared` (zod request schemas + shared types; builds to `dist/`)
 - **Package manager**: npm
 - Mirrors the architecture specs: [0001](docs/specs/_root/0001-backend-ai-stack/index.md) (backend/AI stack) and [0003](docs/specs/_root/0003-frontend-deployment-platform.md) (frontend/deploy)
 
@@ -37,7 +37,7 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 ## Rules
 
 - Always Node 22+ (`nvm use 22`) before any npm/npx command.
-- Validate at HTTP boundaries with class-validator DTOs; the global ValidationPipe runs whitelist + forbidNonWhitelisted.
+- Validate at HTTP boundaries with the zod schemas in `packages/shared/contracts.ts`, applied per route via `ZodValidationPipe`. Every contract object is `.strict()`, which is what enforces the old pipe's forbidNonWhitelisted. There is no global pipe: a route that takes input and names no schema validates nothing.
 - AI agent prompts live as markdown skill files on disk beside their module (`apps/api/src/modules/*/skills/`), never inline in code.
 - Design tokens live in CSS custom properties; art direction lives in `apps/web/design.md`. Never hardcode a color.
 - Never persist planner-typed content: for Beta the api writes anonymous counters only (hard rule, spec 0004 AC-6). Feedback messages are the deliberate exception — spec 0005 persists them and forwards them to AWS — but no visitor-typed content is ever LOGGED, anywhere (spec 0005 AC-I7).
@@ -57,6 +57,6 @@ MCP servers: render (render-oss/render-mcp-server, recommended — deploy status
 
 - [apps/web/AGENTS.md](apps/web/AGENTS.md): Next.js site — terminal theme, Beta identity, SSE clients
 - [apps/api/AGENTS.md](apps/api/AGENTS.md): NestJS API — modules, agent pipelines, rate limits, DB gotchas
-- [packages/shared/AGENTS.md](packages/shared/AGENTS.md): hand-written shared types, no build step
+- [packages/shared/AGENTS.md](packages/shared/AGENTS.md): the request contracts both sides validate against, and the shared types
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
