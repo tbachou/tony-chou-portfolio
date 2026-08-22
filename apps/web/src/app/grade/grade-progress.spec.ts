@@ -43,23 +43,30 @@ describe('the share summary (AC-11)', () => {
     // The whole point of "spoiler safe". A summary carrying V4 hands the
     // answer to whoever reads it, and the game is over for them before they
     // open it. Distances are the interesting part and spoil nothing.
-    const text = buildShareText(reveal(), 1, 8);
+    const text = buildShareText(reveal(), 1, 8, 'https://example.test');
 
     for (const grade of ['V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8']) {
       expect(text).not.toContain(grade);
     }
   });
 
+  it('links to wherever the site is actually served from, not a hardcoded domain', () => {
+    // A literal would have shipped a dead link: tonychou.dev does not resolve.
+    expect(buildShareText(reveal(), 1, 8, 'https://example.test')).toContain(
+      'https://example.test/grade'
+    );
+  });
+
   it('carries the problem position, never a day number', () => {
-    const text = buildShareText(reveal(), 3, 8);
+    const text = buildShareText(reveal(), 3, 8, 'https://example.test');
 
     expect(text).toContain('problem 3/8');
   });
 
   it('says who read it better without naming what either said', () => {
-    const youWon = buildShareText(reveal({ yourDistance: 0, modelDistance: 2 }), 1, 8);
-    const claudeWon = buildShareText(reveal({ yourDistance: 2, modelDistance: 0 }), 1, 8);
-    const tied = buildShareText(reveal({ yourDistance: 1, modelDistance: 1 }), 1, 8);
+    const youWon = buildShareText(reveal({ yourDistance: 0, modelDistance: 2 }), 1, 8, 'https://example.test');
+    const claudeWon = buildShareText(reveal({ yourDistance: 2, modelDistance: 0 }), 1, 8, 'https://example.test');
+    const tied = buildShareText(reveal({ yourDistance: 1, modelDistance: 1 }), 1, 8, 'https://example.test');
 
     expect(youWon).toContain('I read it better than Claude.');
     expect(claudeWon).toContain('Claude read it better than I did.');
@@ -67,7 +74,7 @@ describe('the share summary (AC-11)', () => {
   });
 
   it('handles a problem with no model analysis', () => {
-    const text = buildShareText(reveal({ model: null, modelDistance: null }), 1, 8);
+    const text = buildShareText(reveal({ model: null, modelDistance: null }), 1, 8, 'https://example.test');
 
     expect(text).toContain('claude  (no read)');
     expect(text).not.toContain('undefined');

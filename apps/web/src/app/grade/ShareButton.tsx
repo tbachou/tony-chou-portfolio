@@ -10,7 +10,21 @@ type ShareButtonProps = {
   total: number;
 };
 
-const SITE_URL = 'https://tonychou.dev/grade';
+/**
+ * The link in the summary, resolved from the browser rather than hardcoded.
+ *
+ * A literal was wrong twice over: `tonychou.dev` does not currently resolve
+ * (the site is served from Vercel's own domain until a custom domain is
+ * attached), so every shared summary would have carried a dead link. The
+ * server side `siteUrl` helper cannot be read here either, because this is a
+ * client component and the variable it reads has no NEXT_PUBLIC_ prefix.
+ * `window.location.origin` is simply where the visitor already is, so it is
+ * correct on localhost, on a preview deploy, and on whatever domain the site
+ * ends up on, with nothing to keep in sync.
+ */
+function gradeUrl(origin: string): string {
+  return `${origin}/grade`;
+}
 
 /** Filled squares to the truth, hollow past it: distance read at a glance. */
 function distanceBar(distance: number): string {
@@ -26,7 +40,12 @@ function distanceBar(distance: number): string {
  * the part that cannot spoil the problem for whoever reads it. A summary
  * naming V5 would hand the answer to the next player.
  */
-export function buildShareText(reveal: GradeReveal, position: number, total: number): string {
+export function buildShareText(
+  reveal: GradeReveal,
+  position: number,
+  total: number,
+  origin: string
+): string {
   const yours = `you  ${distanceBar(reveal.yourDistance)}`;
   const claude =
     reveal.modelDistance === null
@@ -41,7 +60,7 @@ export function buildShareText(reveal: GradeReveal, position: number, total: num
           ? '\nClaude read it better than I did.'
           : '\nDead even with Claude.';
 
-  return `Grade Guesser — problem ${position}/${total}\n${yours}\n${claude}${verdict}\n${SITE_URL}`;
+  return `Grade Guesser — problem ${position}/${total}\n${yours}\n${claude}${verdict}\n${gradeUrl(origin)}`;
 }
 
 /**
@@ -55,7 +74,9 @@ export function ShareButton({ reveal, position, total }: ShareButtonProps) {
 
   const copy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(buildShareText(reveal, position, total));
+      await navigator.clipboard.writeText(
+        buildShareText(reveal, position, total, window.location.origin)
+      );
       setState('copied');
       window.setTimeout(() => setState('idle'), 2400);
     } catch {
