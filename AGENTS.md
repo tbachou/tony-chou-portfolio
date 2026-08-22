@@ -46,6 +46,7 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 ## Agent skills
 
 - [architect](.claude/skills/architect/) · [develop](.claude/skills/develop/) · [check](.claude/skills/check/) · [audit](.claude/skills/audit/) · [debug](.claude/skills/debug/) · [predeploy-audit](.claude/skills/predeploy-audit/): local workflow suite (spec → build → verify → gate), no registry source
+- [agent-brief](.claude/skills/agent-brief/): local, composes a subagent's prompt. Carries the environment facts an agent cannot discover (its shell is Node 20, a fresh worktree has no `node_modules` or generated Prisma client, its base may be stale) plus the revert and confirm bar
 - [github-actions-templates](.claude/skills/github-actions-templates/) + [github-actions-hardening](.claude/skills/github-actions-hardening/): `wshobson/agents`, CI workflow patterns
 - [writing-for-agents](.claude/skills/writing-for-agents/) + [codebase-design](.claude/skills/codebase-design/): `mattpocock/skills`, agent document writing (pointers, information hierarchy, pruning) and deep module design
 - Stack-specific skills are listed in each workspace's AGENTS.md. Registry installs go through `npx skills`, always hand-picked: `npx skills add <owner>/<repo> --skill <name> -y`. Two traps, both silent. A bare `add <owner>/<repo>` installs EVERY skill in a multi-skill repo (the 2026-08-18 cleanup hand-picked 19 and pruned ~800), and `--skill a,b` installs NOTHING while printing the available list as though it worked, so pass one `--skill` per run and verify each landed.
