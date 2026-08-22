@@ -1,0 +1,14 @@
+# Gitignored files copied into every worktree Claude Code creates,
+# including subagent worktrees. .gitignore syntax; only files that are
+# BOTH matched here and gitignored are copied.
+#
+# Small config only. Large or derived trees (node_modules, the generated
+# Prisma client, .agents/skills) are linked instead, not copied -- see
+# .claude/skills/agent-brief/write-agent-preamble.md.
+#
+# Deliberately NOT copied: .claude/settings.local.json. It pre-approves
+# Bash(git push *), and agents are forbidden to push.
+
+apps/api/.env
+apps/web/.env.local
+infra/terraform.tfvars
