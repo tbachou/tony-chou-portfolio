@@ -1,0 +1,49 @@
+version: 2
+
+# Beta is feature frozen but still maintained (spec 0004), and the rest of the
+# repo is actively built on. Either way the risk is the same: nobody notices a
+# dependency going bad until an unrelated `npm audit` happens to be run. This
+# turns that into a notification.
+#
+# Updates are GROUPED on purpose. A portfolio repo does not want twenty open
+# pull requests; it wants one to look at on a Monday. Security updates are
+# ungrouped and separate so they are never buried in a routine bump.
+updates:
+  - package-ecosystem: npm
+    # Root only: npm workspaces means this one manifest covers apps/web,
+    # apps/api and packages/shared.
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Majors stay out of the groups so a breaking change always arrives as
+      # its own pull request with its own changelog to read. The known one
+      # today is Next 16, which the sharp/libvips advisories require and which
+      # `npm audit fix` will not do without --force.
+      production-minor-and-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development-minor-and-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore(ci)
