@@ -38,10 +38,15 @@ export function aiProviderFactory(
       inject: [AnthropicService, BedrockAnthropicService],
     },
   ],
-  // Beta stays constructor-injected on the concrete AnthropicService
-  // (unchanged, direct-path only, until the Guardrails child); the
-  // conversation module and any future consumer inject the AI_PROVIDER
-  // token instead.
+  // Two exports on purpose, and the split is permanent for now. Beta stays
+  // constructor-injected on the concrete AnthropicService (direct path only);
+  // the conversation module and the Grade Guesser grader inject the
+  // AI_PROVIDER token, so AI_PROVIDER=bedrock moves them and not Beta.
+  //
+  // The gate is model access, not the Guardrails child this comment used to
+  // name: the account cannot invoke Claude Sonnet 5 on Bedrock and Beta's
+  // drafter is pinned to it, so collapsing these two exports into one would
+  // downgrade the model that writes rehab plans.
   exports: [AnthropicService, AI_PROVIDER],
 })
 export class AnthropicModule {}
