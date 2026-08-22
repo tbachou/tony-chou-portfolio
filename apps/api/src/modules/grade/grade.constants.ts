@@ -21,9 +21,9 @@ export type GradeConfidence = (typeof GRADE_CONFIDENCES)[number];
  * Pinned rather than read from ANTHROPIC_MODEL or BEDROCK_MODEL_ID, and the
  * Bedrock side deliberately does NOT fall back to BEDROCK_MODEL_ID: that
  * variable is the env driven downgrade this pinning exists to prevent. One
- * call per UTC day makes quality the only axis worth optimising, so a cheaper
- * default set for another feature must not silently reach the game's single
- * daily read of the wall.
+ * call per problem, ever, makes quality the only axis worth optimising, so a
+ * cheaper default set for another feature must not silently reach the one
+ * read of the wall this game ever gets.
  */
 export const GRADER_MODEL_ANTHROPIC = 'claude-sonnet-5';
 
@@ -56,7 +56,7 @@ export function resolveGraderModel(provider: ProviderName): string {
     : GRADER_MODEL_ANTHROPIC;
 }
 
-/** Vision calls are slower than text; the first guesser of the day waits. */
+/** Vision calls are slower than text; a problem's first guesser waits. */
 export const GRADER_CALL_TIMEOUT_MS = 60_000;
 
 export const GRADER_MAX_TOKENS = 1200;
