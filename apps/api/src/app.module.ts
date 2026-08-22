@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from '@thallesp/nestjs-better-auth';
 import { auth } from './lib/auth';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { OriginCheckGuard } from './common/guards/origin-check.guard';
 import { HealthModule } from './modules/health/health.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { StoriesModule } from './modules/stories/stories.module';
@@ -65,6 +66,11 @@ const gradeGameEnabled = process.env.GRADE_GAME_ENABLED === 'true';
   providers: [
     AppService,
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
+    // CSRF defence for every state-changing route, not just the one the
+    // pre-deploy gate caught. CORS cannot do this job: for anything but a
+    // preflight the cors middleware calls next(), so a disallowed origin
+    // still reaches the handler. See the guard for the full reasoning.
+    { provide: APP_GUARD, useClass: OriginCheckGuard },
   ],
 })
 export class AppModule {}

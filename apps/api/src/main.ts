@@ -3,6 +3,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { validationExceptionFactory } from './common/pipes/validation-exception-factory';
+import { resolveAllowedOrigins } from './common/utils/allowed-origins.util';
 
 async function bootstrap() {
   // AuthModule (app.module.ts) disables and replaces Nest's default body
@@ -25,9 +26,11 @@ async function bootstrap() {
     }),
   );
 
-  const corsOrigin = process.env.CORS_ORIGIN?.split(',') ?? [
-    'http://localhost:3000',
-  ];
+  // Same resolver OriginCheckGuard uses, so the CORS list and the CSRF list
+  // cannot drift; a CSRF check trusting an origin CORS does not would be
+  // worthless. Note CORS is not itself a CSRF defence: for anything but a
+  // preflight the cors middleware calls next(), so the handler still runs.
+  const corsOrigin = resolveAllowedOrigins();
   // credentials: true is required for better-auth's session cookie to be
   // set/sent cross origin (apps/web and apps/api are separate origins).
   app.enableCors({ origin: corsOrigin, credentials: true });
