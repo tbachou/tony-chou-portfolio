@@ -73,7 +73,7 @@ A general purpose static and Jamstack hosting platform, a reasonable middle grou
 
 The frontend (`apps/web`) deploys to Vercel, on its default `*.vercel.app` subdomain for now (no custom domain yet), building and deploying automatically from the GitHub repo with `apps/web` set as the project root.
 
-**Implementation skills**: `vercel-react-best-practices` (`vercel-labs/agent-skills`, `.agents/skills/vercel-react-best-practices/`)
+**Implementation skills**: `vercel-react-best-practices` (`vercel-labs/agent-skills`, `.claude/skills/vercel-react-best-practices/`)
 
 ## Rationale
 

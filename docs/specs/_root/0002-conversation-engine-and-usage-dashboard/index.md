@@ -43,7 +43,7 @@ See [rationale.md](rationale.md).
 
 **Chosen option**: Option 1: The contract as specced (token level SSE, per topic story grounding, a two layer ownership guard, and a better auth gated usage dashboard reusing the existing Postgres database).
 
-**Implementation skills**: `nestjs-best-practices` (`.claude/skills/nestjs-best-practices/`), `prisma-database-setup` (`.claude/skills/prisma-database-setup/`), `prisma-postgres` (`.claude/skills/prisma-postgres/`), `better-auth-best-practices` (`better-auth/skills`, `.agents/skills/better-auth-best-practices/`)
+**Implementation skills**: `nestjs-best-practices` (`.claude/skills/nestjs-best-practices/`), `prisma-database-setup` (`.claude/skills/prisma-database-setup/`), `prisma-postgres` (`.claude/skills/prisma-postgres/`), `better-auth-best-practices` (`better-auth/skills`, `.claude/skills/better-auth-best-practices/`)
 
 ## Rationale
 
