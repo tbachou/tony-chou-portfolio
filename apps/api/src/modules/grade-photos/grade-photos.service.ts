@@ -94,9 +94,13 @@ export class GradePhotosService {
     // committed row deleted that row's object and left the exact state AC-9
     // forbids: a row naming an object that is gone. Anything below this block
     // runs with the row already durable, so a failure there must not delete.
-    let photo;
-    try {
-      photo = await this.prisma.gradePhoto.create({
+    // `.catch` on the insert rather than a try block around it, matching
+    // setActive below. The handler always throws, so the inferred row type
+    // survives; a `let photo` outside a try would be plain `any` here, since
+    // this workspace has noImplicitAny off, and every field below would stop
+    // being checked against the model.
+    const photo = await this.prisma.gradePhoto
+      .create({
         data: {
           id: dto.id,
           objectKey,
@@ -106,19 +110,21 @@ export class GradePhotosService {
           sourceNote: dto.sourceNote ?? null,
           note: dto.note ?? null,
         },
-      });
-    } catch (error) {
-      // The row did not land, so its object must not survive. This can only
-      // remove the key generated moments ago in this same call.
-      await this.storage.deleteQuietly(objectKey);
+      })
+      .catch(async (error: unknown) => {
+        // The row did not land, so its object must not survive. This can only
+        // remove the key generated moments ago in this same call.
+        await this.storage.deleteQuietly(objectKey);
 
-      if (isUniqueViolation(error)) {
-        // A duplicate slug. The existing photo's bytes were never touched:
-        // this upload wrote its own random key and just deleted it again.
-        throw new ConflictException(`A photo with id "${dto.id}" already exists`);
-      }
-      throw error;
-    }
+        if (isUniqueViolation(error)) {
+          // A duplicate slug. The existing photo's bytes were never touched:
+          // this upload wrote its own random key and just deleted it again.
+          throw new ConflictException(
+            `A photo with id "${dto.id}" already exists`,
+          );
+        }
+        throw error;
+      });
 
     this.logger.log(
       `Grade photo added: ${photo.id} (${processed.width}x${processed.height}, ${processed.buffer.length} bytes, source ${photo.source})`,
@@ -132,7 +138,13 @@ export class GradePhotosService {
       note: photo.note,
       active: photo.active,
       createdAt: photo.createdAt,
-      imageUrl: await this.storage.presignGet(photo.objectKey),
+      // A signer failure must not report a committed upload as a failure: the
+      // admin would retry the same slug and get a 409 for a photo that is
+      // already there. The pool list re-signs on every load, so an empty URL
+      // costs one missing thumbnail until the next refresh.
+      imageUrl: await this.storage
+        .presignGet(photo.objectKey)
+        .catch(() => ''),
     };
   }
 

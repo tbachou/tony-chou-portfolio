@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { resolveAllowedOrigins } from '../utils/allowed-origins.util';
 
@@ -35,11 +36,14 @@ const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  */
 @Injectable()
 export class OriginCheckGuard implements CanActivate {
+  private readonly logger = new Logger(OriginCheckGuard.name);
+
   canActivate(context: ExecutionContext): boolean {
     if (context.getType() !== 'http') return true;
 
     const request = context.switchToHttp().getRequest<{
       method?: string;
+      url?: string;
       headers?: Record<string, unknown>;
     }>();
 
@@ -51,8 +55,16 @@ export class OriginCheckGuard implements CanActivate {
 
     if (resolveAllowedOrigins().includes(origin)) return true;
 
-    // The origin is not echoed back: it is attacker-chosen, and the caller
-    // already knows what it sent.
+    // Guards run before interceptors, so LoggingInterceptor never sees a
+    // rejected request and a 403 would otherwise leave no trace at all. If a
+    // CORS_ORIGIN edit ever started refusing real traffic, the symptom would
+    // be requests silently ceasing to arrive with nothing to correlate.
+    // Method and path only, never the attacker-supplied origin (api logging
+    // convention: no untrusted value in a log line).
+    this.logger.warn(`Rejected cross-origin ${method} ${request?.url ?? ''}`);
+
+    // The origin is not echoed back either: it is attacker-chosen, and the
+    // caller already knows what it sent.
     throw new ForbiddenException('Cross-origin request rejected');
   }
 }

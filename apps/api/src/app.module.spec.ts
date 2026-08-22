@@ -23,4 +23,17 @@ describe('AppModule wiring', () => {
       /provide:\s*APP_GUARD,\s*useClass:\s*OriginCheckGuard/,
     );
   });
+
+  it('does not let the guard be spread away behind a condition', () => {
+    // Deleting the provider is one way to lose the guard; making it
+    // conditional is the likelier one under deploy pressure, and the match
+    // above cannot tell the two apart. A CSRF control with an off switch is
+    // not a control.
+    expect(source).not.toMatch(
+      /\?[^\n]*\[\][^\n]*:[^\n]*\{\s*provide:\s*APP_GUARD/,
+    );
+    expect(source).not.toMatch(
+      /\{\s*provide:\s*APP_GUARD,\s*useClass:\s*OriginCheckGuard\s*\}[^\n]*\]\s*:\s*\[\]/,
+    );
+  });
 });

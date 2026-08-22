@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './prisma';
+import { resolveAllowedOrigins } from '../common/utils/allowed-origins.util';
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
@@ -11,9 +12,13 @@ export const auth = betterAuth({
     disableSignUp: true,
   },
   // apps/web and apps/api are separate origins; better-auth's own CSRF
-  // origin check needs the frontend's origin(s) allowed, same list as
-  // main.ts's CORS_ORIGIN.
-  trustedOrigins: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:3000'],
+  // origin check needs the frontend's origin(s) allowed. This is the THIRD
+  // consumer of that list, alongside main.ts's enableCors and
+  // OriginCheckGuard, so it reads the shared resolver rather than parsing
+  // CORS_ORIGIN again: this one used to split without trimming, so a list
+  // written with spaces after the commas silently rejected sign-in from every
+  // origin but the first, while the rest of the api kept working.
+  trustedOrigins: resolveAllowedOrigins(),
   advanced: {
     // Default SameSite=Lax cookies never reach the session-check request:
     // that's a cross-origin fetch, not a top-level navigation, so the

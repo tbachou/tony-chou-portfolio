@@ -59,13 +59,21 @@ function makePrisma(
     createCalls: [] as Record<string, unknown>[],
     queryValues: [] as unknown[][],
     rowOverride: options.row,
+    // The pinned row is stateful rather than fixed, because that is how the
+    // real table behaves: it is absent when the day's first guess looks, and
+    // present the moment any request's insert wins. A static mock cannot model
+    // the losing-insert branch at all.
+    pinned: (options.pinned ?? null) as { photo: GradePhoto | null } | null,
   };
 
   const prisma = {
     gradeDay: {
-      findUnique: jest.fn(() => Promise.resolve(options.pinned ?? null)),
+      findUnique: jest.fn(() => Promise.resolve(state.pinned)),
       create: jest.fn((args: { data: Record<string, unknown> }) => {
         state.createCalls.push(args.data);
+        state.pinned = {
+          photo: pool.find((p) => p.id === args.data.photoId) ?? null,
+        };
         return Promise.resolve(args.data);
       }),
     },
@@ -378,38 +386,52 @@ describe('GradeService', () => {
       expect(reveal.yourDistance).toBe(0);
     });
 
-    it('re-reads the photo when the row pinned a different one than resolved', async () => {
-      // The narrow race: a concurrent first guess created the row while the
-      // pool was changing, so the row disagrees with what this request
-      // resolved. The row wins.
+    it('grades against the winner\'s photo when its own insert loses the race', async () => {
+      // The narrow race: this request found no row, resolved PHOTO from the
+      // cycle, and lost the insert to a concurrent first guess that pinned
+      // `other`. The row wins, so both visitors are graded against `other`
+      // under one histogram.
       const other: GradePhoto = { ...PHOTO, id: 'other', trueGrade: 0 };
-      const { prisma } = makePrisma({
-        pool: [PHOTO, other],
-        row: { photoId: 'other' },
+      const { prisma } = makePrisma({ pool: [PHOTO, other] });
+      (prisma.gradeDay.create as jest.Mock).mockImplementation(() => {
+        (prisma.gradeDay.findUnique as jest.Mock).mockResolvedValue({
+          photo: other,
+        });
+        return Promise.reject(Object.assign(new Error('dup'), { code: 'P2002' }));
       });
 
       const reveal = await makeService(prisma).submitGuess(0, TODAY, NOW);
 
-      expect(prisma.gradePhoto.findUnique).toHaveBeenCalledWith({
-        where: { id: 'other' },
-      });
       expect(reveal.trueGrade).toBe(0);
+      expect(reveal.yourDistance).toBe(0);
     });
 
-    it('does not re-read the photo when the row agrees with the cycle', async () => {
+    it('does not re-read the row when its own insert won', async () => {
       const { prisma } = makePrisma();
 
       await makeService(prisma).submitGuess(3, TODAY, NOW);
 
-      expect(prisma.gradePhoto.findUnique).not.toHaveBeenCalled();
+      // One read, in resolveDayPhoto. Winning the insert means the candidate
+      // IS the pin, so there is nothing to go back for.
+      expect(prisma.gradeDay.findUnique).toHaveBeenCalledTimes(1);
     });
 
-    it('serves 503 if the row points at a photo that is gone', async () => {
-      const { prisma } = makePrisma({ row: { photoId: 'vanished' } });
+    it('serves 503 WITHOUT counting the guess when the pinned photo cannot be read', async () => {
+      const { prisma } = makePrisma();
+      // The insert loses, and the winner's row is then unreadable.
+      (prisma.gradeDay.create as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('dup'), { code: 'P2002' }),
+      );
+      (prisma.gradeDay.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(makeService(prisma).submitGuess(3, TODAY, NOW)).rejects.toThrow(
         ServiceUnavailableException,
       );
+
+      // This is the whole reason the photo is resolved before the tally. If
+      // the histogram had already been incremented, the page would show an
+      // error and invite a retry that counts the same guess again.
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
     });
   });
 
@@ -653,6 +675,12 @@ describe('GradeService', () => {
           if (calls === 2) {
             return Promise.reject(Object.assign(new Error('dup'), { code: 'P2002' }));
           }
+          // The winner's row now exists, so the loser's read finds it rather
+          // than nothing. Without this the mock models a state the database
+          // cannot be in: an insert that lost to a row that is not there.
+          (prisma.gradeDay.findUnique as jest.Mock).mockResolvedValue({
+            photo: PHOTO,
+          });
           return Promise.resolve(args.data);
         },
       );
