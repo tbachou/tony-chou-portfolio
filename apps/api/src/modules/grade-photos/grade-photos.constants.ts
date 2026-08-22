@@ -1,3 +1,11 @@
+// The slug pattern and the provenance enum live in @portfolio/shared, next
+// to the schema that validates the upload (spec 0006, AC-17).
+export {
+  GRADE_PHOTO_SOURCES,
+  SLUG_PATTERN,
+  type GradePhotoSourceValue,
+} from '@portfolio/shared';
+
 /**
  * The admin side of Grade Guesser's photo pool (spec 0006 R3).
  *
@@ -59,13 +67,5 @@ export const PRESIGN_TTL_SECONDS = 3600;
  * hyphen. AC-1's deterministic ordering sorts on these, so they have to be
  * lexically comparable across instances.
  */
-export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{2,63}$/;
 
-export const GRADE_PHOTO_SOURCES = [
-  'own_photo',
-  'permission_given',
-  'licensed',
-  'unlicensed_test',
-] as const;
 
-export type GradePhotoSourceValue = (typeof GRADE_PHOTO_SOURCES)[number];

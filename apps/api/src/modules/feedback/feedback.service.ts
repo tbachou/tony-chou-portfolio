@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { utcDateOnly } from '../../common/utils/date.util';
-import { CreateFeedbackDto } from './dto/create-feedback.dto';
+import type { CreateFeedback } from '@portfolio/shared';
 import { FeedbackSnsPublisher } from './feedback-sns.publisher';
 import {
   FEEDBACK_IP_DAILY_CAP,
@@ -27,7 +27,7 @@ export class FeedbackService {
    * rows, and the 5/hour in-memory throttle already bounds the burst
    * window. Do not "fix" this race without a spec change.
    */
-  async submit(dto: CreateFeedbackDto, hashedIp: string): Promise<{ id: string }> {
+  async submit(dto: CreateFeedback, hashedIp: string): Promise<{ id: string }> {
     const dayStart = utcDateOnly(new Date());
     const dayEnd = new Date(dayStart);
     dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);

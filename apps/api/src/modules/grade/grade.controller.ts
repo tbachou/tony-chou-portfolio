@@ -1,9 +1,14 @@
+import {
+  gradeGuessRequestSchema,
+  gradeProblemIdParamSchema,
+  type GradeGuessRequest,
+  type GradeProblemIdParam,
+} from '@portfolio/shared';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard';
-import { GradeGuessRequestDto } from './dto/grade-guess-request.dto';
-import { GradeProblemIdParamDto } from './dto/grade-problem-id-param.dto';
 import {
   GradeService,
   type GradeProblemImage,
@@ -61,7 +66,8 @@ export class GradeController {
     long: { limit: 600, ttl: 3_600_000 },
   })
   async problemImage(
-    @Param() params: GradeProblemIdParamDto,
+    @Param(new ZodValidationPipe(gradeProblemIdParamSchema))
+    params: GradeProblemIdParam,
   ): Promise<GradeProblemImage> {
     return this.gradeService.getProblemImage(params.publicId);
   }
@@ -81,7 +87,9 @@ export class GradeController {
     short: { limit: 5, ttl: 60_000 },
     long: { limit: 40, ttl: 3_600_000 },
   })
-  async guess(@Body() body: GradeGuessRequestDto): Promise<GradeReveal> {
+  async guess(
+    @Body(new ZodValidationPipe(gradeGuessRequestSchema)) body: GradeGuessRequest,
+  ): Promise<GradeReveal> {
     return this.gradeService.submitGuess(body.guess, body.publicId);
   }
 }

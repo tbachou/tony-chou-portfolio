@@ -2,49 +2,28 @@
 // The caps are product decisions from the spec, not deployment config,
 // so they are constants rather than env vars ("Configuration required: none new").
 
-export const INJURY_AREAS = [
-  'finger_pulley',
-  'elbow_tendinopathy',
-  'shoulder_impingement',
-] as const;
-export type InjuryArea = (typeof INJURY_AREAS)[number];
+// The request enums live in @portfolio/shared, next to the schema that
+// validates them, so the api and the web form cannot drift. Re-exported
+// here because everything in this module already imports them from this
+// file, and because they read as Beta's vocabulary rather than as somebody
+// else's package.
+export {
+  DISCIPLINES,
+  EQUIPMENT_ACCESS,
+  INJURY_AREAS,
+  PAIN_BEHAVIORS,
+  SYMPTOMS,
+  type Discipline,
+  type EquipmentAccess,
+  type InjuryArea,
+  type PainBehavior,
+  type Symptom,
+} from '@portfolio/shared';
 
-export const SYMPTOMS = [
-  // Red flag checkboxes (AC-2) — the screener hard-blocks on these.
-  'sudden_pop_with_swelling',
-  'numbness_or_tingling',
-  'cannot_bear_weight_or_grip',
-  'night_pain',
-  // Common non-red-flag symptoms.
-  'pain_with_specific_holds_or_moves',
-  'pain_at_session_start_that_warms_up',
-  'morning_stiffness',
-  'mild_swelling',
-  'tenderness_to_touch',
-  'weakness_or_early_fatigue',
-] as const;
-export type Symptom = (typeof SYMPTOMS)[number];
 
-export const PAIN_BEHAVIORS = [
-  'none_at_rest_hurts_under_load',
-  'warms_up_then_fine',
-  'worsens_as_session_goes_on',
-  'constant_even_at_rest',
-] as const;
-export type PainBehavior = (typeof PAIN_BEHAVIORS)[number];
 
-export const DISCIPLINES = ['bouldering', 'sport', 'trad', 'indoor_gym'] as const;
-export type Discipline = (typeof DISCIPLINES)[number];
 
-export const EQUIPMENT_ACCESS = [
-  'climbing_gym',
-  'home_wall',
-  'hangboard',
-  'resistance_bands',
-  'weights',
-  'none',
-] as const;
-export type EquipmentAccess = (typeof EQUIPMENT_ACCESS)[number];
+
 
 export const RED_FLAG_CATEGORIES = [
   'sudden_pop_with_swelling',

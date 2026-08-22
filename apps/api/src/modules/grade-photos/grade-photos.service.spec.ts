@@ -8,13 +8,13 @@ import sharp from 'sharp';
 import type { PrismaService } from '../prisma/prisma.service';
 import { GradePhotosService, isRecordNotFound } from './grade-photos.service';
 import type { PhotoStorageService } from './photo-storage.service';
-import type { CreateGradePhotoDto } from './dto/create-grade-photo.dto';
+import type { CreateGradePhoto } from '@portfolio/shared';
 
 jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
-const DTO: CreateGradePhotoDto = {
+const DTO: CreateGradePhoto = {
   id: 'north-gym-blue-prow',
   trueGrade: 5,
   source: 'own_photo',
