@@ -25,13 +25,14 @@ export {
 
 
 
-export const RED_FLAG_CATEGORIES = [
-  'sudden_pop_with_swelling',
-  'numbness_or_tingling',
-  'cannot_bear_weight_or_grip',
-  'night_pain',
-] as const;
-export type RedFlagCategory = (typeof RED_FLAG_CATEGORIES)[number];
+// The blocked list is the shared one: the form promises these four trigger a
+// professional handoff, so the two cannot be allowed to drift apart.
+import {
+  RED_FLAG_SYMPTOMS as RED_FLAG_CATEGORIES,
+  type RedFlagSymptom as RedFlagCategory,
+} from '@portfolio/shared';
+
+export { RED_FLAG_CATEGORIES, type RedFlagCategory };
 
 // Fixed, human-written copy per category (AC-2): kind, plain language, names
 // the symptom category and the kind of professional to see. Deliberately not
