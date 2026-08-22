@@ -175,6 +175,29 @@ function FieldError({ field, errors }: { field: FieldName; errors: FieldErrors }
   );
 }
 
+/**
+ * Move focus to a container the visitor cannot reach with Tab.
+ *
+ * The tabindex is applied for the duration of the focus and removed on blur,
+ * rather than living in the markup. A permanent tabindex="-1" makes the
+ * container the nearest focusable ancestor of everything inside it, and a
+ * browser that declines to focus the control that was clicked focuses that
+ * ancestor instead. Safari does exactly that for radios and checkboxes, so
+ * every click on a choice in the form put focus on the <form> and lit the
+ * whole card with the .beta-focus-target:focus ring.
+ *
+ * Focus still has to be visible wherever script puts it, which is why that
+ * ring keys off :focus rather than :focus-visible — programmatic focus does
+ * not match :focus-visible. Keeping the container unfocusable until the
+ * moment it is focused is what stops a click from borrowing that ring.
+ */
+function focusContainer(el: HTMLElement | null, options?: FocusOptions) {
+  if (!el) return;
+  el.setAttribute('tabindex', '-1');
+  el.addEventListener('blur', () => el.removeAttribute('tabindex'), { once: true });
+  el.focus(options);
+}
+
 export function BetaPlanner() {
   // Disclaimer gate (AC-3). Read in useEffect to stay hydration-safe.
   const [acknowledged, setAcknowledged] = useState(false);
@@ -253,11 +276,11 @@ export function BetaPlanner() {
   // path — a live region inserted into the DOM already populated is announced
   // inconsistently — so the roles below are the backstop, not the mechanism.
   useEffect(() => {
-    if (phase === 'red_flag') redFlagRef.current?.focus();
+    if (phase === 'red_flag') focusContainer(redFlagRef.current);
   }, [phase]);
 
   useEffect(() => {
-    if (phase === 'error' && errorMessage) errorRef.current?.focus();
+    if (phase === 'error' && errorMessage) focusContainer(errorRef.current);
   }, [phase, errorMessage]);
 
   // Dismissing the gate swaps it for the form. Without this the button
@@ -266,7 +289,7 @@ export function BetaPlanner() {
   useEffect(() => {
     if (acknowledged && focusFormRef.current) {
       focusFormRef.current = false;
-      formRef.current?.focus();
+      focusContainer(formRef.current);
     }
   }, [acknowledged]);
 
@@ -285,7 +308,7 @@ export function BetaPlanner() {
   useEffect(() => {
     if (focusSummaryRef.current && Object.keys(errors).length > 0) {
       focusSummaryRef.current = false;
-      errorSummaryRef.current?.focus();
+      focusContainer(errorSummaryRef.current);
     }
   }, [errors]);
 
@@ -383,7 +406,7 @@ export function BetaPlanner() {
     setAnnouncement('');
     // "Start over" unmounts the card its own button lives in, so move focus
     // back to the form before that happens rather than letting it drop.
-    formRef.current?.focus();
+    focusContainer(formRef.current);
   }
 
   function scrollToResult() {
@@ -432,7 +455,7 @@ export function BetaPlanner() {
     // together. scrollToResult() owns the scrolling (it honours
     // prefers-reduced-motion), so focus must not scroll on its own.
     const runId = ++runIdRef.current;
-    resultRef.current?.focus({ preventScroll: true });
+    focusContainer(resultRef.current, { preventScroll: true });
     setPhase('running');
     setStage(null);
     setPlanText('');
@@ -585,7 +608,6 @@ export function BetaPlanner() {
         <form
           id="beta-form"
           ref={formRef}
-          tabIndex={-1}
           aria-label="Draft your plan"
           noValidate
           onSubmit={handleSubmit}
@@ -595,7 +617,6 @@ export function BetaPlanner() {
           {errorCount > 0 && (
             <div
               ref={errorSummaryRef}
-              tabIndex={-1}
               className="beta-error-summary beta-focus-target mb-8"
             >
               <h3 className="text-[length:var(--beta-text-lg)]">
@@ -949,7 +970,6 @@ export function BetaPlanner() {
       {/* Results: pipeline status, streamed plan, and the unhappy states. */}
       <div
         ref={resultRef}
-        tabIndex={-1}
         role="region"
         aria-label="Plan results"
         className="beta-focus-target scroll-mt-24"
@@ -1000,7 +1020,6 @@ export function BetaPlanner() {
         {redFlagMessage && (
           <div
             ref={redFlagRef}
-            tabIndex={-1}
             role="status"
             className="beta-card beta-card--error-edge beta-focus-target mt-6 p-6 sm:p-8"
           >
@@ -1078,7 +1097,6 @@ export function BetaPlanner() {
         {phase === 'error' && errorMessage && (
           <div
             ref={errorRef}
-            tabIndex={-1}
             // Assertive only when a partial plan is already on screen: the
             // interruption lands on someone reading a protocol that is missing
             // its later stages and safety notes. Everywhere else the failure is
