@@ -44,7 +44,7 @@ enum FeedbackCategory {
 
 // Where a Grade Guesser photo came from (spec 0006, AC-18). Required on every
 // row so provenance is data rather than memory: `unlicensed_test` marks an
-// image borrowed for testing, and the daily cycle refuses to serve one once
+// image borrowed for testing, and the served set refuses to carry one once
 // GRADE_GAME_ENABLED is true, so a borrowed photo cannot reach a released
 // game by being forgotten.
 enum GradePhotoSource {
@@ -240,9 +240,15 @@ model Verification {
 // means a rollback delete can only ever remove the object its own upload
 // just wrote (AC-9).
 //
-// Rows are deactivated, never deleted: `active` is what the daily cycle
-// filters on, and GradeDay's foreign key is onDelete: Restrict so the
+// Rows are deactivated, never deleted: `active` is what the served set
+// filters on, and GradeProblem's foreign key is onDelete: Restrict so the
 // database enforces it rather than a habit.
+//
+// `objectKey` carries a second job as of 2026-08-22: its random hex basename
+// IS the problem's public id (AC-23). No `publicId` column exists on purpose
+// — the value is already unique, already opaque, already server generated and
+// already on every row, so adding one would have meant a backfill and a
+// collision policy for nothing.
 model GradePhoto {
   id          String           @id
   objectKey   String           @unique
@@ -253,27 +259,32 @@ model GradePhoto {
   note        String?
   active      Boolean          @default(true)
   createdAt   DateTime         @default(now())
-  days        GradeDay[]
+  problem     GradeProblem?
 
   @@index([active])
 }
 
-// Grade Guesser (the daily climbing-grade game, spec 0006). One row per UTC
-// day, created lazily by the day's first guess. Everything a visitor
+// Grade Guesser (the climbing-grade game, spec 0006). One row per PROBLEM,
+// created lazily by that problem's first guess. Everything a visitor
 // contributes is an anonymous integer: guessCounts is a 9-slot histogram
 // indexed by V-grade and plays is a bare tally (AC-6). No visitor identity,
 // no free text, and no per-visitor row exists or may be added here — the
-// feature's request DTO is a single validated integer by construction.
-// Streaks and play history live only in the visitor's browser (AC-7).
+// feature's request DTO is a single validated integer and an opaque id by
+// construction. Progress through the set lives only in the browser (AC-24).
 //
-// The model* columns cache the day's single vision call (AC-4): null until
-// it lands, filled once, never reset. `photoId` is a real foreign key to
-// GradePhoto (spec 0006 R2, replacing the photos.json manifest it used to
-// name), and once this row exists that photo is what the date is graded
-// against forever, even if the photo is later deactivated (AC-20).
-model GradeDay {
-  date            String     @id
-  photoId         String
+// Renamed and rekeyed from `GradeDay` on 2026-08-22, when the daily cadence
+// was dropped: the primary key moved from `date` to `photoId` and `date` is
+// gone, because a fixed set of problems has no days. Production held zero
+// rows and the game had never been enabled, so this was a clean rename rather
+// than a data migration.
+//
+// The model* columns cache that problem's single vision call, ever (AC-4):
+// null until it lands, filled once, never reset. `photoId` being the primary
+// key is what makes the relation strictly one problem per photo, and the
+// foreign key is onDelete: Restrict so a photo a problem names can never be
+// deleted out from under it.
+model GradeProblem {
+  photoId         String     @id
   photo           GradePhoto @relation(fields: [photoId], references: [id], onDelete: Restrict)
   modelGrade      Int?
   modelConfidence String?
