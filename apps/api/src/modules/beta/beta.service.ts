@@ -565,8 +565,16 @@ export class BetaService {
 /**
  * Beta stays on the direct Anthropic path regardless of `AI_PROVIDER`
  * (spec 0005 provider-swap child, AC-P3): it constructor-injects the
- * concrete `AnthropicService`, not the `AI_PROVIDER` token, until the
- * Guardrails child exists. The log field reflects that fixed choice.
+ * concrete `AnthropicService`, not the `AI_PROVIDER` token. The log field
+ * reflects that fixed choice, and production confirms it: with
+ * `AI_PROVIDER=bedrock` set, a live plan logs `provider: "anthropic"` while
+ * the interview simulator serves Bedrock.
+ *
+ * The binding reason is model access, not sequencing. This AWS account
+ * cannot invoke Claude Sonnet 5 on Bedrock, and the drafter is pinned to
+ * Sonnet 5, so moving Beta onto the token would quietly downgrade the model
+ * that writes rehab plans. The Guardrails child, named here previously as
+ * the gate, does not unblock it.
  */
 const BETA_PROVIDER = 'anthropic';
 
