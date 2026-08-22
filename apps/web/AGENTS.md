@@ -34,7 +34,6 @@ npm run lint --workspace=apps/web            # ESLint (root flat config)
 ## Agent skills
 
 - [vercel-react-best-practices](../../.claude/skills/vercel-react-best-practices/): `vercel-labs/agent-skills`, React/Next performance patterns
-- threejs-* (10 skills, e.g. [threejs-fundamentals](../../.claude/skills/threejs-fundamentals/)): `cloudai-x/threejs-skills`, 3D scene work (the desk intro)
 - tailwindcss-* (6 skills, e.g. [tailwindcss-advanced-layouts](../../.claude/skills/tailwindcss-advanced-layouts/)): `josiahsiegel/claude-plugin-marketplace`, layout/animation/mobile patterns
 
 ## Related specs
