@@ -8,7 +8,7 @@ import { parseInstantaneousValues } from './parse';
 
 /**
  * Longest span asked for in one request. The first run on an empty table wants
- * about twenty months, which as a single request is tens of thousands of
+ * about two and a half years, which as a single request is tens of thousands of
  * readings and is where the service starts timing out. Splitting it changes
  * nothing about which readings are fetched, only how many trips it takes.
  */

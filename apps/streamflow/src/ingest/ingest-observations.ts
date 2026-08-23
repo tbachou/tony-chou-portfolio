@@ -1,3 +1,5 @@
+import { config as loadEnvFile } from 'dotenv';
+
 import {
   EXPECTED_INTERVAL_MINUTES,
   GAUGE,
@@ -17,6 +19,12 @@ export interface IngestDeps {
   /** Injected in tests so the two time axes can be driven apart. */
   now?: () => Date;
 }
+
+/**
+ * Rows per insert. Large enough that the backfill is a handful of statements,
+ * small enough that no single statement is unwieldy.
+ */
+const INSERT_BATCH_SIZE = 5_000;
 
 export interface IngestResult {
   runId: string;
@@ -86,6 +94,8 @@ export async function ingestObservations(deps: IngestDeps): Promise<IngestResult
     },
   });
 
+  let rowsWritten = 0;
+
   try {
     const readings = await fetchReadings(gauge.usgsSiteId, window);
 
@@ -110,9 +120,27 @@ export async function ingestObservations(deps: IngestDeps): Promise<IngestResult
       EXPECTED_INTERVAL_MINUTES,
     );
 
-    await prisma.$transaction([
-      prisma.observation.createMany({
-        data: changed.map((reading) => ({
+    // Sorted explicitly rather than trusting the source's order, because the
+    // recovery behaviour below depends on it.
+    const ordered = [...changed].sort(
+      (a, b) => a.validTime.getTime() - b.validTime.getTime(),
+    );
+
+    // Written in batches, not as one transaction. The first run backfills
+    // about two and a half years, and Prisma caps an interactive transaction at five
+    // seconds while that insert takes closer to forty, so the atomic version
+    // could never complete.
+    //
+    // Giving up atomicity costs nothing here and buys resumability. The store
+    // is append only, so a half finished run leaves fewer rows rather than
+    // wrong ones, and because the batches ascend by validTime, whatever landed
+    // is a complete prefix. The next run anchors its window to the newest
+    // stored reading, so it resumes exactly where this one stopped instead of
+    // leaving a hole in the middle.
+    for (let index = 0; index < ordered.length; index += INSERT_BATCH_SIZE) {
+      const batch = ordered.slice(index, index + INSERT_BATCH_SIZE);
+      const result = await prisma.observation.createMany({
+        data: batch.map((reading) => ({
           gaugeId: gauge.id,
           validTime: reading.validTime,
           recordedAt,
@@ -120,18 +148,27 @@ export async function ingestObservations(deps: IngestDeps): Promise<IngestResult
           qualifier: reading.qualifier,
           ingestRunId: run.id,
         })),
-      }),
-      prisma.pipelineRun.update({
-        where: { id: run.id },
-        data: { finishedAt: clock(), status, rowsWritten: changed.length },
-      }),
-    ]);
+      });
+      rowsWritten += result.count;
+    }
 
-    return { runId: run.id, status, rowsWritten: changed.length, window };
-  } catch (cause) {
     await prisma.pipelineRun.update({
       where: { id: run.id },
-      data: { finishedAt: clock(), status: 'FAILED', error: sanitizeError(cause) },
+      data: { finishedAt: clock(), status, rowsWritten },
+    });
+
+    return { runId: run.id, status, rowsWritten, window };
+  } catch (cause) {
+    // rowsWritten carries whatever landed before the failure, so the run row
+    // says how far it got rather than claiming nothing happened.
+    await prisma.pipelineRun.update({
+      where: { id: run.id },
+      data: {
+        finishedAt: clock(),
+        status: 'FAILED',
+        rowsWritten,
+        error: sanitizeError(cause),
+      },
     });
     throw cause;
   }
@@ -139,6 +176,13 @@ export async function ingestObservations(deps: IngestDeps): Promise<IngestResult
 
 /* istanbul ignore next -- CLI entry, exercised by the workflow rather than tests */
 if (require.main === module) {
+  // Only the entry point reads .env, never the library path, which is why
+  // this is called here rather than imported for its side effect. In CI the
+  // connection string arrives as a real environment variable, and dotenv
+  // leaves an already set variable alone, so this is a local convenience
+  // rather than a second source of truth.
+  loadEnvFile();
+
   const prisma = createPrismaClient();
 
   ingestObservations({ prisma })
