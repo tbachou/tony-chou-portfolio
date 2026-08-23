@@ -1,0 +1,106 @@
+// Spec 0010, slice 1: the two time axes.
+//
+// Every fact carries two timestamps. `validTime` is when the fact was true in
+// the river; `recordedAt` is when this pipeline learned it. Keeping both is the
+// only way to reconstruct what was knowable at a past moment, which is what
+// makes the later backtest mean anything.
+//
+// Slice 1 covers Gauge, Observation and PipelineRun only. ModelVersion,
+// Prediction and Score arrive in slice 2; WeatherForecast in slice 3.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Provisional readings are subject to revision; approved ones have been
+/// reviewed by USGS. The provisional to approved transition is the single
+/// event this store most wants to capture, so it is compared on ingest just
+/// as the value is.
+enum Qualifier {
+  PROVISIONAL
+  APPROVED
+}
+
+/// Every scheduled job records itself, so a silent failure of any of them is
+/// visible. Slice 1 only writes USGS_INGEST and USGS_RESCAN; the rest are
+/// declared now so later slices add rows, not a migration to the enum.
+enum PipelineJob {
+  USGS_INGEST
+  USGS_RESCAN
+  OPEN_METEO_INGEST
+  PREDICT
+  SCORE
+  RETRAIN
+}
+
+/// PARTIAL means the source responded but returned fewer intervals than the
+/// requested window implies, which is how a sensor outage shows up. A gap is
+/// never stored as a row; it is derived at read time from missing validTime
+/// slots.
+enum RunStatus {
+  OK
+  PARTIAL
+  FAILED
+}
+
+model Gauge {
+  id                String   @id @default(cuid())
+  usgsSiteId        String   @unique
+  name              String
+  lat               Float
+  lon               Float
+  drainageAreaSqMi  Float?
+  /// IANA zone for this gauge, used to resolve calendar days for climatology.
+  /// Stored values are always UTC regardless.
+  timezone          String
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  observations Observation[]
+
+  @@map("gauges")
+}
+
+/// Append only. Nothing in the codebase issues an update or delete against
+/// this table; a revised reading is a new row with a later recordedAt.
+model Observation {
+  id          String    @id @default(cuid())
+  gaugeId     String
+  gauge       Gauge     @relation(fields: [gaugeId], references: [id])
+  /// When the reading was true at the gauge.
+  validTime   DateTime
+  /// When this pipeline learned it. USGS exposes no per value revision
+  /// timestamp, so ingest time is the only honest source.
+  recordedAt  DateTime
+  valueCfs    Float
+  qualifier   Qualifier
+  ingestRunId String
+  ingestRun   PipelineRun @relation(fields: [ingestRunId], references: [id])
+
+  @@unique([gaugeId, validTime, recordedAt])
+  @@index([gaugeId, validTime, recordedAt(sort: Desc)])
+  @@map("observations")
+}
+
+model PipelineRun {
+  id          String    @id @default(cuid())
+  job         PipelineJob
+  startedAt   DateTime
+  finishedAt  DateTime?
+  status      RunStatus
+  rowsWritten Int       @default(0)
+  windowStart DateTime?
+  windowEnd   DateTime?
+  error       String?
+
+  observations Observation[]
+
+  @@index([job, startedAt])
+  @@map("pipeline_runs")
+}
