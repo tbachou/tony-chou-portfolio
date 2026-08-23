@@ -14,6 +14,7 @@ import tseslint from 'typescript-eslint';
 const webFiles = ['apps/web/**/*.{js,jsx,ts,tsx}'];
 const nodeTsFiles = [
   'apps/api/**/*.ts',
+  'apps/streamflow/**/*.ts',
   'packages/**/*.ts',
   'infra/lambda/**/*.ts',
 ];
@@ -52,6 +53,7 @@ export default [
       '**/coverage/**',
       // Prisma client output — large generated code, never lint it.
       'apps/api/src/generated/**',
+      'apps/streamflow/src/generated/**',
       'apps/web/next-env.d.ts',
     ],
   },

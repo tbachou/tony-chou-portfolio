@@ -1,0 +1,46 @@
+{
+  "name": "@portfolio/streamflow",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Streamflow forecast pipeline for spec 0010: bitemporal USGS ingestion, prediction and scoring for Big Darby Creek.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "postinstall": "prisma generate",
+    "lint": "eslint .",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "ingest": "tsx src/ingest/ingest-observations.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.20.3",
+    "dotenv": "^17.4.2",
+    "jest": "^30.0.0",
+    "prisma": "^7.9.1",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.23.5",
+    "typescript": "^5.7.3"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "coveragePathIgnorePatterns": ["/generated/"],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  }
+}

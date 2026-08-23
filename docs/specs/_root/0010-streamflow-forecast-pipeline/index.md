@@ -1,7 +1,7 @@
 # 0010. Streamflow forecast pipeline
 
 **Date**: 2026-08-23
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 
