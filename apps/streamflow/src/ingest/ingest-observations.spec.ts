@@ -44,9 +44,6 @@ function fakePrisma(options: FakeOptions = {}) {
     },
     pipelineRun: { create: runCreate, update: runUpdate },
     $queryRaw: jest.fn(async () => options.known ?? []),
-    $transaction: jest.fn(async (operations: Promise<unknown>[]) =>
-      Promise.all(operations),
-    ),
   };
 
   return {
@@ -180,7 +177,8 @@ describe('ingestObservations', () => {
     });
 
     expect(result.rowsWritten).toBe(0);
-    expect(createMany.mock.calls[0][0]).toMatchObject({ data: [] });
+    // Nothing changed, so no insert is issued at all.
+    expect(createMany).not.toHaveBeenCalled();
     expect(runUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'OK', rowsWritten: 0 }),
@@ -283,5 +281,89 @@ describe('ingestObservations', () => {
     expect(update.data.status).toBe('FAILED');
     expect(update.data.error).not.toContain('hunter2');
     expect(update.data.error).toContain('[redacted connection string]');
+  });
+
+  it('writes a large backfill in batches rather than one statement', async () => {
+    const { prisma, createMany } = fakePrisma();
+    // Twelve thousand readings at a quarter hour, as a real backfill produces.
+    const many = Array.from({ length: 12_000 }, (_, index) =>
+      reading(
+        new Date(
+          new Date('2024-01-01T00:00:00Z').getTime() + index * 15 * 60 * 1000,
+        ).toISOString(),
+        800 + (index % 50),
+      ),
+    );
+
+    const result = await ingestObservations({
+      prisma,
+      now: clockOf(NOW, AFTER_FETCH),
+      fetchReadings: async () => many,
+    });
+
+    expect(result.rowsWritten).toBe(12_000);
+    expect(createMany).toHaveBeenCalledTimes(3);
+    const sizes = createMany.mock.calls.map(
+      (call) => (call[0] as { data: unknown[] }).data.length,
+    );
+    expect(sizes).toEqual([5_000, 5_000, 2_000]);
+  });
+
+  it('writes batches in ascending validTime, so a stopped run leaves a prefix', async () => {
+    const { prisma, createMany } = fakePrisma();
+    const shuffled = [
+      reading('2024-01-01T00:30:00Z', 800),
+      reading('2024-01-01T00:00:00Z', 810),
+      reading('2024-01-01T00:15:00Z', 805),
+    ];
+
+    await ingestObservations({
+      prisma,
+      now: clockOf(NOW, AFTER_FETCH),
+      fetchReadings: async () => shuffled,
+    });
+
+    const rows = (
+      createMany.mock.calls[0][0] as { data: { validTime: Date }[] }
+    ).data;
+    expect(rows.map((row) => row.validTime.toISOString())).toEqual([
+      '2024-01-01T00:00:00.000Z',
+      '2024-01-01T00:15:00.000Z',
+      '2024-01-01T00:30:00.000Z',
+    ]);
+  });
+
+  it('records how far it got when a batch fails partway', async () => {
+    const { prisma, runUpdates } = fakePrisma();
+    let batch = 0;
+    (prisma.observation as unknown as {
+      createMany: (args: { data: unknown[] }) => Promise<{ count: number }>;
+    }).createMany = async (args) => {
+      batch += 1;
+      if (batch === 2) throw new Error('connection reset');
+      return { count: args.data.length };
+    };
+
+    const many = Array.from({ length: 8_000 }, (_, index) =>
+      reading(
+        new Date(
+          new Date('2024-01-01T00:00:00Z').getTime() + index * 15 * 60 * 1000,
+        ).toISOString(),
+        800,
+      ),
+    );
+
+    await expect(
+      ingestObservations({
+        prisma,
+        now: clockOf(NOW, AFTER_FETCH),
+        fetchReadings: async () => many,
+      }),
+    ).rejects.toThrow(/connection reset/);
+
+    const [update] = runUpdates;
+    expect(update.data.status).toBe('FAILED');
+    // The first batch landed and the row says so, rather than claiming zero.
+    expect(update.data.rowsWritten).toBe(5_000);
   });
 });
