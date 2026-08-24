@@ -1,5 +1,6 @@
 import {
   DISCHARGE_PARAMETER_CODE,
+  GAUGE,
   USGS_IV_ENDPOINT,
 } from '../config';
 import type { Reading } from '../types';
@@ -31,13 +32,55 @@ function chunk(window: IngestWindow): IngestWindow[] {
   return chunks;
 }
 
-function buildUrl(siteId: string, window: IngestWindow): string {
+/**
+ * Formats an instant as the gauge's own wall clock, with no timezone marker.
+ *
+ * This looks wrong and is not. USGS mishandles any startDT or endDT carrying a
+ * timezone designator: it converts using the site's *current* daylight saving
+ * offset rather than the offset in force on the requested date, so every
+ * winter request issued from a summer machine comes back an hour off. Verified
+ * against the live service on 2026-08-24, asking three ways for the same
+ * half hour on 2025-11-26:
+ *
+ *   ...Z                 asked 14:15-14:45Z, returned 15:15-15:45Z  wrong
+ *   explicit -05:00      asked 14:15-14:45Z, returned 15:15-15:45Z  wrong
+ *   bare local time      asked 14:15-14:45Z, returned 14:15-14:45Z  right
+ *
+ * A bare local timestamp is the only form the service reads correctly, so that
+ * is what we send. The store still holds nothing but UTC; this conversion
+ * exists solely at the boundary with USGS.
+ */
+export function toSiteLocalTimestamp(at: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    // h23 rather than hour12:false, which yields "24" for midnight on some
+    // runtimes and would produce a timestamp the service rejects.
+    hourCycle: 'h23',
+  }).formatToParts(at);
+
+  const get = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? '';
+
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
+function buildUrl(
+  siteId: string,
+  window: IngestWindow,
+  timeZone: string,
+): string {
   const url = new URL(USGS_IV_ENDPOINT);
   url.searchParams.set('format', 'json');
   url.searchParams.set('sites', siteId);
   url.searchParams.set('parameterCd', DISCHARGE_PARAMETER_CODE);
-  url.searchParams.set('startDT', window.start.toISOString());
-  url.searchParams.set('endDT', window.end.toISOString());
+  url.searchParams.set('startDT', toSiteLocalTimestamp(window.start, timeZone));
+  url.searchParams.set('endDT', toSiteLocalTimestamp(window.end, timeZone));
   return url.toString();
 }
 
@@ -54,11 +97,12 @@ export async function fetchInstantaneousValues(
   siteId: string,
   window: IngestWindow,
   fetchImpl: typeof fetch = fetch,
+  timeZone: string = GAUGE.timezone,
 ): Promise<Reading[]> {
   const readings: Reading[] = [];
 
   for (const span of chunk(window)) {
-    const response = await fetchImpl(buildUrl(siteId, span));
+    const response = await fetchImpl(buildUrl(siteId, span, timeZone));
 
     if (!response.ok) {
       throw new Error(
