@@ -5,8 +5,8 @@
 // only way to reconstruct what was knowable at a past moment, which is what
 // makes the later backtest mean anything.
 //
-// Slice 1 covers Gauge, Observation and PipelineRun only. ModelVersion,
-// Prediction and Score arrive in slice 2; WeatherForecast in slice 3.
+// Slice 1 covers Gauge, Observation and PipelineRun. Slice 2 adds
+// ModelVersion, Prediction and Score. WeatherForecast arrives in slice 3.
 
 generator client {
   provider     = "prisma-client"
@@ -49,6 +49,23 @@ enum RunStatus {
   FAILED
 }
 
+/// Baselines and learned models are the same kind of thing to this schema, on
+/// purpose. Nothing in the codebase branches on which one it is looking at, so
+/// comparing them is structural rather than bolted on afterwards.
+enum ModelKind {
+  BASELINE
+  MODEL
+}
+
+/// What the river was doing when a prediction came true. Scores carry it so
+/// that calm weather accuracy can never flatter storm accuracy: an average
+/// over both says almost nothing, because the two are different problems.
+enum Regime {
+  BASEFLOW
+  RISING
+  PEAK
+}
+
 model Gauge {
   id                String   @id @default(cuid())
   usgsSiteId        String   @unique
@@ -63,6 +80,7 @@ model Gauge {
   createdAt         DateTime @default(now())
 
   observations Observation[]
+  predictions  Prediction[]
 
   @@map("gauges")
 }
@@ -86,6 +104,87 @@ model Observation {
   @@unique([gaugeId, validTime, recordedAt])
   @@index([gaugeId, validTime, recordedAt(sort: Desc)])
   @@map("observations")
+}
+
+/// One version of one forecaster. A baseline is a row here exactly like a
+/// trained model is, differing only in `kind` and in having nothing to train.
+model ModelVersion {
+  id               String    @id @default(cuid())
+  name             String    @unique
+  kind             ModelKind
+  trainedAt        DateTime?
+  trainWindowStart DateTime?
+  trainWindowEnd   DateTime?
+  hyperparams      Json?
+  codeSha          String?
+  /// Retraining writes a new version and deactivates the one it supersedes.
+  /// Rows are never deleted, because predictions reference them forever.
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+
+  predictions Prediction[]
+
+  @@map("model_versions")
+}
+
+/// One forecast, made at one moment, for one moment.
+///
+/// `issuedAt` is when the claim was made and `targetTime` is what it was about.
+/// Both are needed: the honesty of the whole scorecard rests on being able to
+/// ask what a forecaster knew when it spoke, and a prediction with only a
+/// target time cannot answer that.
+model Prediction {
+  id             String      @id @default(cuid())
+  gaugeId        String
+  gauge          Gauge       @relation(fields: [gaugeId], references: [id])
+  modelVersionId String
+  modelVersion   ModelVersion @relation(fields: [modelVersionId], references: [id])
+  issuedAt       DateTime
+  targetTime     DateTime
+  horizonHours   Int
+  centralCfs     Float
+  lowerCfs       Float
+  upperCfs       Float
+  /// The nominal coverage the bounds claim, 0.80 today. Stored per row rather
+  /// than assumed, so a later change of policy cannot silently reinterpret
+  /// every prediction already made.
+  intervalLevel  Float
+  /// False when the bounds are the documented placeholder rather than real
+  /// error quantiles, which happens until a model has enough scored history
+  /// for its horizon and regime (AC-20). Required so a wide early interval is
+  /// never mistaken for a confident one.
+  intervalSeeded Boolean     @default(true)
+
+  scores Score[]
+
+  @@unique([gaugeId, modelVersionId, issuedAt, targetTime])
+  @@index([targetTime])
+  @@map("predictions")
+}
+
+/// How a prediction actually did, judged against one specific revision of the
+/// truth.
+///
+/// Append only, like observations. When a revision changes what actually
+/// happened, the old score is not corrected: a second row is written naming
+/// the newer revision. A score can therefore always be explained, because it
+/// records which version of reality it was judged against.
+model Score {
+  id               String     @id @default(cuid())
+  predictionId     String
+  prediction       Prediction @relation(fields: [predictionId], references: [id])
+  scoredAt         DateTime
+  actualCfs        Float
+  /// The `recordedAt` of the exact observation revision this score used.
+  actualRecordedAt DateTime
+  absError         Float
+  pctError         Float
+  withinInterval   Boolean
+  regime           Regime
+
+  @@unique([predictionId, actualRecordedAt])
+  @@index([regime])
+  @@map("scores")
 }
 
 model PipelineRun {
