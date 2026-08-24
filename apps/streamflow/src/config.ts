@@ -113,3 +113,9 @@ export const HORIZON_HOURS = [24, 48, 72] as const;
  * one the seeding hindcast walks so its issue times match the live record's.
  */
 export const ISSUE_INTERVAL_HOURS = 6;
+
+/**
+ * How far back the skill view looks by default, in days. Spec 0010 sets 90
+ * for skill and calibration alike.
+ */
+export const SKILL_DEFAULT_WINDOW_DAYS = 90;
