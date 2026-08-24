@@ -1,0 +1,67 @@
+# Spec 0010's scoring pass: judge every prediction whose target instant has
+# passed against whatever revision of the truth is current.
+#
+# Hourly rather than six hourly, and separate from the pipeline workflow for
+# that reason. Scoring is cheap, it depends on nothing the pipeline produces
+# in the same run, and a prediction whose target has just passed should not
+# wait most of a day to be judged. Waiting for USGS to approve a reading would
+# be worse still: the dashboard would sit months stale.
+#
+# Re-running is safe and expected. A score is never edited; when a revision
+# changes the truth, a second score is written naming the newer revision, and
+# the unique key on (predictionId, actualRecordedAt) is what makes a repeat
+# run write nothing rather than write a duplicate.
+#
+# Same hardening as the pipeline workflow, and for the same reason: this holds
+# a write credential in a public repository.
+#
+#   - schedule and workflow_dispatch only, so nothing an outside contributor
+#     can trigger ever reaches this token.
+#   - no ${{ github.event.* }} in any run block, so there is no injection sink.
+#   - the secret is scoped to the one step that needs it, not to the job.
+#   - actions pinned to commit SHAs, kept current by Dependabot.
+name: Streamflow scoring
+
+on:
+  schedule:
+    - cron: '30 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # Its own group. Scoring writes only score rows and the pipeline writes only
+  # observations and predictions, so the two need not queue behind each other;
+  # two scoring passes at once would simply repeat work.
+  group: streamflow-scoring
+  cancel-in-progress: false
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # apps/api's prisma.config.ts resolves env("DATABASE_URL") at load time
+      # and its postinstall runs `prisma generate` on every `npm ci`. This
+      # dummy value only has to exist; generate never connects.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Score predictions
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run score --workspace=apps/streamflow
