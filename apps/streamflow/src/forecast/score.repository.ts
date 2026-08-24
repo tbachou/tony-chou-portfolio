@@ -98,11 +98,33 @@ export type FloorStore = Pick<PrismaClient, '$queryRaw'> & {
  * revision adds cannot shift a percentile of a hundred thousand readings
  * anywhere that matters.
  */
+/**
+ * A floor is only usable if it is finitely positive.
+ *
+ * Checked on both paths, the one that derives it and the one that reads it
+ * back, because the column is meant to be hand correctable and a hand can
+ * type a zero. A zero floor makes the percentage error divide by the reading
+ * itself, and this gauge can genuinely read zero, since parsing only drops
+ * USGS's own missing value sentinel. That produces NaN, the column accepts
+ * it, and one NaN then blanks every rolling mean built on top of it. Failing
+ * loudly here costs one run; a NaN in the record is permanent.
+ */
+function usableFloor(floor: number | null, source: string): number {
+  if (floor === null || !Number.isFinite(floor) || floor <= 0) {
+    throw new Error(
+      `unusable flow floor (${String(floor)}) ${source}: it must be a positive number of cubic feet per second`,
+    );
+  }
+  return floor;
+}
+
 export async function flowFloorCfs(
   prisma: FloorStore,
   gauge: { id: string; flowFloorCfs: number | null },
 ): Promise<number> {
-  if (gauge.flowFloorCfs !== null) return gauge.flowFloorCfs;
+  if (gauge.flowFloorCfs !== null) {
+    return usableFloor(gauge.flowFloorCfs, 'frozen on the gauge');
+  }
 
   const rows = await prisma.$queryRaw<{ floor: number | null }[]>(Prisma.sql`
     SELECT percentile_cont(0.05) WITHIN GROUP (ORDER BY "valueCfs") AS floor
@@ -110,15 +132,9 @@ export async function flowFloorCfs(
     WHERE "gaugeId" = ${gauge.id}
   `);
 
-  const floor = rows[0]?.floor ?? null;
-
-  if (floor === null || !(floor > 0)) {
-    // Unreachable once ingestion has run. Loud rather than silently dividing
-    // by something meaningless.
-    throw new Error(
-      'cannot derive the flow floor: the store holds no positive flow history',
-    );
-  }
+  // Unreachable once ingestion has run: it means the store holds no positive
+  // flow history to take a percentile of.
+  const floor = usableFloor(rows[0]?.floor ?? null, 'derived from the store');
 
   await prisma.gauge.update({
     where: { id: gauge.id },
