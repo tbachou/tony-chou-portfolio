@@ -10,6 +10,7 @@
   "type": "commonjs",
   "scripts": {
     "postinstall": "prisma generate",
+    "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -51,5 +52,7 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
-  }
+  },
+  "main": "dist/index.js",
+  "types": "src/index.ts"
 }
