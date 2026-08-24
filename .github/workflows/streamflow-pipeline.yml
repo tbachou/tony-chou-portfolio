@@ -84,3 +84,15 @@ jobs:
         env:
           PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
         run: npm run rescan --workspace=apps/streamflow
+
+      - name: Issue predictions
+        # Runs after ingestion so persistence forecasts from the newest
+        # reading, and runs even when ingestion failed. A forecast made on
+        # slightly stale data is still an honest forecast, and it is what a
+        # real forecaster would have had to make; declining to issue would
+        # instead leave a hole the scorecard cannot tell apart from a model
+        # that had nothing to say. The run row records the outcome either way.
+        if: ${{ !cancelled() }}
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run predict --workspace=apps/streamflow

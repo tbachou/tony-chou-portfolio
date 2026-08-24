@@ -15,7 +15,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "ingest": "tsx src/ingest/ingest-observations.ts",
-    "rescan": "tsx src/ingest/rescan-observations.ts"
+    "rescan": "tsx src/ingest/rescan-observations.ts",
+    "predict": "tsx src/forecast/predict.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
