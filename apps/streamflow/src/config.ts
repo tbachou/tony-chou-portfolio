@@ -44,3 +44,18 @@ export const USGS_IV_ENDPOINT = 'https://waterservices.usgs.gov/nwis/iv/';
 
 /** The gauge reports every 15 minutes, which is what PARTIAL is judged against. */
 export const EXPECTED_INTERVAL_MINUTES = 15;
+
+/**
+ * How far back every rescan re-polls regardless of what it holds. The live
+ * edge is not the only place USGS changes its mind, and this is the window
+ * where it changes it most often.
+ */
+export const RESCAN_ROLLING_DAYS = 90;
+
+/**
+ * Gap below which two stretches of still provisional readings are re-polled as
+ * one request. Provisional readings normally sit in one contiguous run, but a
+ * single stranded one must not cost a separate trip, and a whole quiet day
+ * between two of them is cheaper to fetch than to skip.
+ */
+export const RESCAN_MERGE_GAP_HOURS = 24;
