@@ -141,7 +141,7 @@ export async function scorePredictions(deps: ScoreDeps): Promise<ScoreResult> {
     );
 
     if (rows.length > 0) {
-      const floorCfs = await flowFloorCfs(prisma, gauge.id);
+      const floorCfs = await flowFloorCfs(prisma, gauge);
       const history = await observationsAsOf(
         prisma,
         gauge.id,
