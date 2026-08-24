@@ -12,6 +12,7 @@ A live forecasting system that predicts river flow at one gauge on Big Darby Cre
 Child specs, added when the decision they settle is reached:
 
 1. [0010-prediction-intervals.md](0010-prediction-intervals.md): how a prediction's lower and upper bounds are derived, which regime conditions them, and what happens before enough scored history exists. Settles the parts of AC-20 and AC-21 this index leaves open.
+2. [0010-hindcast-seeding.md](0010-hindcast-seeding.md): what "knowable at T" means while the seeding hindcast walks an archive that was imported in one pass, and where the interval bucket's time bound moves as a result. Settles what AC-20 leaves open about reconstructing history the pipeline learned all at once.
 
 ## Requirements
 
