@@ -68,6 +68,21 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Apply pending migrations
+        # Before anything reads or writes, because the jobs below assume the
+        # current schema and fail on every column a pending migration would
+        # have added. Nothing else applies these: render.yaml's
+        # preDeployCommand migrates apps/api against the portfolio database,
+        # which is a different database entirely.
+        #
+        # `migrate deploy` only applies migrations that are already committed
+        # and reviewed. It never resets, never drops, and fails loudly rather
+        # than resolving drift on its own, which is what makes it safe to run
+        # unattended on a schedule. A run with nothing pending is a no-op.
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run migrate:deploy --workspace=apps/streamflow
+
       - name: Ingest USGS observations
         env:
           PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
