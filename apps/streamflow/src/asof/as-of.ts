@@ -44,24 +44,3 @@ export function reconstructAsOf(
       a.validTime.getTime() - b.validTime.getTime(),
   );
 }
-
-/**
- * The single row known for one validTime at `asOf`, or undefined if nothing
- * was known yet. Ingestion uses this to decide whether an incoming reading is
- * actually new.
- */
-export function latestKnownAt(
-  rows: readonly StoredObservation[],
-  gaugeId: string,
-  validTime: Date,
-  asOf: Date,
-): StoredObservation | undefined {
-  return reconstructAsOf(
-    rows.filter(
-      (row) =>
-        row.gaugeId === gaugeId &&
-        row.validTime.getTime() === validTime.getTime(),
-    ),
-    asOf,
-  )[0];
-}

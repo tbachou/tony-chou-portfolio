@@ -1,4 +1,4 @@
-import { latestKnownAt, reconstructAsOf } from './as-of';
+import { reconstructAsOf } from './as-of';
 import type { StoredObservation } from '../types';
 
 const GAUGE = 'gauge_darby';
@@ -135,40 +135,5 @@ describe('reconstructAsOf', () => {
     );
 
     expect(backwards).toEqual(forwards);
-  });
-});
-
-describe('latestKnownAt', () => {
-  it('finds the row current for one validTime', () => {
-    const observed = latestKnownAt(
-      WITH_REVISION,
-      GAUGE,
-      new Date('2026-08-23T12:00:00Z'),
-      new Date('2026-08-24T00:00:00Z'),
-    );
-
-    expect(observed?.valueCfs).toBe(1060);
-  });
-
-  it('returns undefined when that validTime is not yet known', () => {
-    const observed = latestKnownAt(
-      WITH_REVISION,
-      GAUGE,
-      new Date('2026-08-23T12:45:00Z'),
-      new Date('2026-08-24T00:00:00Z'),
-    );
-
-    expect(observed).toBeUndefined();
-  });
-
-  it('does not answer with another gauge row', () => {
-    const observed = latestKnownAt(
-      WITH_REVISION,
-      'gauge_other',
-      new Date('2026-08-23T12:00:00Z'),
-      new Date('2026-08-24T00:00:00Z'),
-    );
-
-    expect(observed).toBeUndefined();
   });
 });
