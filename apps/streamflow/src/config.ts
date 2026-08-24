@@ -97,3 +97,19 @@ export const MIN_BUCKET_ERRORS = 30;
  * outside anything observed, so it reads as "we do not know yet".
  */
 export const PLACEHOLDER_BAND_FACTOR = 3;
+
+/**
+ * The horizons every active forecaster issues at, in hours.
+ *
+ * Three rather than one because they fail differently: persistence is close
+ * at 24 hours and hopeless at 72, climatology is equally indifferent at both,
+ * and a model that beats neither at 24 may still earn its place at 72.
+ */
+export const HORIZON_HOURS = [24, 48, 72] as const;
+
+/**
+ * How often predictions are issued. Six hours, so issue times land on 00, 06,
+ * 12 and 18 UTC, which is the cadence the scheduled workflow runs on and the
+ * one the seeding hindcast walks so its issue times match the live record's.
+ */
+export const ISSUE_INTERVAL_HOURS = 6;
