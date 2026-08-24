@@ -80,6 +80,17 @@ model Gauge {
   /// IANA zone for this gauge, used to resolve calendar days for climatology.
   /// Stored values are always UTC regardless.
   timezone         String
+  /// The denominator floor for percentage error, the 5th percentile of this
+  /// gauge's historical flow.
+  ///
+  /// Frozen here after the first scoring run derives it, rather than being
+  /// recomputed every run. The spec calls it a constant and it has to behave
+  /// like one: a floor that drifts as the record grows would give two scores
+  /// of the same prediction, written months apart when a revision lands,
+  /// percentages on different scales with nothing recording the difference.
+  /// Null means it has not been derived yet. Correct it by hand if the first
+  /// run ever sees an unrepresentative store.
+  flowFloorCfs     Float?
   active           Boolean  @default(true)
   createdAt        DateTime @default(now())
 

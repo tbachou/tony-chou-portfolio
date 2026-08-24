@@ -72,6 +72,10 @@ export async function scorablePredictions(
   `);
 }
 
+export type FloorStore = Pick<PrismaClient, '$queryRaw'> & {
+  gauge: Pick<PrismaClient['gauge'], 'update'>;
+};
+
 /**
  * The flow the percentage error divides by when the reading itself is tiny.
  *
@@ -79,24 +83,31 @@ export async function scorablePredictions(
  * can approach zero in a dry September, where a two cubic foot miss would
  * read as a two hundred percent error and drown every real result around it.
  * The parent spec sets the floor at the 5th percentile of the gauge's
- * historical flow.
+ * historical flow, and calls it a constant.
  *
- * Read from the store rather than pinned as a literal, because the number
- * cannot be written down before the backfill exists. It is computed once per
- * run rather than per score, and it moves only as the record grows.
+ * So it behaves like one. The first run derives it from the store and freezes
+ * it on the gauge; every run after reads that value. Recomputing it each time
+ * would have been simpler and quietly wrong: a score written today and its
+ * replacement written in December, after a revision changed the truth under
+ * it, would divide by different numbers, and neither row would record which.
+ * The append only record is supposed to make a score explainable forever, and
+ * a moving denominator takes that away.
  *
- * Every revision counts, not the as of reconstruction: this is a rough floor
- * on the scale of the river, and the extra rows a revision adds cannot shift
- * a percentile of a hundred thousand readings anywhere that matters.
+ * Every revision counts toward the percentile, not the as of reconstruction:
+ * this is a rough floor on the scale of the river, and the extra rows a
+ * revision adds cannot shift a percentile of a hundred thousand readings
+ * anywhere that matters.
  */
 export async function flowFloorCfs(
-  prisma: ScoreReader,
-  gaugeId: string,
+  prisma: FloorStore,
+  gauge: { id: string; flowFloorCfs: number | null },
 ): Promise<number> {
+  if (gauge.flowFloorCfs !== null) return gauge.flowFloorCfs;
+
   const rows = await prisma.$queryRaw<{ floor: number | null }[]>(Prisma.sql`
     SELECT percentile_cont(0.05) WITHIN GROUP (ORDER BY "valueCfs") AS floor
     FROM "observations"
-    WHERE "gaugeId" = ${gaugeId}
+    WHERE "gaugeId" = ${gauge.id}
   `);
 
   const floor = rows[0]?.floor ?? null;
@@ -108,6 +119,11 @@ export async function flowFloorCfs(
       'cannot derive the flow floor: the store holds no positive flow history',
     );
   }
+
+  await prisma.gauge.update({
+    where: { id: gauge.id },
+    data: { flowFloorCfs: floor },
+  });
 
   return floor;
 }
