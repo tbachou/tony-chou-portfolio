@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prebuild": "npm run build --workspace=@portfolio/shared"
+    "prebuild": "npm run build --workspace=@portfolio/shared && npm run build --workspace=@portfolio/streamflow"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
