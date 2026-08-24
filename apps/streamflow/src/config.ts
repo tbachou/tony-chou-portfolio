@@ -65,3 +65,35 @@ export const RESCAN_ROLLING_DAYS = 90;
  * between two of them is cheaper to fetch than to skip.
  */
 export const RESCAN_MERGE_GAP_HOURS = 24;
+
+/**
+ * The nominal coverage every interval claims. Stored on each Prediction row
+ * rather than assumed, so a later change of policy cannot silently
+ * reinterpret every prediction already made.
+ */
+export const INTERVAL_LEVEL = 0.8;
+
+/** The quantiles that give that nominal 0.80 band. */
+export const INTERVAL_QUANTILE_LOW = 0.1;
+export const INTERVAL_QUANTILE_HIGH = 0.9;
+
+/**
+ * The fewest past errors a bucket needs before its quantiles may stand for a
+ * distribution, for the regime conditioned bucket and the pooled one alike.
+ * Inherited from the parent spec. All three regimes clear it comfortably on
+ * the backfilled record: 2,731 baseflow, 518 rising, 291 peak.
+ */
+export const MIN_BUCKET_ERRORS = 30;
+
+/**
+ * The placeholder band, a third of the central estimate to triple it, used
+ * when neither bucket has enough history.
+ *
+ * Its one job is never to imply more confidence than exists. Measured
+ * persistence error at 24 hours has a 90th percentile of 56 percent and a
+ * 99th of roughly 150 percent, so half to double would be about the real
+ * interval on a calm day and far too tight in a storm, which is exactly when
+ * an unseeded interval is most likely to be wrong. A third to triple sits
+ * outside anything observed, so it reads as "we do not know yet".
+ */
+export const PLACEHOLDER_BAND_FACTOR = 3;
