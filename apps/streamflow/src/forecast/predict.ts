@@ -160,7 +160,7 @@ export interface PredictResult {
  * place. This is where AC-7 actually holds, since a baseline that exists only
  * as a function is not something a prediction can point at.
  */
-async function ensureBaselines(prisma: PrismaClient) {
+export async function ensureBaselines(prisma: PrismaClient) {
   const rows = [];
   for (const model of BASELINE_MODELS) {
     rows.push(
