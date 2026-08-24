@@ -52,15 +52,40 @@ describe('flowFloorCfs', () => {
     ).resolves.toBe(11);
   });
 
-  it('refuses rather than dividing by something meaningless', async () => {
+  it('refuses to derive a floor that is not positive', async () => {
     for (const percentile of [null, 0, -3]) {
       const { prisma, update } = store(percentile);
 
       await expect(
         flowFloorCfs(prisma, { id: 'gauge-darby', flowFloorCfs: null }),
-      ).rejects.toThrow('no positive flow history');
+      ).rejects.toThrow('derived from the store');
       // Nothing is frozen on the way out, so a later run can still derive it.
       expect(update).not.toHaveBeenCalled();
     }
+  });
+
+  it('refuses a frozen floor that is not positive, rather than trusting it', async () => {
+    // The column is meant to be hand correctable, and a hand can type a zero.
+    // A zero floor makes the percentage error divide by the reading itself,
+    // and this gauge can genuinely read zero, so the result would be NaN in a
+    // column that accepts it and a blanked chart wherever it is averaged.
+    for (const frozen of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const { prisma, $queryRaw } = store(20);
+
+      await expect(
+        flowFloorCfs(prisma, { id: 'gauge-darby', flowFloorCfs: frozen }),
+      ).rejects.toThrow('frozen on the gauge');
+      // It fails rather than quietly re-deriving, so the bad value is seen
+      // and corrected instead of being papered over on every run.
+      expect($queryRaw).not.toHaveBeenCalled();
+    }
+  });
+
+  it('names the value and the source, so an operator knows which path failed', async () => {
+    const { prisma } = store(20);
+
+    await expect(
+      flowFloorCfs(prisma, { id: 'gauge-darby', flowFloorCfs: 0 }),
+    ).rejects.toThrow('unusable flow floor (0) frozen on the gauge');
   });
 });
