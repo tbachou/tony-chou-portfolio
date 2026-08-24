@@ -27,6 +27,27 @@ describe('sanitizeError', () => {
     expect(message).not.toContain('secret');
   });
 
+  it('strips a bare api key with no url around it', () => {
+    const message = sanitizeError(
+      new Error('authentication failed: token sk_FAKEKEY1234567 rejected'),
+    );
+
+    expect(message).not.toContain('sk_FAKEKEY1234567');
+    expect(message).toContain('[redacted key]');
+  });
+
+  it('strips credentials quoted without a scheme', () => {
+    const message = sanitizeError(
+      new Error('auth failed for abc123:sk_FAKEKEY1234567 at pooled.db.prisma.io'),
+    );
+
+    expect(message).not.toContain('sk_FAKEKEY1234567');
+  });
+
+  it('leaves ordinary words that merely start with sk alone', () => {
+    expect(sanitizeError(new Error('skipped 4 chunks'))).toBe('skipped 4 chunks');
+  });
+
   it('caps a very long message', () => {
     const message = sanitizeError(new Error('x'.repeat(2000)));
 
