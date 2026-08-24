@@ -17,7 +17,13 @@ export { reconstructAsOf } from './asof/as-of';
 // rows that seed the intervals. An endpoint writing its own where clause on
 // predictions would fail in the flattering direction, which is why the
 // interval maths and the bucket query stay off this surface entirely.
-export { publicPredictions } from './forecast/predictions.repository';
+export {
+  publicPredictions,
+  publicScoredErrors,
+} from './forecast/predictions.repository';
 export type { PublicPredictionFilter } from './forecast/predictions.repository';
+export { rollingSkill, SKILL_WINDOW_DAYS } from './forecast/skill';
+export type { ScoredError, SkillPoint, SkillSeries } from './forecast/skill';
+export { HORIZON_HOURS, SKILL_DEFAULT_WINDOW_DAYS } from './config';
 export { GAUGE, DISPLAY_TIMEZONE } from './config';
 export type { Qualifier, Reading, StoredObservation } from './types';
