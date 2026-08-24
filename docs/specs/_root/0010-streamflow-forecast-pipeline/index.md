@@ -7,6 +7,12 @@
 
 A live forecasting system that predicts river flow at one gauge on Big Darby Creek 24, 48 and 72 hours ahead, and publicly scores every prediction it has ever made against what actually happened. It exists to teach: Tony is a strong TypeScript engineer with little background in machine learning or time series work, so the build order follows concepts rather than pure engineering efficiency, and the reasoning in [rationale.md](rationale.md) explains the tradeoffs rather than only recording them. The central engineering idea is that every fact is stored with two timestamps, one for when it was true and one for when we learned it, which is the only way to prove the model was never trained on information it could not have had.
 
+## Structure
+
+Child specs, added when the decision they settle is reached:
+
+1. [0010-prediction-intervals.md](0010-prediction-intervals.md): how a prediction's lower and upper bounds are derived, which regime conditions them, and what happens before enough scored history exists. Settles the parts of AC-20 and AC-21 this index leaves open.
+
 ## Requirements
 
 **User stories**
