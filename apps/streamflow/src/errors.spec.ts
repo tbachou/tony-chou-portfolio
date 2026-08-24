@@ -48,6 +48,27 @@ describe('sanitizeError', () => {
     expect(sanitizeError(new Error('skipped 4 chunks'))).toBe('skipped 4 chunks');
   });
 
+  it('leaves a word that merely contains sk_ alone', () => {
+    // The word boundary earns its place here: without it this would be eaten.
+    expect(sanitizeError(new Error('risk_management threshold'))).toBe(
+      'risk_management threshold',
+    );
+  });
+
+  it('is case insensitive about the key prefix', () => {
+    expect(
+      sanitizeError(new Error('TOKEN SK_FAKEKEY1234567890 rejected')),
+    ).not.toContain('SK_FAKEKEY1234567890');
+  });
+
+  it('redacts a key sitting past the length cap', () => {
+    const message = sanitizeError(
+      new Error(`${'x'.repeat(1200)} sk_FAKEKEY1234567890`),
+    );
+
+    expect(message).not.toContain('sk_FAKEKEY1234567890');
+  });
+
   it('caps a very long message', () => {
     const message = sanitizeError(new Error('x'.repeat(2000)));
 
