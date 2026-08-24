@@ -61,3 +61,29 @@ export async function latestStoredValidTime(
 
   return newest?.validTime ?? null;
 }
+
+/**
+ * The `validTime`s whose newest row is still provisional, at any age.
+ *
+ * These are the readings USGS may yet revise. They matter because the ordinary
+ * ingest window only ever covers the live edge, so an approval landing on a
+ * reading from months ago would never be seen without asking for it directly.
+ */
+export async function provisionalValidTimes(
+  prisma: ObservationReader,
+  gaugeId: string,
+): Promise<Date[]> {
+  const rows = await prisma.$queryRaw<{ validTime: Date }[]>(Prisma.sql`
+    SELECT "validTime" FROM (
+      SELECT DISTINCT ON ("gaugeId", "validTime")
+        "validTime", "qualifier"
+      FROM "observations"
+      WHERE "gaugeId" = ${gaugeId}
+      ORDER BY "gaugeId", "validTime", "recordedAt" DESC
+    ) latest
+    WHERE "qualifier" = 'PROVISIONAL'
+    ORDER BY "validTime"
+  `);
+
+  return rows.map((row) => row.validTime);
+}
