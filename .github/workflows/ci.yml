@@ -40,6 +40,9 @@ jobs:
       - name: Typecheck web
         run: npx tsc --noEmit -p apps/web/tsconfig.json
 
+      - name: Typecheck streamflow
+        run: npx tsc --noEmit -p apps/streamflow/tsconfig.json
+
       - name: Typecheck feedback classifier Lambda
         run: npx tsc --noEmit -p infra/lambda/feedback-classifier/tsconfig.json
 
@@ -59,3 +62,9 @@ jobs:
 
       - name: Feedback classifier Lambda tests
         run: npm test --workspace=infra/lambda/feedback-classifier -- --ci
+
+      # Spec 0010's pipeline. Fully mocked like the rest: no database, no
+      # network. The checks that need a real store live in
+      # apps/streamflow/scripts and are run by hand against a throwaway.
+      - name: Streamflow pipeline tests
+        run: npm test --workspace=apps/streamflow -- --ci
