@@ -1,0 +1,86 @@
+# Spec 0010's scheduled pipeline: pull new USGS readings, then re-poll the
+# stretches USGS may still revise.
+#
+# This workflow holds the only write credential the streamflow database has.
+# Nothing else writes to it, so the hardening here is not ceremony:
+#
+#   - schedule and workflow_dispatch only. No pull_request_target, no
+#     workflow_run, no issue_comment, so nothing an outside contributor can
+#     trigger reaches this token.
+#   - no ${{ github.event.* }} anywhere in a run block, so there is no
+#     injection sink to begin with.
+#   - the secret is scoped to the two steps that need it, not to the job, so
+#     it is out of scope during checkout and dependency install.
+#   - actions pinned to commit SHAs. Dependabot's github-actions entry keeps
+#     them current (monthly, grouped).
+#
+# The jobs print counts and status only. Connection strings are stripped from
+# any error text before it is logged or stored, in src/errors.ts, because run
+# history is meant to be publishable.
+name: Streamflow pipeline
+
+on:
+  schedule:
+    # 00, 06, 12 and 18 UTC, the cadence spec 0010 sets for the pipeline.
+    # GitHub runs scheduled workflows late under load and drops them entirely
+    # after 60 days of repository inactivity. Both are survivable: the ingest
+    # window is anchored to the newest stored reading rather than to the
+    # schedule, so a late or missed run asks for the whole gap (AC-6).
+    - cron: '0 0,6,12,18 * * *'
+  workflow_dispatch:
+
+# Deny by default. The job reads the repository and nothing else; it writes
+# only to the database, which is not a GITHUB_TOKEN scope.
+permissions: {}
+
+concurrency:
+  # Two ingests racing would duplicate every request and could collide on the
+  # unique key when their wall clocks agree to the millisecond. Queue instead.
+  group: streamflow-pipeline
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # apps/api's prisma.config.ts resolves env("DATABASE_URL") at load time
+      # and throws when it is missing, and its postinstall runs `prisma
+      # generate` on every `npm ci`. This dummy value only has to exist;
+      # generate never connects. It is deliberately not a secret and not a
+      # real database.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # The job never uses git after this. Leaving a token on disk while
+          # running npm lifecycle scripts is a gift to a bad dependency.
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Ingest USGS observations
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run ingest --workspace=apps/streamflow
+
+      - name: Trailing rescan
+        # Runs even when the ingest step failed. The two jobs are independent,
+        # and this is the time sensitive one: a provisional reading that USGS
+        # approves between runs is only ever observable while it is happening,
+        # because the approval carries no timestamp of its own. The job still
+        # reports failure overall, and each job records its own outcome in
+        # pipeline_runs regardless.
+        if: ${{ !cancelled() }}
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run rescan --workspace=apps/streamflow
