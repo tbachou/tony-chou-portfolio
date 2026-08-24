@@ -16,6 +16,12 @@ export const GAUGE = {
   timezone: 'America/New_York',
 } as const;
 
+/**
+ * Where the dashboard renders times. Stored values are always UTC (AC-18);
+ * this is the only place a reader ever sees a local clock.
+ */
+export const DISPLAY_TIMEZONE = 'America/New_York';
+
 /** USGS parameter code for discharge in cubic feet per second. */
 export const DISCHARGE_PARAMETER_CODE = '00060';
 
