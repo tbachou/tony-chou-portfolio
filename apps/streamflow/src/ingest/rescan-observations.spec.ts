@@ -119,9 +119,11 @@ describe('rescanObservations', () => {
       },
     });
 
-    // The ordinary window would start two hours ago. This one starts in
-    // November, which is the entire point of the job.
-    expect(asked[0].start.toISOString()).toBe('2025-11-26T00:00:00.000Z');
+    // The ordinary window would start two hours ago. This one reaches back to
+    // the provisional reading itself, which is the entire point of the job.
+    const stranded = new Date('2025-11-26T00:00:00Z');
+    expect(asked[0].start.getTime()).toBeLessThanOrEqual(stranded.getTime());
+    expect(asked[0].end.getTime()).toBeGreaterThanOrEqual(stranded.getTime());
   });
 
   it('writes a new row when a provisional reading has been approved', async () => {

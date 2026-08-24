@@ -116,8 +116,14 @@ describe('spansForRescan', () => {
     const spans = spansForRescan(provisional, NOW, 90, 24 * 400);
 
     expect(shape(spans)).toEqual([
-      ['2025-11-26T00:00:00.000Z', '2026-08-23T18:00:00.000Z'],
+      ['2025-11-25T23:45:00.000Z', '2026-08-23T18:00:00.000Z'],
     ]);
+    // The span reaches at or before the oldest provisional reading, which is
+    // the property that matters; the quarter hour of padding is how the span
+    // is made wide enough to be requested at all.
+    expect(spans[0].start.getTime()).toBeLessThanOrEqual(
+      provisional[0].getTime(),
+    );
   });
 
   it('gives a stranded old reading its own small span', () => {
@@ -132,14 +138,37 @@ describe('spansForRescan', () => {
     const spans = spansForRescan(provisional, NOW, 90, 24);
 
     expect(spans).toHaveLength(2);
+    // Wide enough to actually be requested. A zero width span makes no HTTP
+    // request at all, which would skip the reading silently.
+    expect(spans[0].end.getTime()).toBeGreaterThan(spans[0].start.getTime());
     expect(shape(spans)[0]).toEqual([
-      '2024-02-01T00:00:00.000Z',
-      '2024-02-01T00:00:00.000Z',
+      '2024-01-31T23:45:00.000Z',
+      '2024-02-01T00:15:00.000Z',
     ]);
     expect(shape(spans)[1]).toEqual([
       '2026-05-25T18:00:00.000Z',
       '2026-08-23T18:00:00.000Z',
     ]);
+  });
+
+  it('never produces a span too narrow to be requested', () => {
+    // The invariant behind AC-19: every provisional reading must actually be
+    // asked for, however isolated. Zero width spans are the way that fails.
+    const awkward = [
+      [new Date('2024-02-01T00:00:00Z')],
+      [new Date('2024-02-01T00:00:00Z'), new Date('2025-06-01T00:00:00Z')],
+      [
+        new Date('2024-02-01T00:00:00Z'),
+        new Date('2024-02-01T00:15:00Z'),
+        new Date('2025-06-01T00:00:00Z'),
+      ],
+    ];
+
+    for (const provisional of awkward) {
+      for (const s of spansForRescan(provisional, NOW, 90, 24)) {
+        expect(s.end.getTime()).toBeGreaterThan(s.start.getTime());
+      }
+    }
   });
 
   it('folds recent provisional readings into the rolling window', () => {
@@ -160,8 +189,8 @@ describe('spansForRescan', () => {
 
     expect(spans).toHaveLength(2);
     expect(shape(spans)[0]).toEqual([
-      '2024-02-01T00:00:00.000Z',
-      '2024-02-01T18:00:00.000Z',
+      '2024-01-31T23:45:00.000Z',
+      '2024-02-01T18:15:00.000Z',
     ]);
   });
 });
