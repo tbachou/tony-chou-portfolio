@@ -306,3 +306,82 @@ export const setPhotoActiveSchema = z
   .strict();
 
 export type SetPhotoActive = z.infer<typeof setPhotoActiveSchema>;
+
+// ---------------------------------------------------------------------
+// Streamflow forecast pipeline (spec 0010)
+// ---------------------------------------------------------------------
+
+/**
+ * Longest window the observations endpoint will serve, in days. Spec 0010
+ * sets a hard maximum of 365 days; past that the endpoint answers 422 rather
+ * than reading a year and a half of rows to draw a line nobody can see.
+ */
+export const OBSERVATIONS_MAX_WINDOW_DAYS = 365;
+
+/** What the hydrograph asks for by default. */
+export const OBSERVATIONS_DEFAULT_WINDOW_DAYS = 30;
+
+const isoDateTime = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: 'must be an ISO 8601 date time',
+  });
+
+/**
+ * The hydrograph query.
+ *
+ * `from` and `to` bound `validTime`, which is when the reading was true at the
+ * gauge. `asOf` bounds `recordedAt`, which is when this pipeline learned it,
+ * and it is what lets the page show the store as it stood at a past moment
+ * rather than as it stands now. Leaving `asOf` out means now.
+ *
+ * Both axes are separate on purpose: `from`/`to` move along the river's
+ * history, `asOf` moves along ours.
+ */
+export const observationsQuerySchema = z
+  .object({
+    from: isoDateTime,
+    to: isoDateTime,
+    asOf: isoDateTime.optional(),
+  })
+  .strict()
+  .refine((query) => Date.parse(query.from) <= Date.parse(query.to), {
+    message: 'from must be at or before to',
+    path: ['from'],
+  })
+  .refine(
+    (query) =>
+      Date.parse(query.to) - Date.parse(query.from) <=
+      OBSERVATIONS_MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    {
+      message: `window must be ${OBSERVATIONS_MAX_WINDOW_DAYS} days or fewer`,
+      path: ['to'],
+    },
+  );
+
+export type ObservationsQuery = z.infer<typeof observationsQuerySchema>;
+
+/** One point on the hydrograph, as the endpoint returns it. */
+export interface ObservationPoint {
+  /** When the reading was true at the gauge, ISO 8601 in UTC. */
+  validTime: string;
+  /** When this pipeline learned it, ISO 8601 in UTC. */
+  recordedAt: string;
+  valueCfs: number;
+  qualifier: 'PROVISIONAL' | 'APPROVED';
+}
+
+export interface ObservationsResponse {
+  gauge: {
+    usgsSiteId: string;
+    name: string;
+    lat: number;
+    lon: number;
+    timezone: string;
+  };
+  /** The instant the store was read as of, echoed back so the page can show it. */
+  asOf: string;
+  from: string;
+  to: string;
+  points: ObservationPoint[];
+}
