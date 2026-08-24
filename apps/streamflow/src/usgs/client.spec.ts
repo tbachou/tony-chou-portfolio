@@ -1,4 +1,4 @@
-import { fetchInstantaneousValues } from './client';
+import { fetchInstantaneousValues, toSiteLocalTimestamp } from './client';
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return {
@@ -67,8 +67,29 @@ describe('fetchInstantaneousValues', () => {
     expect(url.searchParams.get('format')).toBe('json');
     expect(url.searchParams.get('sites')).toBe('03230500');
     expect(url.searchParams.get('parameterCd')).toBe('00060');
-    expect(url.searchParams.get('startDT')).toBe('2026-08-23T12:00:00.000Z');
-    expect(url.searchParams.get('endDT')).toBe('2026-08-23T18:00:00.000Z');
+    // Site local wall clock, no timezone marker: 12:00Z is 08:00 in EDT.
+    expect(url.searchParams.get('startDT')).toBe('2026-08-23T08:00:00');
+    expect(url.searchParams.get('endDT')).toBe('2026-08-23T14:00:00');
+  });
+
+  it('sends no timezone designator, which is what USGS mishandles', async () => {
+    const { impl, urls } = recordingFetch();
+
+    await fetchInstantaneousValues(
+      '03230500',
+      {
+        start: new Date('2025-11-26T14:15:00Z'),
+        end: new Date('2025-11-26T14:45:00Z'),
+      },
+      impl,
+    );
+
+    const url = new URL(urls[0]);
+    for (const key of ['startDT', 'endDT']) {
+      const value = url.searchParams.get(key) as string;
+      expect(value).not.toMatch(/Z$/);
+      expect(value).not.toMatch(/[+-]\d{2}:\d{2}$/);
+    }
   });
 
   it('returns the parsed readings', async () => {
@@ -102,12 +123,15 @@ describe('fetchInstantaneousValues', () => {
     const spans = spansOf(urls);
 
     expect(spans).toHaveLength(4);
-    expect(spans[0][0]).toBe('2024-01-01T00:00:00.000Z');
+    // January is EST, so 00:00Z on the 1st is 19:00 on the previous evening.
+    expect(spans[0][0]).toBe('2023-12-31T19:00:00');
     // Each chunk begins where the previous ended: no gap, no overlap.
     for (let index = 1; index < spans.length; index += 1) {
       expect(spans[index][0]).toBe(spans[index - 1][1]);
     }
-    expect(spans[spans.length - 1][1]).toBe('2024-04-10T00:00:00.000Z');
+    // April is EDT, a different offset from the January chunk above. Using the
+    // date's own offset rather than today's is the whole point of the fix.
+    expect(spans[spans.length - 1][1]).toBe('2024-04-09T20:00:00');
   });
 
   it('concatenates the readings from every chunk', async () => {
@@ -161,5 +185,28 @@ describe('fetchInstantaneousValues', () => {
         impl,
       ),
     ).rejects.toThrow(/503/);
+  });
+
+  it('uses the offset in force on the date, not the one in force today', () => {
+    // The bug this guards: USGS applies the site's current daylight saving
+    // offset to any timestamp carrying a zone, so a winter window requested
+    // from a summer machine came back an hour late. Verified against the live
+    // service on 2026-08-24.
+    const zone = 'America/New_York';
+
+    // EST, UTC-5
+    expect(toSiteLocalTimestamp(new Date('2025-11-26T14:15:00Z'), zone)).toBe(
+      '2025-11-26T09:15:00',
+    );
+    // EDT, UTC-4
+    expect(toSiteLocalTimestamp(new Date('2026-07-01T14:15:00Z'), zone)).toBe(
+      '2026-07-01T10:15:00',
+    );
+  });
+
+  it('renders midnight as 00, never 24', () => {
+    expect(
+      toSiteLocalTimestamp(new Date('2026-01-01T05:00:00Z'), 'America/New_York'),
+    ).toBe('2026-01-01T00:00:00');
   });
 });
