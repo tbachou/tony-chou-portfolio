@@ -3,7 +3,6 @@ import {
   type ObservationsResponse,
 } from '@portfolio/shared';
 import {
-  createPrismaClient,
   observationsAsOf,
   publicPredictions,
   publicScoredErrors,
@@ -19,6 +18,8 @@ import { notFound } from 'next/navigation';
 
 import { SkipLink } from '@/components/SkipLink';
 import { TerminalWindow } from '@/components/TerminalWindow';
+
+import { streamflowDb } from '@/lib/streamflow-db';
 
 import { HydrographPanel } from './HydrographPanel';
 import { SkillChart } from './SkillChart';
@@ -92,7 +93,7 @@ function relativeAge(from: Date, to: Date): string {
 }
 
 export default async function StreamflowPage() {
-  const prisma = createPrismaClient();
+  const prisma = streamflowDb();
 
   const gauge = await prisma.gauge.findFirst({ where: { active: true } });
   if (!gauge) notFound();
@@ -127,7 +128,11 @@ export default async function StreamflowPage() {
       orderBy: { validTime: 'desc' },
       select: { validTime: true, valueCfs: true, qualifier: true },
     }),
+    // Ingest jobs only. Scoring runs hourly and ingestion every six hours, so
+    // the newest run of any kind is usually a scoring pass, which would sit
+    // under a paragraph describing how readings arrive and contradict it.
     prisma.pipelineRun.findFirst({
+      where: { job: { in: ['USGS_INGEST', 'USGS_RESCAN'] } },
       orderBy: { startedAt: 'desc' },
       select: { job: true, status: true, startedAt: true, rowsWritten: true },
     }),
