@@ -5,7 +5,13 @@ import {
 import {
   createPrismaClient,
   observationsAsOf,
+  publicPredictions,
+  publicScoredErrors,
+  rollingSkill,
   DISPLAY_TIMEZONE,
+  HORIZON_HOURS,
+  SKILL_DEFAULT_WINDOW_DAYS,
+  SKILL_WINDOW_DAYS,
 } from '@portfolio/streamflow';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -15,6 +21,7 @@ import { SkipLink } from '@/components/SkipLink';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
 import { HydrographPanel } from './HydrographPanel';
+import { SkillChart } from './SkillChart';
 
 const title = 'Streamflow — a bitemporal forecast pipeline';
 const description =
@@ -93,7 +100,21 @@ export default async function StreamflowPage() {
   const now = new Date();
   const from = new Date(now.getTime() - OBSERVATIONS_DEFAULT_WINDOW_DAYS * DAY_MS);
 
-  const [rows, total, oldestRecord, newestReading, lastRun] = await Promise.all([
+  const skillFrom = new Date(now.getTime() - SKILL_DEFAULT_WINDOW_DAYS * DAY_MS);
+  // Two days back is enough to hold the most recent six hourly slot even if a
+  // scheduled run was skipped, without reading the whole prediction history to
+  // show six rows.
+  const forecastsFrom = new Date(now.getTime() - 2 * DAY_MS);
+
+  const [
+    rows,
+    total,
+    oldestRecord,
+    newestReading,
+    lastRun,
+    recentForecasts,
+    scoredErrors,
+  ] = await Promise.all([
     observationsAsOf(prisma, gauge.id, from, now, now),
     prisma.observation.count({ where: { gaugeId: gauge.id } }),
     prisma.observation.findFirst({
@@ -110,7 +131,32 @@ export default async function StreamflowPage() {
       orderBy: { startedAt: 'desc' },
       select: { job: true, status: true, startedAt: true, rowsWritten: true },
     }),
+    publicPredictions(prisma, { gaugeId: gauge.id, issuedFrom: forecastsFrom }),
+    publicScoredErrors(prisma, gauge.id, skillFrom, now),
   ]);
+
+  // The newest claim per forecaster and horizon. publicPredictions returns
+  // newest first, so the first of each pair seen is the current one.
+  const current = new Map<string, (typeof recentForecasts)[number]>();
+  for (const forecast of recentForecasts) {
+    const at = `${forecast.modelVersion.name} ${forecast.horizonHours}`;
+    if (!current.has(at)) current.set(at, forecast);
+  }
+  const currentForecasts = [...current.values()].sort(
+    (a, b) =>
+      a.horizonHours - b.horizonHours ||
+      a.modelVersion.name.localeCompare(b.modelVersion.name),
+  );
+
+  const skill = rollingSkill(scoredErrors, skillFrom, now).map((series) => ({
+    modelName: series.modelName,
+    horizonHours: series.horizonHours,
+    points: series.points.map((point) => ({
+      at: point.at.toISOString(),
+      meanPctError: point.meanPctError,
+      sampleSize: point.sampleSize,
+    })),
+  }));
 
   const initial: ObservationsResponse = {
     gauge: {
@@ -219,6 +265,131 @@ export default async function StreamflowPage() {
               earliestRecordedAt={(
                 oldestRecord?.recordedAt ?? from
               ).toISOString()}
+            />
+          </div>
+        </TerminalWindow>
+
+        <TerminalWindow
+          path="tonychou@portfolio:~/streamflow/forecast$"
+          className="mt-8"
+        >
+          <p className="text-term-sm text-term-muted">
+            <span aria-hidden="true">$ </span>
+            forecast --all-horizons
+          </p>
+          <h2 className="mt-4 text-term-lg font-bold text-term-ink">
+            What each forecaster expects
+          </h2>
+          <p className="mt-3 max-w-2xl text-term-sm text-term-body">
+            Neither of these is a model. Persistence says the river will read
+            what it reads now; climatology says it will do what it usually does
+            this week of the year. They are here because a forecast is only
+            worth what it beats, and both are harder to beat than they sound.
+          </p>
+
+          {currentForecasts.length === 0 ? (
+            <p className="mt-6 border border-term-border px-4 py-10 text-center text-term-sm text-term-muted">
+              No forecast has been issued yet. The pipeline issues one per
+              forecaster per horizon every six hours.
+            </p>
+          ) : (
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full min-w-[34rem] border-collapse text-term-sm">
+                <caption className="sr-only">
+                  The most recent forecast from each baseline at each horizon
+                </caption>
+                <thead>
+                  <tr className="border-b border-term-border text-left text-term-xs text-term-muted">
+                    <th scope="col" className="py-2 pr-4 font-normal">
+                      forecaster
+                    </th>
+                    <th scope="col" className="py-2 pr-4 font-normal">
+                      horizon
+                    </th>
+                    <th scope="col" className="py-2 pr-4 font-normal">
+                      for
+                    </th>
+                    <th scope="col" className="py-2 pr-4 text-right font-normal">
+                      cfs
+                    </th>
+                    <th scope="col" className="py-2 text-right font-normal">
+                      range
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentForecasts.map((forecast) => (
+                    <tr
+                      key={forecast.id}
+                      className="border-b border-term-border/50"
+                    >
+                      <td className="py-2 pr-4 text-term-body">
+                        {forecast.modelVersion.name}
+                      </td>
+                      <td className="py-2 pr-4 tabular-nums text-term-body">
+                        {forecast.horizonHours} h
+                      </td>
+                      <td className="py-2 pr-4 tabular-nums text-term-muted">
+                        {formatInstant(forecast.targetTime)}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-term-ink">
+                        {Math.round(forecast.centralCfs).toLocaleString()}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-term-muted">
+                        {Math.round(forecast.lowerCfs).toLocaleString()} to{' '}
+                        {Math.round(forecast.upperCfs).toLocaleString()}
+                        {!forecast.intervalSeeded && (
+                          <span
+                            className="ml-2 text-term-xs"
+                            title="Wide placeholder range: not enough scored history in this regime yet"
+                          >
+                            *
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {currentForecasts.some((forecast) => !forecast.intervalSeeded) && (
+            <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
+              <span aria-hidden="true">* </span>
+              The range is a deliberately wide placeholder. A real range is the
+              spread of that forecaster&rsquo;s own past errors in the same
+              river conditions, and until enough of those exist the honest
+              answer is a band too wide to be useful rather than a narrow one
+              that is not earned.
+            </p>
+          )}
+        </TerminalWindow>
+
+        <TerminalWindow
+          path="tonychou@portfolio:~/streamflow/skill$"
+          className="mt-8"
+        >
+          <p className="text-term-sm text-term-muted">
+            <span aria-hidden="true">$ </span>
+            skill --window {SKILL_DEFAULT_WINDOW_DAYS}d
+          </p>
+          <h2 className="mt-4 text-term-lg font-bold text-term-ink">
+            How wrong they have been
+          </h2>
+          <p className="mt-3 max-w-2xl text-term-sm text-term-body">
+            Every prediction is scored once its target time passes, against
+            whichever revision of the reading is current. Nothing is excluded
+            for looking bad: the stretches where a forecaster loses are the
+            reason this chart is here at all.
+          </p>
+
+          <div className="mt-6">
+            <SkillChart
+              series={skill}
+              horizons={[...HORIZON_HOURS]}
+              windowDays={SKILL_WINDOW_DAYS}
+              timeZone={gauge.timezone}
             />
           </div>
         </TerminalWindow>
