@@ -1,5 +1,6 @@
 import { spansForRescan } from './rescan-window';
-import { fetchInstantaneousValues } from '../usgs/client';
+import { fetchInstantaneousValues, toSiteLocalTimestamp } from '../usgs/client';
+import { GAUGE } from '../config';
 
 /**
  * Guards the seam between deciding what to re-poll and actually re-polling it.
@@ -73,10 +74,16 @@ describe('every span the rescan asks for is actually requested', () => {
     await fetchInstantaneousValues('03230500', span, impl);
 
     const requested = new URL(urls[0]);
-    const from = new Date(requested.searchParams.get('startDT') as string);
-    const to = new Date(requested.searchParams.get('endDT') as string);
+    const from = requested.searchParams.get('startDT') as string;
+    const to = requested.searchParams.get('endDT') as string;
+    const target = toSiteLocalTimestamp(stranded, GAUGE.timezone);
 
-    expect(from.getTime()).toBeLessThanOrEqual(stranded.getTime());
-    expect(to.getTime()).toBeGreaterThanOrEqual(stranded.getTime());
+    // Compared as text, not by parsing back into instants. These timestamps
+    // carry no timezone, so `new Date` would read them in whatever zone the
+    // runtime happens to be in: correct on a machine set to the gauge's zone,
+    // five hours out on a UTC CI runner. The format is fixed width and
+    // ordered, so string comparison says exactly what is meant here.
+    expect(from <= target).toBe(true);
+    expect(to >= target).toBe(true);
   });
 });
