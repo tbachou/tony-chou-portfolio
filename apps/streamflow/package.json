@@ -18,7 +18,8 @@
     "rescan": "tsx src/ingest/rescan-observations.ts",
     "predict": "tsx src/forecast/predict.ts",
     "score": "tsx src/forecast/score.ts",
-    "hindcast": "tsx src/forecast/hindcast.ts"
+    "hindcast": "tsx src/forecast/hindcast.ts",
+    "migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
