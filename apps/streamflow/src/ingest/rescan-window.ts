@@ -1,4 +1,8 @@
-import { RESCAN_MERGE_GAP_HOURS, RESCAN_ROLLING_DAYS } from '../config';
+import {
+  EXPECTED_INTERVAL_MINUTES,
+  RESCAN_MERGE_GAP_HOURS,
+  RESCAN_ROLLING_DAYS,
+} from '../config';
 import type { IngestWindow } from './window';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -65,8 +69,19 @@ export function spansForRescan(
     end: new Date(now),
   };
 
+  // Padded by one reading interval either side rather than collapsed onto the
+  // instant itself. A zero width span is not a small request, it is no request
+  // at all: the client's chunker loops `while (start < end)` and produces
+  // nothing, so an isolated provisional reading would be skipped in silence,
+  // which is the exact case AC-19 calls out with "however old it is". The
+  // padding also keeps the reading strictly inside the span rather than on its
+  // boundary. rescan-reach.spec.ts holds this to the client's real behaviour.
+  const padMs = EXPECTED_INTERVAL_MINUTES * 60 * 1000;
   const provisionalSpans: IngestWindow[] = provisionalValidTimes
-    .map((at) => ({ start: new Date(at), end: new Date(at) }))
+    .map((at) => ({
+      start: new Date(at.getTime() - padMs),
+      end: new Date(at.getTime() + padMs),
+    }))
     .sort((a, b) => a.start.getTime() - b.start.getTime());
 
   return mergeSpans(
