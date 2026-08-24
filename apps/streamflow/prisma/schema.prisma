@@ -57,9 +57,13 @@ enum ModelKind {
   MODEL
 }
 
-/// What the river was doing when a prediction came true. Scores carry it so
-/// that calm weather accuracy can never flatter storm accuracy: an average
-/// over both says almost nothing, because the two are different problems.
+/// What the river was doing at one instant. Two tables carry it, meaning two
+/// different instants on purpose (spec 0010 child, prediction intervals):
+/// Prediction.issueRegime is the river when the forecast was made, which is
+/// all a forecaster can see; Score.regime is the river when it came true,
+/// which is what decides whether the forecast was any good. Intervals draw on
+/// the first, reporting splits by the second, and the gap between them is
+/// itself the forecasting problem.
 enum Regime {
   BASEFLOW
   RISING
@@ -67,17 +71,17 @@ enum Regime {
 }
 
 model Gauge {
-  id                String   @id @default(cuid())
-  usgsSiteId        String   @unique
-  name              String
-  lat               Float
-  lon               Float
-  drainageAreaSqMi  Float?
+  id               String   @id @default(cuid())
+  usgsSiteId       String   @unique
+  name             String
+  lat              Float
+  lon              Float
+  drainageAreaSqMi Float?
   /// IANA zone for this gauge, used to resolve calendar days for climatology.
   /// Stored values are always UTC regardless.
-  timezone          String
-  active            Boolean  @default(true)
-  createdAt         DateTime @default(now())
+  timezone         String
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
 
   observations Observation[]
   predictions  Prediction[]
@@ -88,9 +92,9 @@ model Gauge {
 /// Append only. Nothing in the codebase issues an update or delete against
 /// this table; a revised reading is a new row with a later recordedAt.
 model Observation {
-  id          String    @id @default(cuid())
+  id          String      @id @default(cuid())
   gaugeId     String
-  gauge       Gauge     @relation(fields: [gaugeId], references: [id])
+  gauge       Gauge       @relation(fields: [gaugeId], references: [id])
   /// When the reading was true at the gauge.
   validTime   DateTime
   /// When this pipeline learned it. USGS exposes no per value revision
@@ -134,31 +138,59 @@ model ModelVersion {
 /// ask what a forecaster knew when it spoke, and a prediction with only a
 /// target time cannot answer that.
 model Prediction {
-  id             String      @id @default(cuid())
-  gaugeId        String
-  gauge          Gauge       @relation(fields: [gaugeId], references: [id])
-  modelVersionId String
-  modelVersion   ModelVersion @relation(fields: [modelVersionId], references: [id])
-  issuedAt       DateTime
-  targetTime     DateTime
-  horizonHours   Int
-  centralCfs     Float
-  lowerCfs       Float
-  upperCfs       Float
+  id              String       @id @default(cuid())
+  gaugeId         String
+  gauge           Gauge        @relation(fields: [gaugeId], references: [id])
+  modelVersionId  String
+  modelVersion    ModelVersion @relation(fields: [modelVersionId], references: [id])
+  issuedAt        DateTime
+  targetTime      DateTime
+  horizonHours    Int
+  centralCfs      Float
+  lowerCfs        Float
+  upperCfs        Float
   /// The nominal coverage the bounds claim, 0.80 today. Stored per row rather
   /// than assumed, so a later change of policy cannot silently reinterpret
   /// every prediction already made.
-  intervalLevel  Float
-  /// False when the bounds are the documented placeholder rather than real
-  /// error quantiles, which happens until a model has enough scored history
-  /// for its horizon and regime (AC-20). Required so a wide early interval is
-  /// never mistaken for a confident one.
-  intervalSeeded Boolean     @default(true)
+  intervalLevel   Float
+  /// The river at issuedAt, written by the job that used it to choose the
+  /// interval bucket. Nullable because classifyRegime legitimately refuses
+  /// when there is too little history to judge, and a forced guess of
+  /// BASEFLOW would file storm errors under the easy regime.
+  issueRegime     Regime?
+  /// True only when the bounds came from the regime conditioned bucket. It
+  /// records whether the interval meets AC-21's conditioning requirement, not
+  /// merely whether 30 errors existed: pooled quantiles are real data but are
+  /// not conditioned, so they are false here too. Defaults to false so an
+  /// insert that forgets it cannot claim conditioning it does not have.
+  intervalSeeded  Boolean      @default(false)
+  /// True when a raw quantile would have broken lower <= central <= upper and
+  /// the offending bound was clamped to the central estimate. A model whose
+  /// q10 exceeds 1.0 is systematically under predicting, which is a finding
+  /// worth keeping rather than an inconvenience to smooth over.
+  intervalClamped Boolean      @default(false)
+  /// The ratios the bounds were built from, actual / predicted. Null on the
+  /// fixed band path, where no quantiles were computed. Stored because the
+  /// bucket grows, so bounds written today cannot be reconstructed tomorrow
+  /// from the same query.
+  q10Used         Float?
+  q90Used         Float?
+  /// How many errors those quantiles were drawn from.
+  bucketSize      Int          @default(0)
+  /// True for rows produced by the seeding hindcast rather than issued live.
+  /// They are ordinary rows in every other respect: they feed the quantiles,
+  /// and every public read filters them out through one helper, so the
+  /// scorecard's claim to score every prediction it ever made stays true.
+  hindcast        Boolean      @default(false)
 
   scores Score[]
 
   @@unique([gaugeId, modelVersionId, issuedAt, targetTime])
   @@index([targetTime])
+  /// The interval bucket query: this model's own scored history at the same
+  /// gauge, horizon and issue regime. The hindcast walks roughly 3,580 issue
+  /// times and runs this once per prediction, so it is worth an index.
+  @@index([gaugeId, modelVersionId, horizonHours, issueRegime])
   @@map("predictions")
 }
 
@@ -180,7 +212,10 @@ model Score {
   absError         Float
   pctError         Float
   withinInterval   Boolean
-  regime           Regime
+  /// The river at targetTime. Nullable for the same reason issueRegime is:
+  /// classifyRegime can refuse, and a required column would have no legal
+  /// value to write when it does.
+  regime           Regime?
 
   @@unique([predictionId, actualRecordedAt])
   @@index([regime])
@@ -188,12 +223,12 @@ model Score {
 }
 
 model PipelineRun {
-  id          String    @id @default(cuid())
+  id          String      @id @default(cuid())
   job         PipelineJob
   startedAt   DateTime
   finishedAt  DateTime?
   status      RunStatus
-  rowsWritten Int       @default(0)
+  rowsWritten Int         @default(0)
   windowStart DateTime?
   windowEnd   DateTime?
   error       String?
