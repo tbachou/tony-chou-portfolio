@@ -57,8 +57,10 @@ export async function runHindcast(
     throw new Error('no active gauge to hindcast for');
   }
 
-  const models = await ensureBaselines(prisma);
-  const floorCfs = await flowFloorCfs(prisma, gauge.id);
+  // Active only, matching the live job. Seeding buckets for a forecaster
+  // that will never issue again would be work nothing reads.
+  const models = (await ensureBaselines(prisma)).filter((model) => model.active);
+  const floorCfs = await flowFloorCfs(prisma, gauge);
   const slots = issueSlots(from, to);
 
   // The whole record once, ordered by when we learned each row. Reconstructing

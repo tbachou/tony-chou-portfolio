@@ -159,6 +159,11 @@ export interface PredictResult {
  * redeploy take the same path, and the row's attributes stay owned by one
  * place. This is where AC-7 actually holds, since a baseline that exists only
  * as a function is not something a prediction can point at.
+ *
+ * `update: {}` deliberately leaves an existing row alone, so a forecaster
+ * that has been retired stays retired rather than being switched back on by
+ * the next run. Callers must still filter on `active`: this returns every
+ * baseline it ensured, retired ones included.
  */
 export async function ensureBaselines(prisma: PrismaClient) {
   const rows = [];
@@ -214,7 +219,13 @@ export async function issuePredictions(
       throw new Error('no active gauge to forecast for');
     }
 
-    const models = await ensureBaselines(prisma);
+    // AC-8 issues for every ACTIVE model version. Retiring a forecaster is
+    // done by clearing its flag, and rows are never deleted because
+    // predictions reference them forever, so the filter is the only thing
+    // that actually stops it forecasting.
+    const models = (await ensureBaselines(prisma)).filter(
+      (model) => model.active,
+    );
 
     // The whole record as known at the issue instant. Climatology needs every
     // earlier year, so this cannot be a short window, and reading it once per
