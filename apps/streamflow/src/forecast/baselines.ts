@@ -54,16 +54,35 @@ const MIN_CLIMATOLOGY_READINGS = 96;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Resolves an instant to its calendar day at the gauge, as month and day.
+ * Calendar year and day for one instant at the gauge, worked out once.
+ *
+ * Resolving a local calendar day costs an Intl format, which is cheap on its
+ * own and ruinous in bulk: climatology scans the whole record on every call,
+ * and the seeding hindcast makes thousands of calls. Without this cache that
+ * is on the order of a billion format calls over the backfilled record, which
+ * is the difference between the hindcast taking minutes and taking days.
+ * Instants repeat exactly across those calls, so caching on the instant
+ * collapses the work to one format per stored reading.
+ */
+const calendarCache = new Map<string, { year: number; dayKey: number }>();
+
+/**
+ * Resolves an instant to its calendar year and to its month and day at the
+ * gauge.
  *
  * Deliberately not UTC. Spec 0010 makes this an invariant: a reading just
  * after midnight Eastern belongs to that day, not the next one. In UTC every
  * reading between 19:00 and midnight local would be filed a day late, which
  * would smear the seasonal signal this baseline is entirely built on.
  */
-function calendarDayKey(at: Date, timeZone: string): number {
+function calendarParts(at: Date, timeZone: string) {
+  const key = `${timeZone}|${at.getTime()}`;
+  const cached = calendarCache.get(key);
+  if (cached) return cached;
+
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
+    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).formatToParts(at);
@@ -71,13 +90,17 @@ function calendarDayKey(at: Date, timeZone: string): number {
   const get = (type: string) =>
     Number(parts.find((part) => part.type === type)?.value ?? '0');
 
-  return get('month') * 100 + get('day');
+  const resolved = { year: get('year'), dayKey: get('month') * 100 + get('day') };
+  calendarCache.set(key, resolved);
+  return resolved;
+}
+
+function calendarDayKey(at: Date, timeZone: string): number {
+  return calendarParts(at, timeZone).dayKey;
 }
 
 function calendarYear(at: Date, timeZone: string): number {
-  return Number(
-    new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric' }).format(at),
-  );
+  return calendarParts(at, timeZone).year;
 }
 
 /**
