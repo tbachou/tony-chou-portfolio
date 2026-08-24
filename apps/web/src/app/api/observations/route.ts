@@ -2,8 +2,10 @@ import {
   observationsQuerySchema,
   type ObservationsResponse,
 } from '@portfolio/shared';
-import { createPrismaClient, observationsAsOf } from '@portfolio/streamflow';
+import { observationsAsOf } from '@portfolio/streamflow';
 import { NextResponse } from 'next/server';
+
+import { streamflowDb } from '@/lib/streamflow-db';
 
 /**
  * The hydrograph read (spec 0010).
@@ -20,20 +22,6 @@ import { NextResponse } from 'next/server';
 
 // Every request reads the live store, so nothing here may be cached.
 export const dynamic = 'force-dynamic';
-
-/**
- * One client for the lifetime of the server process rather than one per
- * request. Next.js reloads modules in development, so it is parked on
- * globalThis to avoid opening a new pool on every edit.
- */
-const globalForPrisma = globalThis as unknown as {
-  streamflowPrisma?: ReturnType<typeof createPrismaClient>;
-};
-
-function prisma() {
-  globalForPrisma.streamflowPrisma ??= createPrismaClient();
-  return globalForPrisma.streamflowPrisma;
-}
 
 export async function GET(request: Request) {
   const params = Object.fromEntries(new URL(request.url).searchParams);
@@ -55,7 +43,7 @@ export async function GET(request: Request) {
   }
 
   const { from, to, asOf } = parsed.data;
-  const client = prisma();
+  const client = streamflowDb();
 
   const gauge = await client.gauge.findFirst({ where: { active: true } });
   if (!gauge) {
