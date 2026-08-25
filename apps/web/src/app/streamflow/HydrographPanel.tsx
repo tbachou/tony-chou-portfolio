@@ -89,14 +89,22 @@ export function HydrographPanel({
   );
 
   // Debounced, so dragging the slider does not fire a request per pixel.
+  //
+  // It watches the chosen instant and nothing else. Watching the data as well
+  // would mean every settled response scheduled the next one, since each
+  // response is a fresh object: one drag would become a request every fifth
+  // of a second, for as long as the page stayed open, against a query that
+  // reads a month of the store each time. There is nothing to fetch at the
+  // instant the page was given, because the server already sent that payload
+  // and the reset button hands it straight back.
   useEffect(() => {
-    if (asOf === initial.asOf && data === initial) return;
+    if (asOf === initial.asOf) return;
 
     const timer = setTimeout(() => {
       void load(asOf);
     }, 180);
     return () => clearTimeout(timer);
-  }, [asOf, initial, data, load]);
+  }, [asOf, initial.asOf, load]);
 
   const isRewound = Math.abs(latest - Date.parse(asOf)) > MINUTE;
 
@@ -154,7 +162,13 @@ export function HydrographPanel({
           {isRewound && (
             <button
               type="button"
-              onClick={() => setAsOf(initial.asOf)}
+              onClick={() => {
+                // A state reset rather than a round trip: `initial` is
+                // already the store as it stood at that instant.
+                setData(initial);
+                setStatus('idle');
+                setAsOf(initial.asOf);
+              }}
               className="terminal-select shrink-0 text-term-xs text-term-body"
             >
               [ back to now ]
