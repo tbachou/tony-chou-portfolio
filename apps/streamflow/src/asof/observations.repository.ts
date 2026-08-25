@@ -1,6 +1,6 @@
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaClient } from '../generated/prisma/client';
-import type { StoredObservation } from '../types';
+import type { KnowabilityAxis, StoredObservation } from '../types';
 
 /**
  * The reads this module needs, named structurally so tests can supply a plain
@@ -14,9 +14,14 @@ export type ObservationReader = Pick<PrismaClient, '$queryRaw'> & {
  * The observations as known at `asOf`, over a `validTime` window.
  *
  * `DISTINCT ON` with a descending `recordedAt` keeps exactly one row per
- * (gauge, validTime): the newest revision that had been recorded by `asOf`.
- * Anything learned later is excluded by the `recordedAt` filter, which is what
+ * (gauge, validTime): the newest revision the axis lets `asOf` see. On the
+ * default `recordedAt` axis anything learned later is excluded, which is what
  * makes AC-3 hold in the database rather than only in application code.
+ *
+ * The axis moves that one bound and nothing else. On `validTime` a row counts
+ * once it was true at the gauge by `asOf`, and the greatest `recordedAt` still
+ * wins among the rows that qualify. Passing nothing leaves the strict rule in
+ * place, so the live pipeline cannot acquire the looser one by accident.
  *
  * Partitioning by `gaugeId` as well as `validTime` matters even with one
  * gauge in the table: omitting it stays correct until a second gauge is added
@@ -31,13 +36,22 @@ export async function observationsAsOf(
   from: Date,
   to: Date,
   asOf: Date,
+  axis: KnowabilityAxis = 'recordedAt',
 ): Promise<StoredObservation[]> {
+  // Written as one interchangeable clause in the position the strict bound
+  // already occupied, so the parameters keep their order and the default
+  // still produces the statement this query has always produced.
+  const knowableBy =
+    axis === 'validTime'
+      ? Prisma.sql`AND "validTime" <= ${asOf}`
+      : Prisma.sql`AND "recordedAt" <= ${asOf}`;
+
   return prisma.$queryRaw<StoredObservation[]>(Prisma.sql`
     SELECT DISTINCT ON ("gaugeId", "validTime")
       "gaugeId", "validTime", "recordedAt", "valueCfs", "qualifier"
     FROM "observations"
     WHERE "gaugeId" = ${gaugeId}
-      AND "recordedAt" <= ${asOf}
+      ${knowableBy}
       AND "validTime" >= ${from}
       AND "validTime" <= ${to}
     ORDER BY "gaugeId", "validTime", "recordedAt" DESC

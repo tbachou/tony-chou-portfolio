@@ -26,4 +26,9 @@ export { rollingSkill, SKILL_WINDOW_DAYS } from './forecast/skill';
 export type { ScoredError, SkillPoint, SkillSeries } from './forecast/skill';
 export { HORIZON_HOURS, SKILL_DEFAULT_WINDOW_DAYS } from './config';
 export { GAUGE, DISPLAY_TIMEZONE } from './config';
-export type { Qualifier, Reading, StoredObservation } from './types';
+export type {
+  KnowabilityAxis,
+  Qualifier,
+  Reading,
+  StoredObservation,
+} from './types';
