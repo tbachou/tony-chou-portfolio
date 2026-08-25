@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useResumeModal } from './ResumeModalProvider';
 import { ThemeToggle } from './ThemeToggle';
@@ -13,11 +14,19 @@ const NAV_LINKS = [
 
 const SECTION_IDS = NAV_LINKS.map((link) => link.href.slice(1));
 
-/** Highlights whichever section is crossing the vertical center of the viewport as you scroll. */
-function useActiveSection(): string | null {
+/**
+ * Highlights whichever section is crossing the vertical center of the viewport
+ * as you scroll.
+ *
+ * Only the home page has those sections. On a subpage the observer would find
+ * nothing to watch and every item would sit inactive, which is the right answer
+ * there anyway: you are not in any of them.
+ */
+function useActiveSection(enabled: boolean): string | null {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     const sections = SECTION_IDS.map((id) => document.getElementById(id)).filter(
       (el): el is HTMLElement => el !== null
     );
@@ -57,19 +66,33 @@ function useActiveSection(): string | null {
 
     sections.forEach((section) => observer.observe(section));
     return () => observer.disconnect();
-  }, []);
+  }, [enabled]);
 
   return activeId;
 }
 
 export function SiteNav() {
   const { open } = useResumeModal();
-  const activeId = useActiveSection();
+
+  /**
+   * The nav is one component on every page, and the links have to change
+   * shape off the home page.
+   *
+   * Every section it points at lives on `/`, so a bare `#about` is only a
+   * real link there. On a case study it would look identical and do nothing,
+   * scrolling to an anchor that does not exist, which is worse than no nav at
+   * all. Prefixing with `/` makes each one navigate home and then scroll.
+   */
+  const pathname = usePathname();
+  const isHome = pathname === '/';
+  const to = (fragment: string) => (isHome ? fragment : `/${fragment}`);
+
+  const activeId = useActiveSection(isHome);
 
   return (
     <header className="sticky top-0 z-20 border-b border-term-border bg-[color:var(--chrome-bg)] backdrop-blur">
       <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3 sm:px-0">
-        <a href="#top" className="text-term-sm text-term-muted">
+        <a href={to('#top')} className="text-term-sm text-term-muted">
           <span aria-hidden="true">$ </span>
           tonychou@portfolio:~
         </a>
@@ -87,7 +110,7 @@ export function SiteNav() {
               return (
                 <li key={link.href}>
                   <a
-                    href={link.href}
+                    href={to(link.href)}
                     aria-current={isActive ? 'true' : undefined}
                     className={
                       // The active item carries no text-colour utility on
