@@ -1,5 +1,6 @@
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaClient } from '../generated/prisma/client';
+import type { KnowabilityAxis } from '../types';
 
 export type ScoreReader = Pick<PrismaClient, '$queryRaw'>;
 
@@ -26,10 +27,20 @@ export interface ScorableRow {
  * reading is approved and stops changing.
  *
  * The lateral join takes the newest revision of the reading at the target
- * instant that had been recorded by `asOf`. Live scoring passes the current
- * time. The seeding hindcast passes the instant it is simulating, so a
- * hindcast score can never be built from a revision that had not been learned
- * yet, which is what keeps the interval buckets honest downstream.
+ * instant that the axis lets `asOf` see. Live scoring passes the current time
+ * on the default `recordedAt` axis, so a score can never be built from a
+ * revision that had not been learned yet, which is what keeps the interval
+ * buckets honest downstream.
+ *
+ * On the `validTime` axis that bound is dropped rather than moved, and this is
+ * the one place the axis does more than swap a column. The bound is what makes
+ * the query degenerate over an archive imported in one pass: every reading was
+ * learned two days ago, so simulating January 2024 finds no truth for anything
+ * and nothing is ever scored. Once the target instant has passed there is also
+ * nothing left for the bound to protect, since the reading was true before the
+ * forecast was even judged. What survives is `targetTime <= asOf`, which is
+ * the whole of the leakage rule that still means something there, and the
+ * truth stays the greatest `recordedAt` for that target either way.
  *
  * A prediction whose target instant has no reading at all simply does not
  * appear: the join drops it, and it will appear on a later run if the gap is
@@ -40,7 +51,13 @@ export async function scorablePredictions(
   gaugeId: string,
   asOf: Date,
   hindcast: boolean,
+  axis: KnowabilityAxis = 'recordedAt',
 ): Promise<ScorableRow[]> {
+  const knowableBy =
+    axis === 'validTime'
+      ? Prisma.empty
+      : Prisma.sql`AND o."recordedAt" <= ${asOf}`;
+
   return prisma.$queryRaw<ScorableRow[]>(Prisma.sql`
     SELECT
       p."id"        AS "predictionId",
@@ -56,7 +73,7 @@ export async function scorablePredictions(
       FROM "observations" o
       WHERE o."gaugeId" = p."gaugeId"
         AND o."validTime" = p."targetTime"
-        AND o."recordedAt" <= ${asOf}
+        ${knowableBy}
       ORDER BY o."recordedAt" DESC
       LIMIT 1
     ) truth ON true
