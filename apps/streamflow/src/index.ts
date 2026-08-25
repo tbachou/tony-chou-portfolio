@@ -5,6 +5,21 @@
  * this file means the dashboard cannot reach for an ingest function or a
  * writer by accident, and the append only invariant stays a property of one
  * workspace rather than a habit spread across two.
+ *
+ * Read what that does and does not promise, because the difference matters.
+ * No function exported here writes. But `createPrismaClient` hands back the
+ * generated client whole, and that client carries every model's `create`,
+ * `update`, `delete` and `$executeRaw`, so a consumer holding it can write
+ * anything it likes. The guarantee is that nothing here leads a caller to a
+ * writer, not that the database is out of reach.
+ *
+ * What actually keeps the web app read only is that it never calls one, and
+ * `append-only.spec.ts` scans this workspace rather than that one, so the
+ * check does not follow the client across the boundary. Enforcing it properly
+ * would take a `SELECT` only database role for the consumer, which Prisma
+ * Postgres does not currently offer. Until it does, this is a convention held
+ * up by review, and it is written down plainly here so that nobody later
+ * mistakes it for something the type system is enforcing.
  */
 export { createPrismaClient } from './db';
 export {
