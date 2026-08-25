@@ -184,6 +184,29 @@ describe('HydrographPanel', () => {
     await waitFor(() => expect(status()).toContain('could not read the store'));
   });
 
+  it('does not let a read still in flight overwrite the reset', async () => {
+    // The reset makes no request, so nothing else marks the earlier one
+    // abandoned. Miss that and the visitor sees the chart snap back to now
+    // and then silently revert to the rewound view, with the label still
+    // claiming the present.
+    const { fetchMock, settle } = deferredFetch();
+
+    render(<HydrographPanel initial={INITIAL} earliestRecordedAt={EARLIEST} />);
+
+    drag('2026-08-23T06:00:00.000Z');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    // Still reading. The visitor gives up and goes back to now.
+    fireEvent.click(screen.getByRole('button', { name: /back to now/i }));
+    await waitFor(() => expect(status()).toContain('9 readings'));
+
+    settle(0, withReadings(4, '2026-08-23T06:00:00.000Z'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(status()).toContain('9 readings');
+    expect(screen.getByText('(now)')).toBeTruthy();
+  });
+
   it('restores the instant it was given without asking the store again', async () => {
     const { fetchMock, settle } = deferredFetch();
 

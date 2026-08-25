@@ -163,7 +163,14 @@ export function HydrographPanel({
             <button
               type="button"
               onClick={() => {
-                // A state reset rather than a round trip: `initial` is
+                // Abandon whatever is in flight first. A read started before
+                // this click still matches the id it was given, so without
+                // the bump it passes the staleness guard when it lands and
+                // writes its rewound view over the one just restored, while
+                // the label above still reads (now).
+                requestId.current += 1;
+
+                // Then a state reset rather than a round trip: `initial` is
                 // already the store as it stood at that instant.
                 setData(initial);
                 setStatus('idle');
