@@ -1,4 +1,5 @@
 import type { Regime } from './regime';
+import type { KnowabilityAxis } from '../types';
 
 /**
  * Which past errors a prediction's interval is allowed to learn from.
@@ -20,6 +21,8 @@ export interface BucketCandidate {
   gaugeId: string;
   modelVersionId: string;
   horizonHours: number;
+  /** The contributing prediction's own target instant, which is the time bound. */
+  targetTime: Date;
   issueRegime: Regime | null;
   centralCfs: number;
 }
@@ -29,8 +32,8 @@ export interface BucketCriteria {
   modelVersionId: string;
   horizonHours: number;
   /**
-   * The instant the prediction being built is issued at. Nothing learned
-   * after it may enter the bucket.
+   * The instant the prediction being built is issued at. Nothing whose
+   * outcome had not yet happened by then may enter the bucket.
    */
   issuedAt: Date;
   /**
@@ -41,6 +44,17 @@ export interface BucketCriteria {
    * rather than forming a bucket of its own.
    */
   issueRegime?: Regime;
+  /**
+   * Which knowability axis the caller is reading on.
+   *
+   * Recorded rather than acted on, and that is the point rather than an
+   * oversight. The time bound used to be `actualRecordedAt`, which is an axis
+   * dependent fact; it is now `targetTime`, which is the same property stated
+   * in terms both axes can evaluate. So the answer is identical either way,
+   * the tests prove it is, and the field is here to keep the axis visible at
+   * the call site alongside the two reads where it does change the statement.
+   */
+  axis?: KnowabilityAxis;
 }
 
 /**
@@ -56,11 +70,23 @@ export interface BucketCriteria {
  * (predictionId, actualRecordedAt) means a tie cannot occur in the store; the
  * rule is stated so that the query and this function cannot disagree.
  *
- * Nothing learned after the issue instant. For a live prediction this holds
- * for free, since no later score exists yet. For a hindcast prediction it
- * holds only because it is stated: the central estimate goes through the as
- * of reconstruction and cannot see the future, but the bucket query has no
- * natural time bound, so half the calculation would silently read ahead.
+ * Nothing whose outcome had not yet happened. A prediction learns only from
+ * forecasts whose target instant had already passed when it was issued. For a
+ * live prediction that holds anyway, since a forecast is not scored before
+ * its target; for a hindcast prediction it holds only because it is stated,
+ * as the central estimate goes through the as of reconstruction and cannot
+ * see the future while the bucket query has no natural time bound of its own.
+ *
+ * This bound reads `targetTime` rather than `actualRecordedAt` because the
+ * archive was imported in one pass: every hindcast score there names the same
+ * import instant, so a bound on it is either always true or always false and
+ * carries no information. `targetTime` says the same thing on an axis a walk
+ * of the archive can actually evaluate, and it is correct on the live path
+ * too, where a target in the past is a precondition of having been scored.
+ * The cost is a narrow race, bounded by the scoring cadence: a prediction
+ * issued at 06:00 can see a score whose target passed at 05:55 but whose
+ * truth landed at 06:05. Minutes of a reading that was already true before
+ * the forecast was made, and the price of a bucket that is not empty.
  *
  * No non positive central estimate. The ratio divides by it, and one zero
  * would poison the whole sample.
@@ -80,14 +106,16 @@ export function bucketRatios(
       row.modelVersionId === criteria.modelVersionId &&
       row.horizonHours === criteria.horizonHours &&
       row.centralCfs > 0 &&
-      row.actualRecordedAt.getTime() <= criteria.issuedAt.getTime() &&
+      row.targetTime.getTime() <= criteria.issuedAt.getTime() &&
       (criteria.issueRegime === undefined ||
         row.issueRegime === criteria.issueRegime),
   );
 
-  // Reduce after filtering, never before. A prediction whose newest score
-  // arrived after the issue instant still contributes its older one; dropping
-  // the prediction entirely would quietly shrink the bucket.
+  // Filter then reduce, keeping the order the query uses. Every condition
+  // above is now a property of the prediction rather than of one of its
+  // scores, so both orders give the same answer and the query could safely
+  // reduce first. Stated the same way in both places anyway, because the two
+  // are only allowed to exist as long as they cannot drift.
   const newestPerPrediction = new Map<string, BucketCandidate>();
   for (const row of eligible) {
     const held = newestPerPrediction.get(row.predictionId);

@@ -16,11 +16,17 @@ export type BucketReader = Pick<PrismaClient, '$queryRaw'>;
  * judged against, with the greater id breaking a tie that the unique
  * constraint on (predictionId, actualRecordedAt) already prevents.
  *
- * The `WHERE` runs before that reduction, which is the part worth reading
- * twice. A prediction whose newest score landed after the issue instant still
- * contributes its earlier one, because the filter removes rows and then the
- * reduction picks from what survives. Reversing the two would drop such a
- * prediction from the bucket entirely.
+ * The time bound is the contributing prediction's `targetTime`, not its
+ * score's `actualRecordedAt`. A prediction learns only from forecasts whose
+ * outcome had already happened when it was issued, and `targetTime` is that
+ * property stated on an axis that survives a bulk import: every score over the
+ * imported archive names the same `recordedAt`, so a bound on it filters
+ * either everything or nothing. `bucket.ts` carries the full reasoning and the
+ * narrow race it costs on the live path.
+ *
+ * The bound reads the same on both knowability axes, which is why
+ * `criteria.axis` reaches this query and changes nothing in it. It is here so
+ * the axis stays visible at the call site next to the two reads it does move.
  *
  * Hindcast rows are included on purpose. They exist to fill this bucket, and
  * only the public read helper filters them out.
@@ -49,7 +55,7 @@ export async function bucketRatiosFromStore(
         AND p."modelVersionId" = ${criteria.modelVersionId}
         AND p."horizonHours" = ${criteria.horizonHours}
         AND p."centralCfs" > 0
-        AND s."actualRecordedAt" <= ${criteria.issuedAt}
+        AND p."targetTime" <= ${criteria.issuedAt}
         ${conditionOnRegime}
       ORDER BY s."predictionId", s."actualRecordedAt" DESC, s."id" DESC
     ) latest

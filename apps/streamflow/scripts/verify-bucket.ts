@@ -12,10 +12,16 @@ import type { Regime } from '../src/forecast/regime';
  * The unit tests cover the reference rule, which is only a statement of
  * intent. What runs in production is the DISTINCT ON query, and no mock can
  * show that the two agree on the four things that matter: one error per
- * prediction, nothing learned after the issue instant, no non positive
- * central estimate, and the right scope. This seeds a fixture built to break
- * a query that gets any of them wrong, then checks the database and the
- * reference rule return the same ratios.
+ * prediction, nothing whose target had not happened by the issue instant, no
+ * non positive central estimate, and the right scope. This seeds a fixture
+ * built to break a query that gets any of them wrong, then checks the database
+ * and the reference rule return the same ratios.
+ *
+ * The second of those four moved. It used to bound on the score's
+ * `actualRecordedAt` and now bounds on the contributing prediction's
+ * `targetTime`, so the fixture carries rows where the two disagree in both
+ * directions, and every case runs on both knowability axes, which must give
+ * the same answer.
  *
  * It writes, so it refuses to run anywhere but a local database. Point
  * PIPELINE_DATABASE_URL at a throwaway container, run it, destroy the
@@ -31,6 +37,12 @@ interface PredictionFixture {
   horizonHours: number;
   issueRegime: Regime | null;
   centralCfs: number;
+  /**
+   * Overrides the derived issue instant. Set it where the row's target
+   * instant is the point, since the target is the issue instant plus the
+   * horizon and the bound now reads the target.
+   */
+  issuedAt?: string;
   /** recordedAt, actualCfs. More than one means the truth was revised. */
   scores: [string, number][];
 }
@@ -78,7 +90,9 @@ const FIXTURE: PredictionFixture[] = [
       ['2026-06-15T00:00:00Z', 95],
     ],
   },
-  // Learned entirely after the cutoff. Invisible until then.
+  // Learned entirely after the cutoff, but for a target that had long since
+  // passed. Under the old bound it was invisible; under the new one it counts,
+  // because the forecast it came from had already been resolved.
   {
     key: 'base-future',
     model: 'persistence',
@@ -86,6 +100,30 @@ const FIXTURE: PredictionFixture[] = [
     issueRegime: 'BASEFLOW',
     centralCfs: 100,
     scores: [['2026-06-20T00:00:00Z', 400]],
+  },
+  // Target after the cutoff, truth recorded long before it. Physically odd on
+  // purpose: a score cannot really precede its own target. It is the one shape
+  // that separates the new bound from the old, because a query still bounding
+  // on the score's recordedAt would let this row straight in.
+  {
+    key: 'base-target-late',
+    model: 'persistence',
+    horizonHours: 24,
+    issueRegime: 'BASEFLOW',
+    centralCfs: 100,
+    issuedAt: '2026-06-10T00:00:00Z',
+    scores: [['2026-05-10T00:00:00Z', 700]],
+  },
+  // Target a minute inside the cutoff, so the boundary itself is exercised
+  // rather than only the comfortable middle.
+  {
+    key: 'base-target-edge',
+    model: 'persistence',
+    horizonHours: 24,
+    issueRegime: 'BASEFLOW',
+    centralCfs: 100,
+    issuedAt: '2026-05-30T23:59:00Z',
+    scores: [['2026-06-05T00:00:00Z', 120]],
   },
   // A central estimate of zero would divide the whole sample by nothing.
   {
@@ -190,11 +228,13 @@ async function main() {
     let issuedOffset = 0;
     for (const row of FIXTURE) {
       issuedOffset += 1;
-      // Distinct issue times only to satisfy the unique key. The bucket does
-      // not read them; it reads the scores' actualRecordedAt.
-      const issuedAt = new Date(
-        Date.UTC(2026, 3, 1, 0, 0, 0) + issuedOffset * 6 * 3600 * 1000,
-      );
+      // Distinct issue times, which the unique key needs anyway. Where the row
+      // names its own, the target instant it implies is what the case turns on.
+      const issuedAt = row.issuedAt
+        ? new Date(row.issuedAt)
+        : new Date(
+            Date.UTC(2026, 3, 1, 0, 0, 0) + issuedOffset * 6 * 3600 * 1000,
+          );
       const targetTime = new Date(
         issuedAt.getTime() + row.horizonHours * 3600 * 1000,
       );
@@ -260,6 +300,7 @@ async function main() {
             gaugeId: true,
             modelVersionId: true,
             horizonHours: true,
+            targetTime: true,
             issueRegime: true,
             centralCfs: true,
           },
@@ -275,6 +316,7 @@ async function main() {
       gaugeId: score.prediction.gaugeId,
       modelVersionId: score.prediction.modelVersionId,
       horizonHours: score.prediction.horizonHours,
+      targetTime: score.prediction.targetTime,
       issueRegime: score.prediction.issueRegime,
       centralCfs: score.prediction.centralCfs,
     }));
@@ -289,10 +331,10 @@ async function main() {
           issuedAt: CUTOFF,
           issueRegime: 'BASEFLOW',
         },
-        // base-1 1.1, base-2 0.9, base-revised 1.5, base-revised-late 0.9.
-        // base-future, base-zero-central, and the newer revision of
-        // base-revised-late are all out.
-        [1.1, 0.9, 1.5, 0.9],
+        // base-1 1.1, base-2 0.9, base-revised 1.5, base-revised-late 0.95,
+        // base-future 4, base-target-edge 1.2. base-target-late is out on its
+        // target instant, base-zero-central on its central estimate.
+        [1.1, 0.9, 1.5, 0.95, 4, 1.2],
       ],
       [
         'pooled at 24h, before the cutoff',
@@ -302,8 +344,8 @@ async function main() {
           horizonHours: 24,
           issuedAt: CUTOFF,
         },
-        // The four above, plus rising 2.6 and the unclassifiable 1.4.
-        [1.1, 0.9, 1.5, 0.9, 2.6, 1.4],
+        // The six above, plus rising 2.6 and the unclassifiable 1.4.
+        [1.1, 0.9, 1.5, 0.95, 4, 1.2, 2.6, 1.4],
       ],
       [
         'rising at 24h',
@@ -327,32 +369,60 @@ async function main() {
         [1.75],
       ],
       [
-        'pooled at 24h, after every revision landed',
+        'pooled at 24h, when only the earliest target has resolved',
+        {
+          gaugeId: gauge.id,
+          modelVersionId: models.persistence,
+          horizonHours: 24,
+          issuedAt: new Date('2026-04-02T06:00:00.000Z'),
+        },
+        // base-1's target lands exactly here, so the boundary is inclusive and
+        // every later forecast is still unresolved. Its truth was not recorded
+        // until May, which is what makes this case fail loudly against a query
+        // that still bounds on the score rather than on the target.
+        [1.1],
+      ],
+      [
+        'pooled at 24h, once the late target has resolved too',
         {
           gaugeId: gauge.id,
           modelVersionId: models.persistence,
           horizonHours: 24,
           issuedAt: new Date('2026-07-01T00:00:00.000Z'),
         },
-        // base-revised-late now takes its newer 0.95, and base-future appears.
-        [1.1, 0.9, 1.5, 0.95, 4, 2.6, 1.4],
+        // base-target-late joins at 7, and nothing else moves.
+        [1.1, 0.9, 1.5, 0.95, 4, 1.2, 2.6, 1.4, 7],
       ],
     ];
 
     let failures = 0;
     for (const [label, criteria, expected] of cases) {
+      // Both axes, because the whole claim of AC-H4 is that this bound reads
+      // the same on either one. A disagreement here means the bound crept back
+      // onto something axis dependent.
+      const strict = await bucketRatiosFromStore(prisma, {
+        ...criteria,
+        axis: 'recordedAt',
+      });
+      const loose = await bucketRatiosFromStore(prisma, {
+        ...criteria,
+        axis: 'validTime',
+      });
       const fromStore = await bucketRatiosFromStore(prisma, criteria);
       const fromRule = bucketRatios(candidates, criteria);
 
+      const axesAgree = same(strict, loose) && same(fromStore, strict);
       const storeMatchesRule = same(fromStore, fromRule);
       const ruleMatchesExpected = same(fromRule, expected);
 
-      if (storeMatchesRule && ruleMatchesExpected) {
+      if (axesAgree && storeMatchesRule && ruleMatchesExpected) {
         console.log(`ok   ${label}: ${sorted(fromStore).join(', ')}`);
       } else {
         failures += 1;
         console.error(`FAIL ${label}`);
         console.error(`  database  : ${sorted(fromStore).join(', ')}`);
+        console.error(`  recordedAt: ${sorted(strict).join(', ')}`);
+        console.error(`  validTime : ${sorted(loose).join(', ')}`);
         console.error(`  rule      : ${sorted(fromRule).join(', ')}`);
         console.error(`  expected  : ${sorted(expected).join(', ')}`);
       }
@@ -361,7 +431,9 @@ async function main() {
     if (failures > 0) {
       throw new Error(`${failures} of ${cases.length} cases disagree`);
     }
-    console.log(`\nall ${cases.length} cases agree: query, rule and fixture`);
+    console.log(
+      `\nall ${cases.length} cases agree: query, rule, fixture and both axes`,
+    );
   } finally {
     await prisma.$disconnect();
   }
