@@ -38,6 +38,11 @@ concurrency:
 
 jobs:
   score:
+    # The same switch the pipeline's prediction step reads, for the same
+    # reason: scoring exists to judge predictions, so it has nothing to do
+    # until forecasting is on. Gating the job rather than the step means an
+    # hourly cron does not spend a runner to discover there is no work.
+    if: ${{ vars.STREAMFLOW_FORECASTING == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

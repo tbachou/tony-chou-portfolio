@@ -107,7 +107,21 @@ jobs:
         # real forecaster would have had to make; declining to issue would
         # instead leave a hole the scorecard cannot tell apart from a model
         # that had nothing to say. The run row records the outcome either way.
-        if: ${{ !cancelled() }}
+        #
+        # Held behind a repository variable, and dark until it is set to
+        # 'true'. A prediction's bounds are written once and never recomputed,
+        # so the first forecasts issued against empty error buckets would keep
+        # the wide placeholder band for the life of the public record. The
+        # seeding hindcast has to finish before this may run even once, and
+        # the child spec's migration plan says so in as many words. An unset
+        # variable therefore means off, so shipping this workflow does not
+        # start forecasting by itself: someone flips it, on purpose, after the
+        # seeding run.
+        #
+        # Ingestion above is deliberately not gated. It has been running on
+        # main for days, it only appends readings, and nothing it writes is
+        # ever frozen the way an interval is.
+        if: ${{ !cancelled() && vars.STREAMFLOW_FORECASTING == 'true' }}
         env:
           PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
         run: npm run predict --workspace=apps/streamflow
