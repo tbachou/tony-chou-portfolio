@@ -1,5 +1,5 @@
-import { flowFloorCfs } from './score.repository';
-import type { FloorStore } from './score.repository';
+import { flowFloorCfs, scorablePredictions } from './score.repository';
+import type { FloorStore, ScoreReader } from './score.repository';
 
 function store(percentile: number | null) {
   const $queryRaw = jest.fn().mockResolvedValue([{ floor: percentile }]);
@@ -87,5 +87,112 @@ describe('flowFloorCfs', () => {
     await expect(
       flowFloorCfs(prisma, { id: 'gauge-darby', flowFloorCfs: 0 }),
     ).rejects.toThrow('unusable flow floor (0) frozen on the gauge');
+  });
+});
+
+/**
+ * The statement the scorable query sends, not rows it returns.
+ *
+ * A mocked reader agrees with any `WHERE` clause at all, so the only proof
+ * available without a database is the SQL itself. The risk this change carries
+ * is that the default axis stops meaning what it has always meant, which is
+ * what the first two of these pin down.
+ */
+const TODAY =
+  'SELECT p."id" AS "predictionId", p."targetTime", p."centralCfs", p."lowerCfs", p."upperCfs", truth."valueCfs" AS "actualCfs", truth."recordedAt" AS "actualRecordedAt" FROM "predictions" p JOIN LATERAL ( SELECT o."valueCfs", o."recordedAt" FROM "observations" o WHERE o."gaugeId" = p."gaugeId" AND o."validTime" = p."targetTime" AND o."recordedAt" <= $1 ORDER BY o."recordedAt" DESC LIMIT 1 ) truth ON true WHERE p."gaugeId" = $2 AND p."targetTime" <= $3 AND p."hindcast" = $4 AND NOT EXISTS ( SELECT 1 FROM "scores" s WHERE s."predictionId" = p."id" AND s."actualRecordedAt" = truth."recordedAt" ) ORDER BY p."targetTime"';
+
+const AS_OF = new Date('2025-06-01T00:00:00Z');
+
+interface Statement {
+  text: string;
+  values: unknown[];
+}
+
+function scoreReader() {
+  const sent: Statement[] = [];
+  const $queryRaw = jest.fn((sql: Statement) => {
+    sent.push(sql);
+    return Promise.resolve([]);
+  });
+
+  return {
+    prisma: { $queryRaw } as unknown as ScoreReader,
+    statement: () => {
+      const sql = sent[sent.length - 1];
+      return { text: sql.text.replace(/\s+/g, ' ').trim(), values: sql.values };
+    },
+  };
+}
+
+describe('scorablePredictions', () => {
+  it('sends exactly the statement it has always sent when no axis is passed', async () => {
+    const { prisma, statement } = scoreReader();
+
+    await scorablePredictions(prisma, 'gauge-darby', AS_OF, false);
+
+    expect(statement()).toEqual({
+      text: TODAY,
+      values: [AS_OF, 'gauge-darby', AS_OF, false],
+    });
+  });
+
+  it('sends the same statement for an explicit recordedAt axis', async () => {
+    const implied = scoreReader();
+    const explicit = scoreReader();
+
+    await scorablePredictions(implied.prisma, 'gauge-darby', AS_OF, true);
+    await scorablePredictions(
+      explicit.prisma,
+      'gauge-darby',
+      AS_OF,
+      true,
+      'recordedAt',
+    );
+
+    expect(explicit.statement()).toEqual(implied.statement());
+  });
+
+  it('drops the recordedAt bound entirely on the validTime axis', async () => {
+    // Dropped, not moved. Bounding the truth by its own validTime would say
+    // only that the reading at the target instant was true at the target
+    // instant, which is true of every row and filters nothing.
+    const { prisma, statement } = scoreReader();
+
+    await scorablePredictions(prisma, 'gauge-darby', AS_OF, true, 'validTime');
+
+    const sent = statement();
+    expect(sent.text).not.toContain('o."recordedAt" <=');
+    expect(sent.text).toBe(
+      TODAY.replace(' AND o."recordedAt" <= $1', '')
+        .replace('p."gaugeId" = $2', 'p."gaugeId" = $1')
+        .replace('p."targetTime" <= $3', 'p."targetTime" <= $2')
+        .replace('p."hindcast" = $4', 'p."hindcast" = $3'),
+    );
+    expect(sent.values).toEqual(['gauge-darby', AS_OF, true]);
+  });
+
+  it('keeps the target instant bound on both axes, so nothing unjudged is scored', async () => {
+    // The half of the leakage rule that still means something over an archive
+    // imported in one pass: a forecast is only scorable once its target has
+    // actually happened.
+    for (const axis of ['recordedAt', 'validTime'] as const) {
+      const { prisma, statement } = scoreReader();
+
+      await scorablePredictions(prisma, 'gauge-darby', AS_OF, true, axis);
+
+      expect(statement().text).toContain('p."targetTime" <= $');
+    }
+  });
+
+  it('still takes the greatest recordedAt as the truth on both axes', async () => {
+    for (const axis of ['recordedAt', 'validTime'] as const) {
+      const { prisma, statement } = scoreReader();
+
+      await scorablePredictions(prisma, 'gauge-darby', AS_OF, true, axis);
+
+      expect(statement().text).toContain(
+        'ORDER BY o."recordedAt" DESC LIMIT 1',
+      );
+    }
   });
 });
