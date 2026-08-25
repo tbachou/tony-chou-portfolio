@@ -5,7 +5,7 @@ import { observationsAsOf } from '../asof/observations.repository';
 import { createPrismaClient } from '../db';
 import { sanitizeError } from '../errors';
 import type { PrismaClient, RunStatus } from '../generated/prisma/client';
-import type { StoredObservation } from '../types';
+import type { KnowabilityAxis, StoredObservation } from '../types';
 import { persistenceForecast } from './baselines';
 import { bucketRatiosFromStore } from './bucket.repository';
 import type { BucketReader } from './bucket.repository';
@@ -44,6 +44,13 @@ export interface DraftContext {
   history: readonly StoredObservation[];
   issuedAt: Date;
   hindcast: boolean;
+  /**
+   * Which knowability axis the caller reconstructed `history` on, carried
+   * through to the bucket query so the whole slot reads on one axis. Leave it
+   * off for the live path, which is the strict one. The seeding hindcast is
+   * the only caller that passes anything.
+   */
+  axis?: KnowabilityAxis;
 }
 
 /**
@@ -64,7 +71,8 @@ export async function draftPredictions(
   prisma: BucketReader,
   context: DraftContext,
 ): Promise<{ drafts: PredictionDraft[]; skipped: number }> {
-  const { gaugeId, timeZone, models, history, issuedAt, hindcast } = context;
+  const { gaugeId, timeZone, models, history, issuedAt, hindcast, axis } =
+    context;
 
   // The regime is a property of the moment, not of the forecaster, so it is
   // judged once and shared by every row this slot writes.
@@ -105,6 +113,7 @@ export async function draftPredictions(
         modelVersionId: model.id,
         horizonHours,
         issuedAt,
+        axis,
       };
 
       // Conditioned first, and pooled only when it is needed. An

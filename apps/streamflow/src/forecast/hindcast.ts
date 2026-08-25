@@ -1,10 +1,11 @@
 import { config as loadEnvFile } from 'dotenv';
 
+import { asOfWalk } from '../asof/as-of';
 import { BACKFILL_START } from '../config';
 import { createPrismaClient } from '../db';
 import { sanitizeError } from '../errors';
 import type { PrismaClient } from '../generated/prisma/client';
-import type { StoredObservation } from '../types';
+import type { KnowabilityAxis } from '../types';
 import { draftPredictions, ensureBaselines } from './predict';
 import { draftScores } from './score';
 import { flowFloorCfs, scorablePredictions } from './score.repository';
@@ -29,6 +30,24 @@ import { issueSlots } from './schedule';
  *
  * Safe to re-run and safe to interrupt. Both writes skip duplicates, so a
  * second pass over ground already covered writes nothing.
+ *
+ * It is the only caller of the loose knowability axis, and everything it reads
+ * is on that axis. Over the archive the strict axis returns nothing at all,
+ * because the whole record was imported in one pass and shares one
+ * `recordedAt`, so a strict walk asks what was knowable in October 2024 and
+ * correctly answers that the pipeline did not exist yet. A second caller
+ * appearing on this axis is a review failure rather than a style preference.
+ *
+ * What the axis costs is stated in the spec and worth repeating here: over the
+ * archive the walk reads USGS readings that have already been reviewed, while
+ * a live forecast only ever sees provisional ones. Seeded intervals are drawn
+ * from slightly cleaner inputs than the live system gets. That is disclosed on
+ * the dashboard rather than corrected.
+ *
+ * The soundness rests on a measured property of today's store, that no
+ * `validTime` in it has more than one revision, so there is no corrected value
+ * a loose walk could reach for. Re measure it before re running this against a
+ * store that has moved on.
  */
 export interface HindcastDeps {
   prisma: PrismaClient;
@@ -52,6 +71,9 @@ export async function runHindcast(
   const from = deps.from ?? BACKFILL_START;
   const to = deps.to ?? new Date();
 
+  // The only place this is chosen, named once so every read below is on it.
+  const axis: KnowabilityAxis = 'validTime';
+
   const gauge = await prisma.gauge.findFirst({ where: { active: true } });
   if (!gauge) {
     throw new Error('no active gauge to hindcast for');
@@ -63,10 +85,10 @@ export async function runHindcast(
   const floorCfs = await flowFloorCfs(prisma, gauge);
   const slots = issueSlots(from, to);
 
-  // The whole record once, ordered by when we learned each row. Reconstructing
-  // the as of view per slot with a database round trip would be thousands of
-  // reads of a table that does not change while this runs; ordering by
-  // recordedAt instead lets one forward pass maintain the same view in memory.
+  // The whole record once. Reconstructing the as of view per slot with a
+  // database round trip would be thousands of reads of a table that does not
+  // change while this runs, and `asOfWalk` carries the same reconstruction
+  // forward in memory for the price of one pass over the rows.
   const everything = await prisma.observation.findMany({
     where: { gaugeId: gauge.id },
     select: {
@@ -76,30 +98,17 @@ export async function runHindcast(
       valueCfs: true,
       qualifier: true,
     },
-    orderBy: [{ recordedAt: 'asc' }, { validTime: 'asc' }],
   });
 
-  // validTime to the newest revision learned so far. Because the rows arrive
-  // in recordedAt order, a later row for a validTime is always the newer
-  // revision, so assigning it is the same rule the as of reconstruction
-  // applies, carried forward one slot at a time.
-  const known = new Map<number, StoredObservation>();
-  let cursor = 0;
+  const historyAt = asOfWalk(everything, axis);
 
   let predictionsWritten = 0;
   let scoresWritten = 0;
 
   for (const [index, slot] of slots.entries()) {
-    while (
-      cursor < everything.length &&
-      everything[cursor].recordedAt.getTime() <= slot.getTime()
-    ) {
-      const row = everything[cursor];
-      known.set(row.validTime.getTime(), row);
-      cursor += 1;
-    }
-
-    const history = [...known.values()];
+    // Slots walk forward, which is the one thing `asOfWalk` needs and cannot
+    // check: its cursor never goes back.
+    const history = historyAt(slot);
 
     const { drafts } = await draftPredictions(prisma, {
       gaugeId: gauge.id,
@@ -108,6 +117,7 @@ export async function runHindcast(
       history,
       issuedAt: slot,
       hindcast: true,
+      axis,
     });
 
     if (drafts.length > 0) {
@@ -119,8 +129,15 @@ export async function runHindcast(
     }
 
     // Scored at the simulated instant, not at the real one, so a hindcast
-    // score can never name a revision that had not been learned by then.
-    const scorable = await scorablePredictions(prisma, gauge.id, slot, true);
+    // score can only ever judge a forecast whose target had already passed by
+    // the moment being simulated.
+    const scorable = await scorablePredictions(
+      prisma,
+      gauge.id,
+      slot,
+      true,
+      axis,
+    );
     if (scorable.length > 0) {
       const written = await prisma.score.createMany({
         data: draftScores(scorable, history, floorCfs, slot),
