@@ -50,3 +50,25 @@ The gap is entirely on the `apps/web` side: `HydrographPanel.tsx`, `Hydrograph.t
 - The two GitHub Actions workflows are properly hardened for holding the only write credential to a public repo: SHA-pinned actions, empty top-level `permissions`, secrets scoped to individual steps rather than the job, `persist-credentials: false`, and no event triggers an outside contributor could reach.
 - `sanitizeError` (unchanged in this diff but load-bearing for it) correctly strips connection strings and `sk_`-prefixed keys before anything reaches the public `PipelineRun.error` field that `runHindcast`'s and `issuePredictions`'s catch blocks write through.
 - The Next.js server/client boundary is clean: `page.tsx` does all the heavy Prisma/raw-SQL reads server-side and hands client islands only contract-shaped data (`ObservationsResponse`, the reduced `skill` array) rather than raw Prisma rows, so no internal field ever crosses the serialization boundary.
+
+---
+
+## Resolution, 2026-08-24
+
+All three findings addressed. Writing the test the Major asked for turned up a fourth problem that neither the review nor the runtime verify caught, which is recorded below.
+
+- **Major, web layer untested** → fixed in `1a5c7ba`. `apps/web/src/app/streamflow/HydrographPanel.spec.tsx` covers the request id race guard (a stale answer landing after a newer one), both error paths (a non OK status and an outright rejection), the reset, and the rule that no read happens at the instant the page was given. `apps/web/src/app/api/observations/route.spec.ts` covers the 422 branch (window over a year, a window running backwards, an unreadable date, a missing bound, an unknown parameter against the strict schema), the 404 branch, the success shape, the default instant, and that the public read never passes the loose knowability axis. Web suite went from 52 tests to 68. Note for the record: the runner is vitest, not Jest as this review stated. `vitest.setup.ts` now guards its jsdom patches behind a `typeof window` check so a route handler can run on the `node` environment.
+
+- **Minor, silent hindcast collision** → fixed in `559b4f9`. `HindcastResult` gained `predictionsSkipped` and `scoresSkipped`, counted as the gap between rows drafted and the count `createMany` returns, and the CLI prints a warning naming both when either is non zero. The warning says plainly that skips are expected when re walking covered ground and mean a live run got there first when they are not.
+
+- **Minor, no resume** → fixed in `559b4f9`. With no explicit `from`, `runHindcast` now starts at the newest hindcast slot it has already written, falling back to the start of the record. It resumes at that slot rather than past it, because a walk killed between its prediction write and its score write leaves that slot half done and skipping it would lose those scores for good. `HindcastResult.from` reports where the walk actually began, and the CLI takes `--from=<iso>` and `--to=<iso>` for a deliberate redo.
+
+### Found while writing the Major's test: the hydrograph re read the store forever
+
+Fixed in `1a5c7ba`, and worth naming separately because it was live behaviour on a public page that three separate gates missed.
+
+`HydrographPanel`'s debounce effect listed `data` among its dependencies while also setting `data` from the response. Every settled response was a fresh object, so it re triggered the effect, which scheduled the next read. One drag of the slider became a request roughly every fifth of a second, for as long as the page stayed open, against a `DISTINCT ON` query reading a month of observations each time. The guard `asOf === initial.asOf && data === initial` never held again once the first response landed, so the reset button did not stop it either.
+
+Observed in the browser before the fix: 27 requests to `/api/observations`, all carrying the identical `asOf`, stopping only when the dev server was killed. After: two drags produced exactly two requests, each with its own `asOf`, and nothing further across eighteen seconds of waiting. The reset now restores the payload the server already sent instead of asking for it again, so it makes no request at all.
+
+The effect now watches the chosen instant alone. This is the shape of defect the Major was pointing at: invisible to the typecheck, invisible in a screenshot, and invisible to `/check verify`, because a hydrograph that is re fetching looks exactly like one that is not.
