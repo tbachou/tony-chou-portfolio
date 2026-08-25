@@ -22,6 +22,7 @@ import { TerminalWindow } from '@/components/TerminalWindow';
 import { streamflowDb } from '@/lib/streamflow-db';
 
 import { HydrographPanel } from './HydrographPanel';
+import { rangeSource } from './range-source';
 import { SkillChart } from './SkillChart';
 
 const title = 'Streamflow — a bitemporal forecast pipeline';
@@ -343,12 +344,20 @@ export default async function StreamflowPage() {
                       <td className="py-2 text-right tabular-nums text-term-muted">
                         {Math.round(forecast.lowerCfs).toLocaleString()} to{' '}
                         {Math.round(forecast.upperCfs).toLocaleString()}
-                        {!forecast.intervalSeeded && (
+                        {rangeSource(forecast) === 'pooled' && (
                           <span
                             className="ml-2 text-term-xs"
-                            title="Wide placeholder range: not enough scored history in this regime yet"
+                            title="Measured, but pooled across every river condition rather than conditioned on this one"
                           >
                             *
+                          </span>
+                        )}
+                        {rangeSource(forecast) === 'placeholder' && (
+                          <span
+                            className="ml-2 text-term-xs"
+                            title="A deliberately wide placeholder: not enough scored history yet"
+                          >
+                            &dagger;
                           </span>
                         )}
                       </td>
@@ -359,9 +368,24 @@ export default async function StreamflowPage() {
             </div>
           )}
 
-          {currentForecasts.some((forecast) => !forecast.intervalSeeded) && (
+          {currentForecasts.some(
+            (forecast) => rangeSource(forecast) === 'pooled',
+          ) && (
             <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
               <span aria-hidden="true">* </span>
+              Drawn from this forecaster&rsquo;s own past errors, but pooled
+              across every river condition rather than conditioned on the one
+              it was issued into. A rising storm and a flat week get the same
+              width that way, so read it as a real range that is not yet tuned
+              to today.
+            </p>
+          )}
+
+          {currentForecasts.some(
+            (forecast) => rangeSource(forecast) === 'placeholder',
+          ) && (
+            <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
+              <span aria-hidden="true">&dagger; </span>
               The range is a deliberately wide placeholder. A real range is the
               spread of that forecaster&rsquo;s own past errors in the same
               river conditions, and until enough of those exist the honest
