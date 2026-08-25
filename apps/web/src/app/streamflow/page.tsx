@@ -13,7 +13,6 @@ import {
   SKILL_WINDOW_DAYS,
 } from '@portfolio/streamflow';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { SkipLink } from '@/components/SkipLink';
@@ -186,18 +185,6 @@ export default async function StreamflowPage() {
   return (
     <div className="min-h-dvh">
       <SkipLink label="[ skip to main content ]" />
-
-      <header className="border-b border-term-border">
-        <div className="mx-auto max-w-4xl px-4 py-3 sm:px-0">
-          <Link
-            href="/"
-            className="text-term-sm text-term-muted transition-colors duration-term-instant hover:text-term-ink"
-          >
-            <span aria-hidden="true">$ </span>
-            cd ~/portfolio
-          </Link>
-        </div>
-      </header>
 
       <main
         id="main-content"
