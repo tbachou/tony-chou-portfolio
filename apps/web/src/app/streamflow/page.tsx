@@ -369,6 +369,24 @@ export default async function StreamflowPage() {
               that is not earned.
             </p>
           )}
+
+          {/*
+            Permanent, not a while-seeding notice: the past errors a range is
+            drawn from stay dominated by the backtest for as long as the
+            sample keeps every error it has ever seen, so the caveat holds for
+            as long as the ranges do. Held back only when there is no forecast
+            on screen, since it explains ranges and there are none to explain.
+          */}
+          {currentForecasts.length > 0 && (
+            <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
+              Ranges were seeded by a backtest before this pipeline issued
+              anything live: every forecaster was replayed across the archived
+              record and scored, and those errors are what the ranges are drawn
+              from. The archive holds readings USGS had already reviewed, while a
+              live forecast only ever sees provisional ones, so a seeded range
+              is probably slightly narrower than live performance deserves.
+            </p>
+          )}
         </TerminalWindow>
 
         <TerminalWindow
