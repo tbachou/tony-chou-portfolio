@@ -56,12 +56,6 @@ export default function PanelProjectPage() {
     <div className="min-h-dvh">
       <SkipLink label="[ skip to main content ]" />
 
-      <header className="border-b border-term-border">
-        <div className="mx-auto max-w-4xl px-4 py-3 sm:px-0">
-          <BackToProjects />
-        </div>
-      </header>
-
       <main
         id="main-content"
         tabIndex={-1}
