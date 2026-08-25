@@ -68,6 +68,21 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Apply pending migrations
+        # Before anything reads or writes, because the jobs below assume the
+        # current schema and fail on every column a pending migration would
+        # have added. Nothing else applies these: render.yaml's
+        # preDeployCommand migrates apps/api against the portfolio database,
+        # which is a different database entirely.
+        #
+        # `migrate deploy` only applies migrations that are already committed
+        # and reviewed. It never resets, never drops, and fails loudly rather
+        # than resolving drift on its own, which is what makes it safe to run
+        # unattended on a schedule. A run with nothing pending is a no-op.
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run migrate:deploy --workspace=apps/streamflow
+
       - name: Ingest USGS observations
         env:
           PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
@@ -84,3 +99,29 @@ jobs:
         env:
           PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
         run: npm run rescan --workspace=apps/streamflow
+
+      - name: Issue predictions
+        # Runs after ingestion so persistence forecasts from the newest
+        # reading, and runs even when ingestion failed. A forecast made on
+        # slightly stale data is still an honest forecast, and it is what a
+        # real forecaster would have had to make; declining to issue would
+        # instead leave a hole the scorecard cannot tell apart from a model
+        # that had nothing to say. The run row records the outcome either way.
+        #
+        # Held behind a repository variable, and dark until it is set to
+        # 'true'. A prediction's bounds are written once and never recomputed,
+        # so the first forecasts issued against empty error buckets would keep
+        # the wide placeholder band for the life of the public record. The
+        # seeding hindcast has to finish before this may run even once, and
+        # the child spec's migration plan says so in as many words. An unset
+        # variable therefore means off, so shipping this workflow does not
+        # start forecasting by itself: someone flips it, on purpose, after the
+        # seeding run.
+        #
+        # Ingestion above is deliberately not gated. It has been running on
+        # main for days, it only appends readings, and nothing it writes is
+        # ever frozen the way an interval is.
+        if: ${{ !cancelled() && vars.STREAMFLOW_FORECASTING == 'true' }}
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run predict --workspace=apps/streamflow

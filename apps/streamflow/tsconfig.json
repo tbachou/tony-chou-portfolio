@@ -16,6 +16,5 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["src"],
-  "exclude": ["src/generated"]
+  "include": ["src"]
 }

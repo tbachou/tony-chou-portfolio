@@ -3,7 +3,7 @@ import { config as loadEnvFile } from 'dotenv';
 import { reconstructAsOf } from '../src/asof/as-of';
 import { observationsAsOf } from '../src/asof/observations.repository';
 import { createPrismaClient } from '../src/db';
-import type { StoredObservation } from '../src/types';
+import type { KnowabilityAxis, StoredObservation } from '../src/types';
 
 /**
  * Proves AC-3 against a real database.
@@ -14,6 +14,11 @@ import type { StoredObservation } from '../src/types';
  * window straight out of the table, applies the reference function in
  * TypeScript, and checks the database returns exactly the same thing at a
  * range of asOf instants.
+ *
+ * Both axes are checked. The strict `recordedAt` axis is AC-3 itself; the
+ * `validTime` axis is the fallback the seeding hindcast walks, and it needs
+ * the same proof for the same reason, since a second bound in one statement
+ * is exactly where a query and its reference quietly stop agreeing.
  *
  * Read only. Safe to run against the live store, and it is meant to be:
  * running it there is the point.
@@ -68,64 +73,92 @@ async function main() {
 
     console.log(`\nwindow     : last 60 days, ${everything.length} raw rows`);
 
-    // Instants chosen to straddle every recordedAt in the window, so the
-    // temporal filter is exercised rather than merely present.
-    const stamps = [...new Set(everything.map((row) => row.recordedAt.getTime()))]
-      .sort((a, b) => a - b)
-      .flatMap((at) => [at - 1000, at, at + 1000]);
-    const probes = [
-      new Date(firstRecorded.getTime() - 3600 * 1000),
-      ...stamps.map((at) => new Date(at)),
-      new Date(lastRecorded.getTime() + 3600 * 1000),
-    ];
+    /**
+     * Instants chosen to straddle stamps on the axis under test, so the
+     * temporal filter is exercised rather than merely present. Capped,
+     * because a sixty day window holds thousands of distinct validTimes and
+     * three probes each would be a round trip per quarter hour of the record.
+     */
+    function probesOn(axis: KnowabilityAxis): Date[] {
+      const stamps = [
+        ...new Set(everything.map((row) => row[axis].getTime())),
+      ].sort((a, b) => a - b);
 
-    let checked = 0;
-    for (const asOf of probes) {
-      const fromDatabase = await observationsAsOf(
-        prisma,
-        gauge.id,
-        windowStart,
-        windowEnd,
-        asOf,
-      );
-      const fromReference = reconstructAsOf(everything, asOf);
+      const step = Math.max(1, Math.ceil(stamps.length / 40));
+      const sampled = stamps.filter((_, index) => index % step === 0);
 
-      if (fromDatabase.length !== fromReference.length) {
-        throw new Error(
-          `asOf ${asOf.toISOString()}: database returned ${fromDatabase.length} rows, reference ${fromReference.length}`,
-        );
-      }
-
-      for (let index = 0; index < fromDatabase.length; index += 1) {
-        const left = fromDatabase[index];
-        const right = fromReference[index];
-        const same =
-          left.validTime.getTime() === right.validTime.getTime() &&
-          left.recordedAt.getTime() === right.recordedAt.getTime() &&
-          left.valueCfs === right.valueCfs &&
-          left.qualifier === right.qualifier;
-
-        if (!same) {
-          throw new Error(
-            `asOf ${asOf.toISOString()}: row ${index} differs. database ${JSON.stringify(left)} reference ${JSON.stringify(right)}`,
-          );
-        }
-      }
-
-      // Nothing the query hands back may postdate the instant asked for.
-      for (const row of fromDatabase) {
-        if (row.recordedAt.getTime() > asOf.getTime()) {
-          throw new Error(
-            `asOf ${asOf.toISOString()}: leaked a row recorded at ${row.recordedAt.toISOString()}`,
-          );
-        }
-      }
-
-      checked += 1;
+      return [
+        new Date(stamps[0] - 3600 * 1000),
+        ...sampled.flatMap((at) => [
+          new Date(at - 1000),
+          new Date(at),
+          new Date(at + 1000),
+        ]),
+        new Date(stamps[stamps.length - 1] + 3600 * 1000),
+      ];
     }
 
-    console.log(`probes     : ${checked} asOf instants, all identical`);
-    console.log('\nAC-3 holds: the DISTINCT ON query and the reference agree.');
+    async function checkAxis(axis: KnowabilityAxis): Promise<number> {
+      let checked = 0;
+
+      for (const asOf of probesOn(axis)) {
+        const fromDatabase = await observationsAsOf(
+          prisma,
+          gauge.id,
+          windowStart,
+          windowEnd,
+          asOf,
+          axis,
+        );
+        const fromReference = reconstructAsOf(everything, asOf, axis);
+
+        if (fromDatabase.length !== fromReference.length) {
+          throw new Error(
+            `${axis} asOf ${asOf.toISOString()}: database returned ${fromDatabase.length} rows, reference ${fromReference.length}`,
+          );
+        }
+
+        for (let index = 0; index < fromDatabase.length; index += 1) {
+          const left = fromDatabase[index];
+          const right = fromReference[index];
+          const same =
+            left.validTime.getTime() === right.validTime.getTime() &&
+            left.recordedAt.getTime() === right.recordedAt.getTime() &&
+            left.valueCfs === right.valueCfs &&
+            left.qualifier === right.qualifier;
+
+          if (!same) {
+            throw new Error(
+              `${axis} asOf ${asOf.toISOString()}: row ${index} differs. database ${JSON.stringify(left)} reference ${JSON.stringify(right)}`,
+            );
+          }
+        }
+
+        // Nothing the query hands back may postdate the instant asked for,
+        // on whichever clock the caller said it was reading.
+        for (const row of fromDatabase) {
+          if (row[axis].getTime() > asOf.getTime()) {
+            throw new Error(
+              `${axis} asOf ${asOf.toISOString()}: leaked a row whose ${axis} is ${row[axis].toISOString()}`,
+            );
+          }
+        }
+
+        checked += 1;
+      }
+
+      return checked;
+    }
+
+    const strict = await checkAxis('recordedAt');
+    console.log(`recordedAt : ${strict} asOf instants, all identical`);
+
+    const loose = await checkAxis('validTime');
+    console.log(`validTime  : ${loose} asOf instants, all identical`);
+
+    console.log(
+      '\nAC-3 holds, and the hindcast axis agrees with its reference too.',
+    );
   } finally {
     await prisma.$disconnect();
   }
