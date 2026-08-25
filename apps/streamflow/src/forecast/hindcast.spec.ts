@@ -1,3 +1,4 @@
+import { BACKFILL_START } from '../config';
 import type { PrismaClient } from '../generated/prisma/client';
 import type { StoredObservation } from '../types';
 
@@ -79,6 +80,7 @@ function store(observations: StoredObservation[]) {
     },
     observation: { findMany: jest.fn().mockResolvedValue(observations) },
     prediction: {
+      findFirst: jest.fn().mockResolvedValue(null),
       createMany: jest.fn(({ data }: { data: PredictionDraft[] }) => {
         written.push(...data);
         return Promise.resolve({ count: data.length });
@@ -208,6 +210,80 @@ describe('runHindcast', () => {
     await runHindcast({ prisma, from: FROM, to: TO });
 
     expect(prisma.observation.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes from the newest slot it already wrote, redoing that one', async () => {
+    // Redoing the newest slot rather than starting past it: a walk killed
+    // between its prediction write and its score write leaves that slot half
+    // done, and skipping it would leave the scores missing for good.
+    const { prisma } = store(RECORD);
+    askScorable.mockResolvedValue([]);
+    (prisma.prediction.findFirst as jest.Mock).mockResolvedValue({
+      issuedAt: new Date('2024-01-18T00:00:00Z'),
+    });
+
+    const result = await runHindcast({ prisma, to: TO });
+
+    expect(result.from).toEqual(new Date('2024-01-18T00:00:00Z'));
+    // 18th 00:00 to 20th 00:00 inclusive, six hourly.
+    expect(result.slots).toBe(9);
+  });
+
+  it('starts at the beginning when it has written nothing yet', async () => {
+    const { prisma } = store(RECORD);
+    askScorable.mockResolvedValue([]);
+
+    const result = await runHindcast({ prisma, to: new Date('2024-01-02T00:00:00Z') });
+
+    expect(prisma.prediction.findFirst).toHaveBeenCalledWith({
+      where: { gaugeId: GAUGE.id, hindcast: true },
+      orderBy: { issuedAt: 'desc' },
+      select: { issuedAt: true },
+    });
+    expect(result.from).toEqual(BACKFILL_START);
+  });
+
+  it('lets an explicit from override the resume point', async () => {
+    const { prisma } = store(RECORD);
+    askScorable.mockResolvedValue([]);
+    (prisma.prediction.findFirst as jest.Mock).mockResolvedValue({
+      issuedAt: new Date('2024-01-18T00:00:00Z'),
+    });
+
+    const result = await runHindcast({ prisma, from: FROM, to: TO });
+
+    expect(result.from).toEqual(FROM);
+    expect(prisma.prediction.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('counts the rows the store already held rather than losing them', async () => {
+    // The unique key on a prediction does not include `hindcast`, so a live
+    // run reaching the same issue slot silently wins and this walk's row
+    // disappears. Counting the gap is what makes that visible.
+    const { prisma } = store(RECORD);
+    askScorable.mockResolvedValue([]);
+    (prisma.prediction.createMany as jest.Mock).mockImplementation(
+      ({ data }: { data: PredictionDraft[] }) =>
+        Promise.resolve({ count: data.length - 1 }),
+    );
+
+    const result = await runHindcast({ prisma, from: FROM, to: TO });
+
+    expect(result.predictionsWritten).toBe(result.slots * 2);
+    expect(result.predictionsSkipped).toBe(result.slots);
+  });
+
+  it('counts skipped scores the same way', async () => {
+    const { prisma, written } = store(RECORD);
+    askScorable.mockImplementation((_prisma, _gaugeId, slot) =>
+      Promise.resolve(scorableFrom(written, RECORD, new Set())(slot)),
+    );
+    (prisma.score.createMany as jest.Mock).mockResolvedValue({ count: 0 });
+
+    const result = await runHindcast({ prisma, from: FROM, to: TO });
+
+    expect(result.scoresWritten).toBe(0);
+    expect(result.scoresSkipped).toBeGreaterThan(0);
   });
 
   it('refuses to run when no gauge is active', async () => {

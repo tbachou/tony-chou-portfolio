@@ -51,7 +51,11 @@ import { issueSlots } from './schedule';
  */
 export interface HindcastDeps {
   prisma: PrismaClient;
-  /** Defaults to the start of the record. */
+  /**
+   * Where to start. Left out, the walk resumes from the newest slot it has
+   * already written, or from the start of the record when it has written
+   * none.
+   */
   from?: Date;
   /** Defaults to now. */
   to?: Date;
@@ -60,15 +64,49 @@ export interface HindcastDeps {
 
 export interface HindcastResult {
   slots: number;
+  from: Date;
   predictionsWritten: number;
   scoresWritten: number;
+  /**
+   * Rows the walk drafted that the store already held.
+   *
+   * Expected, and equal to the whole draft, when ground is walked twice. Not
+   * expected on fresh ground, where it means a live run reached the same
+   * issue slot first: the unique key on (gauge, model, issuedAt, targetTime)
+   * does not include `hindcast`, so whichever write lands first wins and the
+   * other disappears. Counted rather than ignored so that collision is
+   * visible while someone is still watching the run, instead of surfacing
+   * months later as a prediction stuck on the placeholder band.
+   */
+  predictionsSkipped: number;
+  scoresSkipped: number;
+}
+
+/**
+ * The slot to pick up from, so an interrupted walk does not start over.
+ *
+ * Returns the newest slot already written rather than the one after it. That
+ * slot may have been interrupted between its prediction write and its score
+ * write, and redoing a complete slot costs one round trip while skipping a
+ * half done one would leave its scores missing for good.
+ */
+async function resumeFrom(
+  prisma: PrismaClient,
+  gaugeId: string,
+): Promise<Date | null> {
+  const newest = await prisma.prediction.findFirst({
+    where: { gaugeId, hindcast: true },
+    orderBy: { issuedAt: 'desc' },
+    select: { issuedAt: true },
+  });
+
+  return newest?.issuedAt ?? null;
 }
 
 export async function runHindcast(
   deps: HindcastDeps,
 ): Promise<HindcastResult> {
   const { prisma } = deps;
-  const from = deps.from ?? BACKFILL_START;
   const to = deps.to ?? new Date();
 
   // The only place this is chosen, named once so every read below is on it.
@@ -78,6 +116,9 @@ export async function runHindcast(
   if (!gauge) {
     throw new Error('no active gauge to hindcast for');
   }
+
+  const from =
+    deps.from ?? (await resumeFrom(prisma, gauge.id)) ?? BACKFILL_START;
 
   // Active only, matching the live job. Seeding buckets for a forecaster
   // that will never issue again would be work nothing reads.
@@ -104,6 +145,8 @@ export async function runHindcast(
 
   let predictionsWritten = 0;
   let scoresWritten = 0;
+  let predictionsSkipped = 0;
+  let scoresSkipped = 0;
 
   for (const [index, slot] of slots.entries()) {
     // Slots walk forward, which is the one thing `asOfWalk` needs and cannot
@@ -126,6 +169,7 @@ export async function runHindcast(
         skipDuplicates: true,
       });
       predictionsWritten += written.count;
+      predictionsSkipped += drafts.length - written.count;
     }
 
     // Scored at the simulated instant, not at the real one, so a hindcast
@@ -139,17 +183,48 @@ export async function runHindcast(
       axis,
     );
     if (scorable.length > 0) {
+      const scoreDrafts = draftScores(scorable, history, floorCfs, slot);
       const written = await prisma.score.createMany({
-        data: draftScores(scorable, history, floorCfs, slot),
+        data: scoreDrafts,
         skipDuplicates: true,
       });
       scoresWritten += written.count;
+      scoresSkipped += scoreDrafts.length - written.count;
     }
 
     deps.onProgress?.(index + 1, slots.length, predictionsWritten);
   }
 
-  return { slots: slots.length, predictionsWritten, scoresWritten };
+  return {
+    slots: slots.length,
+    from,
+    predictionsWritten,
+    scoresWritten,
+    predictionsSkipped,
+    scoresSkipped,
+  };
+}
+
+/**
+ * Reads `--from=<iso>` and `--to=<iso>` off the command line.
+ *
+ * Both are optional. Leaving `--from` out is the ordinary case and lets the
+ * walk resume where it stopped; passing it is how an operator redoes a
+ * stretch on purpose, `--from=2024-01-01T00:00:00Z` to start over.
+ */
+/* istanbul ignore next -- CLI entry, run by hand rather than by a workflow */
+function instantArg(name: string): Date | undefined {
+  const raw = process.argv
+    .find((arg) => arg.startsWith(`--${name}=`))
+    ?.slice(name.length + 3);
+
+  if (raw === undefined) return undefined;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`--${name} is not a date this can read: ${raw}`);
+  }
+  return parsed;
 }
 
 /* istanbul ignore next -- CLI entry, run by hand rather than by a workflow */
@@ -160,6 +235,8 @@ if (require.main === module) {
 
   runHindcast({
     prisma,
+    from: instantArg('from'),
+    to: instantArg('to'),
     onProgress: (done, total, written) => {
       // Every hundredth slot, so a walk of thousands stays readable.
       if (done % 100 === 0 || done === total) {
@@ -169,8 +246,18 @@ if (require.main === module) {
   })
     .then((result) => {
       console.log(
-        `hindcast done: ${result.slots} slots, ${result.predictionsWritten} predictions, ${result.scoresWritten} scores`,
+        `hindcast done: ${result.slots} slots from ${result.from.toISOString()}, ${result.predictionsWritten} predictions, ${result.scoresWritten} scores`,
       );
+
+      // Loud, because on ground this walk has not covered before it means a
+      // live run took the same issue slot and one of the two writes is gone.
+      // Silent on a re-run, where every skip is the walk recognising its own
+      // earlier work.
+      if (result.predictionsSkipped > 0 || result.scoresSkipped > 0) {
+        console.warn(
+          `hindcast skipped rows the store already held: ${result.predictionsSkipped} predictions, ${result.scoresSkipped} scores. Expected when re-walking covered ground; on fresh ground it means a live run reached the same issue slot first.`,
+        );
+      }
     })
     .catch((cause: unknown) => {
       console.error(`hindcast failed: ${sanitizeError(cause)}`);
