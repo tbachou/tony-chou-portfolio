@@ -16,6 +16,12 @@ export const GAUGE = {
   timezone: 'America/New_York',
 } as const;
 
+/**
+ * Where the dashboard renders times. Stored values are always UTC (AC-18);
+ * this is the only place a reader ever sees a local clock.
+ */
+export const DISPLAY_TIMEZONE = 'America/New_York';
+
 /** USGS parameter code for discharge in cubic feet per second. */
 export const DISCHARGE_PARAMETER_CODE = '00060';
 
@@ -59,3 +65,57 @@ export const RESCAN_ROLLING_DAYS = 90;
  * between two of them is cheaper to fetch than to skip.
  */
 export const RESCAN_MERGE_GAP_HOURS = 24;
+
+/**
+ * The nominal coverage every interval claims. Stored on each Prediction row
+ * rather than assumed, so a later change of policy cannot silently
+ * reinterpret every prediction already made.
+ */
+export const INTERVAL_LEVEL = 0.8;
+
+/** The quantiles that give that nominal 0.80 band. */
+export const INTERVAL_QUANTILE_LOW = 0.1;
+export const INTERVAL_QUANTILE_HIGH = 0.9;
+
+/**
+ * The fewest past errors a bucket needs before its quantiles may stand for a
+ * distribution, for the regime conditioned bucket and the pooled one alike.
+ * Inherited from the parent spec. All three regimes clear it comfortably on
+ * the backfilled record: 2,731 baseflow, 518 rising, 291 peak.
+ */
+export const MIN_BUCKET_ERRORS = 30;
+
+/**
+ * The placeholder band, a third of the central estimate to triple it, used
+ * when neither bucket has enough history.
+ *
+ * Its one job is never to imply more confidence than exists. Measured
+ * persistence error at 24 hours has a 90th percentile of 56 percent and a
+ * 99th of roughly 150 percent, so half to double would be about the real
+ * interval on a calm day and far too tight in a storm, which is exactly when
+ * an unseeded interval is most likely to be wrong. A third to triple sits
+ * outside anything observed, so it reads as "we do not know yet".
+ */
+export const PLACEHOLDER_BAND_FACTOR = 3;
+
+/**
+ * The horizons every active forecaster issues at, in hours.
+ *
+ * Three rather than one because they fail differently: persistence is close
+ * at 24 hours and hopeless at 72, climatology is equally indifferent at both,
+ * and a model that beats neither at 24 may still earn its place at 72.
+ */
+export const HORIZON_HOURS = [24, 48, 72] as const;
+
+/**
+ * How often predictions are issued. Six hours, so issue times land on 00, 06,
+ * 12 and 18 UTC, which is the cadence the scheduled workflow runs on and the
+ * one the seeding hindcast walks so its issue times match the live record's.
+ */
+export const ISSUE_INTERVAL_HOURS = 6;
+
+/**
+ * How far back the skill view looks by default, in days. Spec 0010 sets 90
+ * for skill and calibration alike.
+ */
+export const SKILL_DEFAULT_WINDOW_DAYS = 90;

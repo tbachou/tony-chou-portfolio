@@ -10,11 +10,16 @@
   "type": "commonjs",
   "scripts": {
     "postinstall": "prisma generate",
+    "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "test": "jest",
     "test:watch": "jest --watch",
     "ingest": "tsx src/ingest/ingest-observations.ts",
-    "rescan": "tsx src/ingest/rescan-observations.ts"
+    "rescan": "tsx src/ingest/rescan-observations.ts",
+    "predict": "tsx src/forecast/predict.ts",
+    "score": "tsx src/forecast/score.ts",
+    "hindcast": "tsx src/forecast/hindcast.ts",
+    "migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
@@ -51,5 +56,7 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
-  }
+  },
+  "main": "dist/index.js",
+  "types": "src/index.ts"
 }
