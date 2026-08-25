@@ -33,6 +33,14 @@ const PROJECTS: Project[] = [
     href: '/projects/carryover'
   },
   {
+    slug: 'streamflow',
+    name: 'streamflow/',
+    pitch:
+      'A river forecasting pipeline that scores every prediction it has ever made, in public.',
+    status: 'live',
+    href: '/projects/streamflow'
+  },
+  {
     slug: 'aws-genai',
     name: 'aws-genai/',
     pitch:
