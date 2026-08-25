@@ -216,6 +216,31 @@ describe('draftPredictions', () => {
     }
   });
 
+  it('leaves the bucket on the strict axis unless the caller names one', async () => {
+    // AC-H2's other half. The live path passes nothing, so the bucket query
+    // and the two reads beside it all take the default, and the loose axis
+    // cannot be reached by forgetting rather than by choosing.
+    askBucket.mockResolvedValue([]);
+
+    await draftPredictions({} as BucketReader, context());
+
+    expect(askBucket).toHaveBeenCalled();
+    for (const call of askBucket.mock.calls) {
+      expect(call[1].axis).toBeUndefined();
+    }
+  });
+
+  it('carries the axis it was given into every bucket it asks for', async () => {
+    askBucket.mockResolvedValue([]);
+
+    await draftPredictions({} as BucketReader, context({ axis: 'validTime' }));
+
+    expect(askBucket).toHaveBeenCalled();
+    for (const call of askBucket.mock.calls) {
+      expect(call[1].axis).toBe('validTime');
+    }
+  });
+
   it('holds the ordering invariant on every row it drafts', async () => {
     const { drafts } = await draftPredictions(reader, context());
 
