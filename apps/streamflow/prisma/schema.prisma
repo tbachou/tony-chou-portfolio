@@ -64,10 +64,16 @@ enum ModelKind {
 /// which is what decides whether the forecast was any good. Intervals draw on
 /// the first, reporting splits by the second, and the gap between them is
 /// itself the forecasting problem.
+/// The ladder is ordered: RISING, then PEAK, then FALLING, then BASEFLOW.
+/// FALLING is tested after PEAK on purpose, so a river that is both high and
+/// receding stays PEAK and keeps that bucket's sample intact (spec 0010
+/// child, falling regime). The classifier in src/forecast/regime.ts is the
+/// statement of the rule; this is only the set of names it may write.
 enum Regime {
   BASEFLOW
   RISING
   PEAK
+  FALLING
 }
 
 model Gauge {
