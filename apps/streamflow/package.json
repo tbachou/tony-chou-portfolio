@@ -19,6 +19,9 @@
     "predict": "tsx src/forecast/predict.ts",
     "score": "tsx src/forecast/score.ts",
     "hindcast": "tsx src/forecast/hindcast.ts",
+    "check:revisions": "tsx scripts/check-revisions.ts",
+    "report:buckets": "tsx scripts/report-buckets.ts",
+    "reseed": "tsx scripts/reseed-hindcast.ts",
     "migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
