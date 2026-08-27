@@ -49,6 +49,22 @@ export const dynamic = 'force-dynamic';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * The day the forecaster learned that a falling river is its own condition.
+ *
+ * Until this date the classifier knew three river conditions: rising, at a
+ * peak, and calm. A river receding from a flood matched none of them and was
+ * filed as calm by elimination, so the week after a storm was priced from the
+ * errors of flat days. Ranges issued before this date carry that flaw and are
+ * never recomputed, which is why the date is named here rather than quietly
+ * corrected.
+ *
+ * It must be the day the change actually reached production. Ranges are
+ * written once, so a date that runs ahead of the deploy would vouch for rows
+ * that were still built the old way.
+ */
+const FALLING_REGIME_CUTOVER = '27 August 2026';
+
 const TWO_CLOCKS = [
   {
     term: 'validTime',
@@ -378,6 +394,28 @@ export default async function StreamflowPage() {
               river conditions, and until enough of those exist the honest
               answer is a band too wide to be useful rather than a narrow one
               that is not earned.
+            </p>
+          )}
+
+          {/*
+            Permanent, like the backtest note below it. A range is written once
+            and never recomputed, so every forecast issued before the cutover
+            keeps the range it was given under a taxonomy that had no falling
+            state. Those rows are deliberately left alone rather than restated:
+            correcting a public record after the fact to make it look better is
+            worse than carrying the mistake in the open.
+          */}
+          {currentForecasts.length > 0 && (
+            <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
+              Forecasts issued before {FALLING_REGIME_CUTOVER} were conditioned
+              on a set of river conditions with no falling state. A river
+              receding from a flood matched none of the others and was filed as
+              calm, so its range was drawn from the errors of flat days and was
+              far too narrow. That is what happened through the recession of
+              late August 2026, when the creek fell from a crest of 7,470 cubic
+              feet per second: every forecast scored in that stretch missed its
+              range, all in the same direction. Those rows keep the ranges they
+              were given, because a range is written once and never recomputed.
             </p>
           )}
 
