@@ -1,0 +1,44 @@
+{
+  "jobName": "fin-qa-judge-02",
+  "roleArn": "arn:aws:iam::635474720027:role/service-role/Amazon-Bedrock-IAM-Role-20260827T210110",
+  "applicationType": "ModelEvaluation",
+  "evaluationConfig": {
+    "automated": {
+      "datasetMetricConfigs": [
+        {
+          "taskType": "General",
+          "dataset": {
+            "name": "FinQA",
+            "datasetLocation": {
+              "s3Uri": "s3://genai-lab-eval-635474720027/eval-input/fin_qa.jsonl"
+            }
+          },
+          "metricNames": [
+            "Builtin.Correctness",
+            "Builtin.Completeness",
+            "Builtin.Faithfulness",
+            "Builtin.Refusal"
+          ]
+        }
+      ],
+      "evaluatorModelConfig": {
+        "bedrockEvaluatorModels": [
+          { "modelIdentifier": "us.anthropic.claude-haiku-4-5-20251001-v1:0" }
+        ]
+      }
+    }
+  },
+  "inferenceConfig": {
+    "models": [
+      {
+        "bedrockModel": {
+          "modelIdentifier": "us.amazon.nova-lite-v1:0",
+          "inferenceParams": "{\"inferenceConfig\":{\"maxTokens\":512,\"temperature\":0.2}}"
+        }
+      }
+    ]
+  },
+  "outputDataConfig": {
+    "s3Uri": "s3://genai-lab-eval-635474720027/eval-output/"
+  }
+}
