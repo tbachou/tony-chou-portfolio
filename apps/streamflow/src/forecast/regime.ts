@@ -35,14 +35,28 @@ export const REGIME_CLASSES: readonly Regime[] = [
 const RISING_FRACTION_OF_MEDIAN = 0.1;
 
 /**
- * Spec 0010 falling regime child: falling when the 12 hour change is at least
- * this share of `max(v, m)` downward.
+ * Spec 0010 falling denominator child: falling when the 12 hour change is at
+ * least this share of the current value downward.
  *
  * The same number as the rising fraction, and deliberately a separate constant
  * rather than the same one shared. The two multiply different things, so a
  * shared constant would read as a symmetry the rule does not have.
  */
-const FALLING_FRACTION_OF_LEVEL = 0.1;
+const FALLING_FRACTION_OF_VALUE = 0.1;
+
+/**
+ * A short stable name for the rule this file currently implements.
+ *
+ * It lives here so it moves when the rule moves. A regime backfill stamps its
+ * snapshot with this, and refuses to compare against a snapshot taken under a
+ * different one: the labels in such a file are not the pre migration labels
+ * for the run being attempted, and comparing against them would report an
+ * earlier migration's movements while hiding this one's.
+ *
+ * `max-v-m` was the rule that floored at the seven day median, shipped and
+ * relabelled on 2026-08-28. `max-v-floor` replaced it the same day.
+ */
+export const REGIME_RULE_TAG = 'max-v-floor';
 
 /** Spec 0010: a peak is at least this multiple of the median. */
 const PEAK_MULTIPLE_OF_MEDIAN = 1.5;
@@ -69,12 +83,13 @@ function median(values: number[]): number {
 /**
  * Classifies the river at `at`, using only readings from before it.
  *
- * The rule, exactly as spec 0010 and its falling regime child state it. Let
- * `v` be the value being classified, `m` the median of the prior seven days
- * and `d` the change over the prior twelve hours. Tested in this order:
+ * The rule, as spec 0010's falling denominator child states it. Let `v` be the
+ * value being classified, `m` the median of the prior seven days, `d` the
+ * change over the prior twelve hours, and `f` the gauge's frozen flow floor.
+ * Tested in this order:
  *
  *   RISING   when `d >= 0.1 * m`
- *   FALLING  when `d <= -0.1 * max(v, m)`
+ *   FALLING  when `d <= -0.1 * max(v, f)`
  *   PEAK     when `v >= 1.5 * m`
  *   BASEFLOW otherwise
  *
@@ -83,12 +98,23 @@ function median(values: number[]): number {
  * an absolute quantity of water arriving in the catchment, so an absolute
  * yardstick suits it and RISING keeps the plain median. A recession decays by a
  * roughly constant fraction, so its absolute rate of fall shrinks as the river
- * drops: measured against the median, a fall from ten times normal would clear
- * the bar for days, right through the flat tail where persistence is easy and
- * accurate again. Measured against `v` it stops when the decay does. The
- * `max(v, m)` floor is there for the other end: below the median a bare
- * fraction of a small number is smaller than ordinary summer drying down, so
- * the median holds the bar where slow predictable drawdown cannot reach it.
+ * drops, and only a fraction of the current value keeps a stable meaning along
+ * that curve.
+ *
+ * The falling test used to floor at the seven day median, and that was measured
+ * wrong. A median is not a baseline in the week after a flood; it is mostly
+ * made of the flood, so it stays inflated long after the river has left it
+ * behind and the threshold grows just as the river shrinks. Over the whole
+ * record that floor held 742 scores in BASEFLOW whose forecasts were too high
+ * eighty percent of the time, which is recession behaviour pooled into a
+ * bucket that is otherwise unbiased.
+ *
+ * `f` is what is left of a floor and it is a different kind of thing. It is
+ * frozen once at the 5th percentile of the gauge's whole record, so no event
+ * can move it, and it exists only to stop the threshold approaching zero as `v`
+ * does. On this gauge it changes three classifications in 3,644. Without it,
+ * a river at zero would have a threshold of zero, where standing still counts
+ * as falling.
  *
  * Order decides everything, and both of the first two tests come before PEAK.
  * A river climbing steeply through a high value is on its way somewhere, and
@@ -114,7 +140,17 @@ export function classifyRegime(
   history: readonly StoredObservation[],
   at: Date,
   valueAt: number,
+  flowFloorCfs: number,
 ): Regime | null {
+  // A programming error rather than unclassifiable data, so it throws instead
+  // of returning null. A zero or negative floor would put the falling
+  // threshold at or above zero, where an unchanged river qualifies as falling.
+  if (!Number.isFinite(flowFloorCfs) || flowFloorCfs <= 0) {
+    throw new Error(
+      `classifyRegime needs a positive flow floor, got ${String(flowFloorCfs)}`,
+    );
+  }
+
   const instant = at.getTime();
   const windowStart = instant - LOOKBACK_DAYS * 24 * HOUR_MS;
 
@@ -151,7 +187,7 @@ export function classifyRegime(
   const change = valueAt - earlier.valueCfs;
 
   if (change >= RISING_FRACTION_OF_MEDIAN * m) return 'RISING';
-  if (change <= -FALLING_FRACTION_OF_LEVEL * Math.max(valueAt, m)) {
+  if (change <= -FALLING_FRACTION_OF_VALUE * Math.max(valueAt, flowFloorCfs)) {
     return 'FALLING';
   }
   if (valueAt >= PEAK_MULTIPLE_OF_MEDIAN * m) return 'PEAK';
