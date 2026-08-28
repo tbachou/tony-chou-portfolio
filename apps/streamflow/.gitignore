@@ -3,3 +3,8 @@ src/generated/prisma
 
 # This project's own database url
 .env
+
+# Pre migration labels for the regime backfill (spec 0010 falling regime).
+# Keep it between an interrupted run and its retry; it is what a resumed run
+# compares against. Not a cache.
+.regime-backfill
