@@ -74,6 +74,23 @@ On this gauge that is currently theoretical. The minimum observation in 86,833 r
 
 Three slots. The guard is not justified by what it changes today; it is justified by bounding a threshold that otherwise vanishes. It is worth distinguishing from the floor this finding argues against: `flowFloorCfs` is frozen once from the whole record and cannot be moved by an event, while the seven day median is a rolling window that a flood inflates to forty times the floor's value, which is the exact mechanism that broke it.
 
+## The change is not uniformly looser
+
+Added 2026-08-28 after a pre deploy review caught the spec asserting it was.
+
+Replacing `max(v, m)` with `max(v, f)` is looser wherever the median is above the floor, which is almost everywhere, and **stricter wherever it is below it**. A seven day median can fall under a whole record 5th percentile during a dry week, by definition: some weeks have to contain the readings at the bottom of that percentile.
+
+| | |
+|---|---|
+| slots whose seven day median is below the floor | 167 of 3,645 |
+| lowest seven day median seen | 11.9, against a floor of 18.9 |
+| slots moving BASEFLOW to FALLING | 264 |
+| slots moving FALLING to BASEFLOW | **1** |
+
+So the effect is real, common in its precondition, and almost never decisive: 167 slots sit in the region where the new rule is stricter, and in only one of them does that flip a class. It matters anyway, because a migration check written on the assumption that FALLING can never move would have refused the whole relabelling over that single row, with a message pointing at a reconstruction defect that does not exist.
+
+PEAK is a different case and genuinely cannot move. `v >= 1.5 * m` forces `v > m`, so the old threshold was already measured against `v`, and the new one is stricter or equal. A row that was not falling cannot start falling. That proof holds for any floor value, which is why PEAK stays frozen while FALLING does not.
+
 ## What this does not establish
 
 - **One gauge, one climate, roughly two and a half years.** Big Darby Creek is unregulated and flashy. A gauge with a flatter regime may not show the same separation.
