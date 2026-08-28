@@ -175,8 +175,11 @@ export default function StreamflowProjectPage() {
               conditions. Conditions matter more than the horizon does: persistence is around 10
               percent wrong when the river is flat and around 30 percent wrong when it is rising,
               so a single pooled number would describe neither. Each forecast is filed under what
-              the river was doing when it was made — baseflow, rising, or at a peak — and drawn
-              from that bucket alone.
+              the river was doing when it was made — baseflow, rising, falling, or at a peak —
+              and drawn from that bucket alone. Draining gets its own class because a river coming
+              down after a storm keeps dropping after the forecast is made, so the same method
+              that is roughly even handed on a crest is wrong in one direction the whole way
+              down.
             </p>
             <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
               Which leaves a chicken and egg problem on day one, since a brand new pipeline has no
