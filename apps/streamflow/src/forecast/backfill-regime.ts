@@ -367,7 +367,14 @@ export async function backfillRegimes(
     (predictions.some((row) => row.issueRegime === 'FALLING') ||
       scores.some((row) => row.regime === 'FALLING'));
 
-  if (write && !snapshotReused) {
+  // Not when the store is already migrated. The labels read back there are
+  // this migration's own output, so saving them would put a file on disk
+  // claiming to be the pre migration record when it is the post migration one,
+  // and the next run would load it, find `snapshotReused` true, and skip the
+  // very check that just refused. Saving before the other checks is still
+  // right: a run refused for a forbidden cell has a genuine pre migration
+  // snapshot worth keeping.
+  if (write && !snapshotReused && !alreadyMigrated) {
     await snapshots.save(snapshot);
   }
 
