@@ -14,6 +14,7 @@ Child specs, added when the decision they settle is reached:
 1. [0010-prediction-intervals.md](0010-prediction-intervals.md): how a prediction's lower and upper bounds are derived, which regime conditions them, and what happens before enough scored history exists. Settles the parts of AC-20 and AC-21 this index leaves open.
 2. [0010-hindcast-seeding.md](0010-hindcast-seeding.md): what "knowable at T" means while the seeding hindcast walks an archive that was imported in one pass, and where the interval bucket's time bound moves as a result. Settles what AC-20 leaves open about reconstructing history the pipeline learned all at once.
 3. [0010-falling-regime.md](0010-falling-regime.md): a fourth regime for a river on its way down, and the threshold that decides when a fall counts. Settles the gap AC-12's three class rule leaves over a recession, where persistence is biased in a way the peak and baseflow buckets both hide.
+4. [0010-falling-denominator.md](0010-falling-denominator.md): revises the falling threshold's denominator from `max(v, m)` to `v` alone, after measurement showed the median floor holds recession like scores in baseflow. Supersedes only the denominator of the child above; everything else in it stands.
 
 ## Requirements
 
