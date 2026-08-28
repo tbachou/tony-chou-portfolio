@@ -114,3 +114,56 @@ One per row of the spec's Value sourcing table, each exercising the edge that br
 - AC-F12 needs no new mechanism; the existing ladder already falls through to pooled with `intervalSeeded` false
 - AC-F13 covered by the four ordering and floor tests
 - AC-F14 half done: the parent index states the four class rule and the case study copy names four classes
+
+---
+
+# Verify: falling denominator · spec 0010 · written 2026-08-28
+
+_Steps derived from the acceptance criteria in [0010-falling-denominator.md](0010-falling-denominator.md). `/check verify` runs these; `/test` locks the durable ones. Boxes marked `[x]` were run during the build; the unticked ones need the production database and the repository variable, and are the operator's._
+
+## Commands
+
+- [x] `npm test --workspace=apps/streamflow` → 289 green, including 20 in `regime.spec.ts` and 35 in `backfill-regime.spec.ts` → AC-D1, AC-D1a, AC-D2, AC-D3, AC-D4, AC-D4a, AC-D4b, AC-D4c, AC-D5, AC-D5a, AC-D5b, AC-D6, AC-D7, AC-D8a, AC-D9
+- [x] `npx tsc --noEmit -p apps/streamflow/tsconfig.json` → clean; `npx eslint .` in the workspace → clean
+- [x] Deliberate revert check: refreezing FALLING in the matrix fails the two AC-D4a and AC-D4c tests by name; removing the completion stamp fails the three AC-D5a tests by name. Both restored, suite green again → the new tests are not vacuous
+- [x] The sweep script is committed at `apps/streamflow/scripts/sweep-falling-threshold.ts` and [2026-08-28-falling-denominator-sweep.md](findings/2026-08-28-falling-denominator-sweep.md) records the method → AC-D12
+- [x] The first migration's snapshot is archived at `.regime-backfill/archive/max-v-m-2026-08-28T13:10:37.156Z.json` and the run takes `--snapshot` with no default → AC-D5
+- [x] Rehearsal report only run against production, read only, forecasting still on (2026-08-28 23:33 UTC): checks hold, all 447 PEAK and 2,642 RISING predictions stay, null sets unchanged (1,038 predictions, 126 scores), FALLING → BASEFLOW holds 3 prediction and 3 score rows (one slot times persistence's three horizons, none for climatology, which has no rows at that slot), BASEFLOW → FALLING moves 1,320 predictions and 1,291 scores, 0 fallback scores, 0 mixed axis slots. A rehearsal only: the paused run's numbers are the ones AC-D7 records → AC-D3, AC-D4, AC-D4a, AC-D9
+- [ ] Set `STREAMFLOW_FORECASTING` to `false`; confirm `streamflow-score.yml` skips and `streamflow-pipeline.yml` still ingests → AC-D8
+- [ ] Against production, forecasting off: report only run, `npx tsx scripts/backfill-regime.ts --snapshot=.regime-backfill/max-v-floor.json` from `apps/streamflow` → counts and full transition matrix recorded in the child spec before any row moves → AC-D7, AC-D11
+- [ ] Rerun with `--write` at the same snapshot path, in the same sitting → no forbidden cell, null sets unchanged, PEAK and RISING untouched, the FALLING → BASEFLOW cell a handful of rows from one slot, and `lowerCfs`, `upperCfs`, `q10Used`, `q90Used`, `intervalSeeded`, `bucketSize` unchanged on a moved row → AC-D4, AC-D4b, AC-D6, AC-D8a, AC-D9
+- [ ] After the write: the snapshot file carries `completedAt`, and a rerun against it refuses, naming the completion instant → AC-D5a
+- [ ] Push the branch to main (predeploy gate first), set the flag back to `true`, and confirm the next slot issues at all three horizons with `intervalSeeded` true → AC-D8, AC-D11
+- [ ] Update the `MIN_BUCKET_ERRORS` doc comment in `apps/streamflow/src/config.ts` with the report run's per model and horizon bucket counts → AC-D10 (the parent index's AC-12 and its Value sourcing regime row were already corrected on this branch)
+
+## Value sourcing checks
+
+One per row of the spec's Value sourcing table, each exercising the edge that breaks if the source is wrong.
+
+- [x] The falling threshold, `0.1 * max(v, flowFloorCfs)` with the median absent: the 2026-08-28 live miss, 303 against a median of 730 falling 42, is FALLING; the four slots from the 2026-08-27 finding all classify FALLING → AC-D1
+- [x] The floor as guard, not input: below the floor the threshold comes from the floor, so a decline that is a tenth of a very small number does not qualify → AC-D1a
+- [x] A caller that supplies no floor fails: `classifyRegime` throws on a missing or non positive floor rather than defaulting → AC-D1a
+- [x] The rising threshold, the peak multiple, the test order and the three null conditions are unchanged → AC-D2
+- [x] Every value at or above `1.5 * m` produces the same class under both rules, exercised as a property over generated values → AC-D3
+- [x] The snapshot's rule tag: a snapshot taken under another rule, including the first migration's untagged file, is refused with both rules named → AC-D5
+- [x] Drift: a report only run saves its snapshot and the write reuses it, so ingest and rescan runs are counted from the instant the report described the store, not from the write's own start → AC-D8a
+- [x] The transition matrix arrives per run on `BackfillOptions`; the module level constant is a preset, not a default → AC-D4
+- [x] The writer interface can set only a regime; the interval and provenance columns are unreachable from the backfill → AC-D6
+
+## Acceptance-criteria coverage
+
+- AC-D1, AC-D1a covered by the threshold, floor guard, live miss, four slot and throw tests in `regime.spec.ts`
+- AC-D2, AC-D3 covered by the unchanged ladder tests and the generated property over both rules
+- AC-D4, AC-D4a, AC-D4c covered by the corrected matrix tests: a FALLING row above the floor stays, one below the floor and value moves to BASEFLOW, and the PEAK landing is legal
+- AC-D4b covered by the frozen PEAK refusal test and observed on the rehearsal run (447 stay)
+- AC-D5 covered by the rule tag refusal, the required snapshot path, and the archived first snapshot
+- AC-D5a covered by the stamp on success, no stamp on refusal or interruption, and the refusal on reload
+- AC-D5b covered by the report caveat test; the blind spot is printed beside every clean check
+- AC-D6 structural via the writer interface, to be observed on the production write
+- AC-D7 covered by the report only tests; the production report run is still owed
+- AC-D8 is the repository variable; the window is the operator's
+- AC-D8a covered by the drift refusal and report anchoring tests; exercised for real at the production write
+- AC-D9 covered by the null set tests and the rehearsal (null sets unchanged)
+- AC-D10 half done: parent index corrected; `MIN_BUCKET_ERRORS` numbers wait for the report run
+- AC-D11 waits for the flag to come back on
+- AC-D12 covered by the committed sweep script and the findings document
