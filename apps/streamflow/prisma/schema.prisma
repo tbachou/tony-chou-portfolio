@@ -64,10 +64,18 @@ enum ModelKind {
 /// which is what decides whether the forecast was any good. Intervals draw on
 /// the first, reporting splits by the second, and the gap between them is
 /// itself the forecasting problem.
+///
+/// FALLING arrives with spec 0010's falling regime child. Postgres will not
+/// let a newly added enum value be used in the transaction that adds it, and
+/// Prisma runs each migration in one, so this value lands in a migration of
+/// its own ahead of any code that can write it. PEAK keeps its name and
+/// narrows its meaning to the crest and the plateau, because renaming an enum
+/// value would rewrite every stored row to buy a better word.
 enum Regime {
   BASEFLOW
   RISING
   PEAK
+  FALLING
 }
 
 model Gauge {
