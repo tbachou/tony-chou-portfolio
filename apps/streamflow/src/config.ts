@@ -80,8 +80,17 @@ export const INTERVAL_QUANTILE_HIGH = 0.9;
 /**
  * The fewest past errors a bucket needs before its quantiles may stand for a
  * distribution, for the regime conditioned bucket and the pooled one alike.
- * Inherited from the parent spec. All three regimes clear it comfortably on
- * the backfilled record: 2,731 baseflow, 518 rising, 291 peak.
+ * Inherited from the parent spec.
+ *
+ * All four regimes clear it on the backfilled record. Measured 2026-08-28,
+ * counting predictions by `issueRegime` per model and horizon: persistence
+ * holds 2,426 baseflow, 522 rising, 607 falling and 89 peak; climatology holds
+ * about 1,483, 359, 411 and 60. The narrowed PEAK is the one to watch, since
+ * the falling split took roughly seventy percent of what used to be filed
+ * there, but at 60 it is still twice the floor. If a later measurement puts it
+ * under 30 the ladder handles it: the bucket falls through to pooled quantiles
+ * and the prediction declares itself unseeded rather than claiming a
+ * conditioning it does not have.
  */
 export const MIN_BUCKET_ERRORS = 30;
 
