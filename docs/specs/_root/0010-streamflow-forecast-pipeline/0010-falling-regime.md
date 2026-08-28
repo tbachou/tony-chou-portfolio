@@ -227,6 +227,44 @@ That rollback is complete only up to the end of phase 5. Once forecasting is bac
 - A bucket lands under thirty errors after the split, most plausibly the narrowed PEAK. This is handled rather than prevented (AC-F12), and phase 3 makes it known in advance rather than discovered on the page.
 - Forecasting stays paused longer than intended and a gap appears in the prediction record. The gap is honest and visible in `PipelineRun`, and the phases are hours of work, not days.
 
+## Measured
+
+Report only run against the production store, 2026-08-28, before any row was written (**AC-F6**). Nothing else moved: `RISING` stays `RISING`, null stays null, and no live score took the `scoredAt` fallback.
+
+**`Prediction.issueRegime`**, 18,909 rows. Counts are after the relabelling.
+
+| model, horizon | BASEFLOW | RISING | PEAK | FALLING | null | moved to FALLING |
+|---|---|---|---|---|---|---|
+| climatology h24 | 1,483 | 355 | 60 | 411 | 110 | 272 baseflow, 139 peak |
+| climatology h48 | 1,483 | 359 | 60 | 411 | 110 | 272 baseflow, 139 peak |
+| climatology h72 | 1,484 | 362 | 60 | 411 | 110 | 272 baseflow, 139 peak |
+| persistence h24 | 2,426 | 522 | 89 | 607 | 236 | 394 baseflow, 213 peak |
+| persistence h48 | 2,426 | 522 | 89 | 607 | 236 | 394 baseflow, 213 peak |
+| persistence h72 | 2,426 | 522 | 89 | 607 | 236 | 394 baseflow, 213 peak |
+| **all** | **11,728** | **2,642** | **447** | **3,054** | **1,038** | 1,998 baseflow, 1,056 peak |
+
+**`Score.regime`**, 17,581 rows.
+
+| model, horizon | BASEFLOW | RISING | PEAK | FALLING | null | moved to FALLING |
+|---|---|---|---|---|---|---|
+| climatology h24 | 1,465 | 351 | 53 | 404 | 9 | 272 baseflow, 132 peak |
+| climatology h48 | 1,465 | 351 | 53 | 404 | 9 | 272 baseflow, 132 peak |
+| climatology h72 | 1,463 | 351 | 53 | 404 | 9 | 272 baseflow, 132 peak |
+| persistence h24 | 2,352 | 518 | 83 | 596 | 36 | 388 baseflow, 208 peak |
+| persistence h48 | 2,348 | 518 | 83 | 596 | 32 | 388 baseflow, 208 peak |
+| persistence h72 | 2,343 | 518 | 83 | 596 | 31 | 388 baseflow, 208 peak |
+| **all** | **11,440** | **2,607** | **408** | **3,000** | **126** | 1,980 baseflow, 1,020 peak |
+
+**What the numbers say.**
+
+PEAK was mostly a recession. Of the 1,503 predictions filed there, 1,056 were draining, so the class loses about seventy percent of its rows and keeps 447. That is the strongest evidence the split was worth making: the bucket this decision exists to clean up was majority mislabelled, not marginally so.
+
+BASEFLOW gives up 1,998 of 13,726, about fifteen percent, which is the post storm tail that had already dropped below `1.5 * m` while still draining hard.
+
+The risk the migration plan named did not land. AC-F12 anticipated the narrowed PEAK falling under the thirty error minimum; at 60 per model and horizon for climatology and 89 for persistence, it clears the floor by a comfortable margin at every combination, so no bucket falls through to pooled quantiles as a result of this change. PEAK is now the smallest bucket by a wide margin, though, and it is the one to re measure first if the record ever thins.
+
+FALLING arrives well conditioned rather than empty: 411 rows per climatology horizon and 607 per persistence horizon, all far above the minimum. That is what relabelling history bought, and it is why the class is useful from its first live prediction rather than months from now.
+
 ## Consequences
 
 **Positive**:
@@ -253,7 +291,7 @@ That rollback is complete only up to the end of phase 5. Once forecasting is bac
 
 ## Follow-up
 
-- [ ] Record the measured bucket counts and transition matrix in this spec at build step 5, the way AC-I4 records 2,731 / 518 / 291. Until then the effect of the split on bucket sizes is predicted, not known.
+- [x] Record the measured bucket counts and transition matrix in this spec at build step 5, the way AC-I4 records 2,731 / 518 / 291. Done 2026-08-28, see [Measured](#measured); the `MIN_BUCKET_ERRORS` doc comment in `config.ts` was corrected at the same time, since it still described three regimes.
 - [ ] Consider a regime breakdown on the dashboard, splitting skill and calibration by the four classes. It is what AC-15 and AC-16 always implied, and it is the only surface that would show whether this split earned its keep. Deliberately not in this child.
 - [ ] Revisit the `0.1` falling fraction once a season of live falling scores exists. It was chosen to match rising rather than from measurement, and the transition matrix from step 5 is the first evidence about whether it splits the record usefully.
 - [ ] No build approach is recorded for the project, so Tracer Bullet has now been assumed a sixth time. Still worth setting explicitly, as the parent already notes.
