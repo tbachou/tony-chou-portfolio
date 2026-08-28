@@ -19,7 +19,9 @@ Run against the live pipeline database, read only, on 2026-08-28.
 4. That left **3,644 classifiable slots**. Each candidate rule was then evaluated over those same three numbers, so every rule sees identical inputs.
 5. For the bias measurement, each prediction was labelled under both the shipped rule and `-0.1 * v`, then joined to its scores. Ratios are `actualCfs / centralCfs` for the persistence baseline only, because climatology's errors are dominated by the fact that it ignores current conditions and would swamp the signal. Groups under 25 scores were dropped.
 
-Reproducing it needs no new machinery: `asOfWalk`, `persistenceForecast` and the median and twelve hour change logic are all exported or trivially restated, and the whole sweep is one pass over one gauge's readings.
+These numbers are a point in time reading of a store that keeps growing. Re running the sweep after another pipeline or scoring pass returns figures a slot or a few scores different, and that is the store moving rather than the method disagreeing. The shape is what matters, and the shape is stable.
+
+It is committed as `apps/streamflow/scripts/sweep-falling-threshold.ts` and takes no arguments: `npx tsx apps/streamflow/scripts/sweep-falling-threshold.ts`, read only.
 
 ## Bucket share by candidate threshold
 
