@@ -533,12 +533,13 @@ describe('backfillRegimes: the snapshot', () => {
   it('refuses a write over a store that is already migrated with no snapshot', async () => {
     const rows = fixture();
     rows.predictions[0].issueRegime = 'FALLING';
+    const held = snapshots();
     const write = writer(rows);
 
     const report = await backfillRegimes({
       reader: reader(rows),
       writer: write.writer,
-      snapshots: snapshots().store,
+      snapshots: held.store,
       write: true,
       now: NOW,
     });
@@ -546,6 +547,33 @@ describe('backfillRegimes: the snapshot', () => {
     expect(report.alreadyMigrated).toBe(true);
     expect(report.wrote).toBe(false);
     expect(write.calls).toEqual([]);
+    // And it leaves nothing behind. Saving here would write a file claiming to
+    // hold pre migration labels while holding this migration's own output, and
+    // the next run would load it, see a reused snapshot, and skip the check
+    // that just refused.
+    expect(held.held()).toBeNull();
+  });
+
+  it('still saves the snapshot when a write is refused for a forbidden cell', async () => {
+    const rows = fixture();
+    // A genuine pre migration store, refused for a different reason. The
+    // snapshot is worth keeping here: it is the real record of what the labels
+    // were, and the next run must compare against it.
+    rows.predictions[0].issueRegime = 'RISING';
+    const held = snapshots();
+    const write = writer(rows);
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: write.writer,
+      snapshots: held.store,
+      write: true,
+      now: NOW,
+    });
+
+    expect(report.wrote).toBe(false);
+    expect(write.calls).toEqual([]);
+    expect(held.held()?.predictions['p-fall']).toBe('RISING');
   });
 
   it('refuses a write when a row appeared after the snapshot was taken', async () => {
