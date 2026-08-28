@@ -26,3 +26,12 @@ src/generated/prisma/
 
 # Built output of packages/shared (consumed by apps/api at runtime)
 packages/shared/dist/
+
+.venv
+
+# AIP-C01 lab — ignore the venv and generated output; track the scripts,
+# the eval dataset, and baseline_scores.json (the gate compares against it).
+lab/.venv/
+lab/__pycache__/
+lab/benchmark_results.json
+lab/eval-output/

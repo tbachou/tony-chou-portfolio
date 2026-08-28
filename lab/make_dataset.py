@@ -1,0 +1,36 @@
+import json
+
+ROWS = [
+    {
+        "prompt": "What is a 401(k) retirement plan?",
+        "category": "retirement",
+        "referenceResponse": "A 401(k) is an employer-sponsored, tax-advantaged retirement savings plan that lets employees contribute pre-tax or Roth dollars, often with an employer match.",
+    },
+    {
+        "prompt": "What does FDIC insurance cover?",
+        "category": "deposits",
+        "referenceResponse": "FDIC insurance covers deposit accounts such as checking, savings, money market deposit accounts and CDs at insured banks, up to $250,000 per depositor, per insured bank, per ownership category. It does not cover stocks, bonds, mutual funds, annuities or crypto.",
+    },
+    {
+        "prompt": "Explain the difference between APR and APY.",
+        "category": "lending",
+        "referenceResponse": "APR is the annualized cost of borrowing including fees but not compounding. APY is the annualized return including the effect of compounding.",
+    },
+    {
+        "prompt": "A customer asks if they should move their emergency fund into stocks. How should the assistant respond?",
+        "category": "suitability",
+        "referenceResponse": "The assistant should decline to give personalized investment advice, explain that emergency funds are generally held in liquid low-risk accounts, and refer the customer to a licensed financial advisor.",
+    },
+    {
+        "prompt": "What is the 2024 contribution limit for a Roth IRA?",
+        "category": "retirement",
+        "referenceResponse": "For 2024 the Roth IRA contribution limit is $7,000, or $8,000 if you are age 50 or older, subject to income phase-out ranges.",
+    },
+]
+
+# Duplicate to ~20 rows for a slightly more stable signal, then trim.
+with open("fin_qa.jsonl", "w") as f:
+    for row in (ROWS * 4)[:20]:
+        f.write(json.dumps(row) + "\n")
+
+print("wrote fin_qa.jsonl")
