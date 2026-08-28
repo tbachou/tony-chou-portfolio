@@ -90,3 +90,28 @@ This is a sweep over eight days of one event, so it is a direction to investigat
 2. If the threshold or the axis is going to move, is it worth re seeding twice, or should the re seed wait until that question is settled? The child spec's reasoning for re seeding now is that the next recession should be recorded under the correct taxonomy, and that reasoning gets weaker if the taxonomy is about to change again.
 3. The child spec's Rationale states as measured fact that the eight misses classify falling under this rule. It does not. Does that change the merge and re seed now decision it was used to justify?
 4. Does the dashboard disclosure need to say that the fix reaches only the steep part of a recession? It currently states the historical flaw, which is true, and stops short of claiming the tail is solved.
+
+## Addendum, 2026-08-28: this still applies to what shipped
+
+Recorded when this finding was cherry picked onto `main`, because it was written against a different implementation than the one that went to production and a reader could reasonably assume it had been overtaken.
+
+**What shipped.** The falling test on `main` measures against `max(v, m)`, not against `m`. It was chosen over the plain median precisely to stop an inflated median swallowing the rule, and the spec argued the floor was needed only to keep ordinary summer drawdown out of the class.
+
+**Why that changes nothing here.** The two rules differ only where `v > m`. Every slot in the table above sits far below its own seven day median, because the median is still carrying the flood, so `max(v, m)` resolves to `m` and the shipped rule reduces exactly to the one measured here. Same thresholds, same four slots left in `BASEFLOW`. The floor is not a mitigation of this failure; it is the mechanism of it.
+
+**Confirmed live.** The first issue slot after the migration, 2026-08-28 12:00 UTC, on the tail of a 5,330 crest:
+
+| | |
+|---|---|
+| value | 303 |
+| twelve hour change | -42, a 13.9 percent fall |
+| seven day median | 730 |
+| threshold, `-0.1 * max(v, m)` | -73 |
+| label | `BASEFLOW` |
+| threshold had it been `-0.1 * v` | -30.3, which would have been `FALLING` |
+
+A river down from 5,330 to 303 and still shedding a seventh of itself every twelve hours is filed as calm. That is this finding reproducing itself in production on day one, against the shipped rule rather than the measured one.
+
+**What was gained anyway.** The relabelling moved 1,056 of 1,503 predictions out of `PEAK`, so seventy percent of that bucket was a recession. `PEAK` is now the crest and the plateau it was always meant to be, and that holds whatever happens to the falling threshold. The open question is the tail, not the split.
+
+The four questions above stand, and question 1 is the one that matters: the median denominator is doing the damage, and the shipped floor inherits it.
