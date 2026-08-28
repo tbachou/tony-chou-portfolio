@@ -76,7 +76,7 @@ export function draftScores(
   return rows.map((row) =>
     draftScore(
       row,
-      classifyRegime(history, row.targetTime, row.actualCfs),
+      classifyRegime(history, row.targetTime, row.actualCfs, floorCfs),
       floorCfs,
       scoredAt,
     ),

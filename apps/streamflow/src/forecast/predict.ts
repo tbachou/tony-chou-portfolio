@@ -12,6 +12,7 @@ import type { BucketReader } from './bucket.repository';
 import { intervalFromErrors } from './interval';
 import { BASELINE_MODELS } from './models';
 import { classifyRegime } from './regime';
+import { flowFloorCfs } from './score.repository';
 import type { Regime } from './regime';
 import { mostRecentIssueSlot } from './schedule';
 
@@ -45,6 +46,12 @@ export interface DraftContext {
   issuedAt: Date;
   hindcast: boolean;
   /**
+   * The gauge's frozen flow floor, which bounds the falling threshold so it
+   * cannot approach zero as the reading does. Required rather than defaulted:
+   * a silent default here would be a regime rule nobody chose.
+   */
+  flowFloorCfs: number;
+  /**
    * Which knowability axis the caller reconstructed `history` on, carried
    * through to the bucket query so the whole slot reads on one axis. Leave it
    * off for the live path, which is the strict one. The seeding hindcast is
@@ -71,8 +78,16 @@ export async function draftPredictions(
   prisma: BucketReader,
   context: DraftContext,
 ): Promise<{ drafts: PredictionDraft[]; skipped: number }> {
-  const { gaugeId, timeZone, models, history, issuedAt, hindcast, axis } =
-    context;
+  const {
+    gaugeId,
+    timeZone,
+    models,
+    history,
+    issuedAt,
+    hindcast,
+    axis,
+    flowFloorCfs: floorCfs,
+  } = context;
 
   // The regime is a property of the moment, not of the forecaster, so it is
   // judged once and shared by every row this slot writes.
@@ -80,7 +95,7 @@ export async function draftPredictions(
   const issueRegime =
     valueAtIssue === null
       ? null
-      : classifyRegime(history, issuedAt, valueAtIssue);
+      : classifyRegime(history, issuedAt, valueAtIssue, floorCfs);
 
   const drafts: PredictionDraft[] = [];
   let skipped = 0;
@@ -254,6 +269,9 @@ export async function issuePredictions(
       history,
       issuedAt,
       hindcast: false,
+      // Derived and frozen on first use, exactly as the scoring job does it,
+      // so both jobs divide by the same constant forever.
+      flowFloorCfs: await flowFloorCfs(prisma, gauge),
     });
 
     const written = await prisma.prediction.createMany({
