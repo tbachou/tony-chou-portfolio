@@ -414,19 +414,29 @@ describe('backfillRegimes: predictions', () => {
     expect(formatReport(report)).toContain('checks FAILED');
   });
 
-  it('writes the same labels when run a second time', async () => {
+  it('resumes an interrupted run without rewriting what it already wrote', async () => {
     const rows = fixture();
     const held = snapshots();
 
-    const first = await backfillRegimes({
-      reader: reader(rows),
-      writer: writer(rows).writer,
-      snapshots: held.store,
-      allowedTransitions: TRANSITIONS_ADD_FALLING,
-      rule: FIRST_RULE,
-      write: true,
-      now: NOW,
-    });
+    // The first run dies after its one write call has landed, so the store
+    // already holds the new labels and the snapshot is saved but unstamped.
+    await expect(
+      backfillRegimes({
+        reader: reader(rows),
+        writer: writer(rows, { failAfter: 0 }).writer,
+        snapshots: held.store,
+        allowedTransitions: TRANSITIONS_ADD_FALLING,
+        rule: FIRST_RULE,
+        write: true,
+        now: NOW,
+      }),
+    ).rejects.toThrow('interrupted');
+    expect(
+      rows.predictions
+        .filter((row) => row.hindcast)
+        .map((row) => row.issueRegime),
+    ).toEqual(['FALLING', 'FALLING']);
+    expect(held.held()?.completedAt).toBeUndefined();
 
     const secondWrite = writer(rows);
     const second = await backfillRegimes({
@@ -439,10 +449,15 @@ describe('backfillRegimes: predictions', () => {
       now: NOW,
     });
 
+    // The checks still ran against the pre migration labels, not against the
+    // half migrated store.
+    expect(second.snapshotReused).toBe(true);
     expect(second.blockers).toEqual([]);
-    expect(second.predictions.total.transitions).toEqual(
-      first.predictions.total.transitions,
-    );
+    expect(second.predictions.total.transitions).toContainEqual({
+      from: 'PEAK',
+      to: 'FALLING',
+      count: 2,
+    });
     // Nothing left to move, because the labels already say what the rule says.
     expect(secondWrite.calls).toEqual([]);
     expect(rows.predictions.map((row) => row.issueRegime)).toEqual([
@@ -450,6 +465,10 @@ describe('backfillRegimes: predictions', () => {
       'FALLING',
       'BASEFLOW',
     ]);
+    // And the resumed run is the one that finished, so it is the one that
+    // stamps: the record heals rather than wedges.
+    expect(second.wrote).toBe(true);
+    expect(held.held()?.completedAt).toBe(NOW().toISOString());
   });
 });
 
@@ -559,8 +578,11 @@ describe('backfillRegimes: the snapshot', () => {
       now: NOW,
     });
 
-    expect(saveOrder).toEqual(['snapshot', 'write']);
+    // The first save is the pre migration record, landing before any write;
+    // the last is the completion stamp, landing after every write.
+    expect(saveOrder).toEqual(['snapshot', 'write', 'snapshot']);
     expect(held.held()?.predictions['p-fall']).toBe('PEAK');
+    expect(held.held()?.completedAt).toBe(NOW().toISOString());
   });
 
   it('refuses a write over a store that is already migrated with no snapshot', async () => {
@@ -705,11 +727,105 @@ describe('backfillRegimes: a second relabelling', () => {
       now: NOW,
     });
 
-    // FALLING is a legal source now, and frozen: the new threshold is never
-    // stricter than the old one, so nothing already falling can stop falling.
+    // FALLING is a legal source now. This row's median sits far above the
+    // floor, where the new threshold is looser or equal, so it keeps falling.
     expect(rows.predictions[0].issueRegime).toBe('FALLING');
     expect(report.blockers).toEqual([]);
     expect(write.calls).toEqual([]);
+  });
+
+  /**
+   * The region AC-D4a names: the seven day median and the value both sit
+   * below the frozen floor, so `max(v, f)` exceeds `max(v, m)` and the new
+   * threshold is stricter than the old one. A dry week draining slowly was
+   * FALLING under the median rule and stops qualifying under the floor.
+   *
+   * The numbers, with the fixture floor at 18.9: the river sits at 16 all
+   * week (median 16), read 16.7 twelve hours before the slot, and 15 at it.
+   * The change is -1.7, the old threshold `-0.1 * max(15, 16)` is -1.6, so it
+   * fell; the new threshold `-0.1 * max(15, 18.9)` is -1.89, so it does not.
+   */
+  function dryWeek(): Fixture {
+    return {
+      predictions: [
+        prediction({ id: 'p-fell', issuedAt: ISSUE, issueRegime: 'FALLING' }),
+      ],
+      scores: [],
+      runStarts: [],
+      observations: series({
+        from: '2026-07-01T00:00:00Z',
+        to: '2026-07-21T00:00:00Z',
+        recordedAt: (validTime) => validTime,
+        value: (validTime) => {
+          const points = bendMany([
+            ['2026-07-19T12:00:00Z', 16.7],
+            ['2026-07-20T00:00:00Z', 15],
+          ])(validTime);
+          return points === 200 ? 16 : points;
+        },
+      }),
+    };
+  }
+
+  it('moves a FALLING row to BASEFLOW where the median and the value sit below the floor', async () => {
+    const rows = dryWeek();
+    const write = writer(rows);
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: write.writer,
+      snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      now: NOW,
+    });
+
+    expect(report.blockers).toEqual([]);
+    expect(write.calls).toEqual([
+      { column: 'prediction', ids: ['p-fell'], regime: 'BASEFLOW' },
+    ]);
+    expect(rows.predictions[0].issueRegime).toBe('BASEFLOW');
+  });
+
+  it('lets a row that stops falling land in PEAK when the ladder puts it there', async () => {
+    // AC-D4c: `f > v >= 1.5 * m`, a river below the flow floor while still
+    // half again its own depressed median. Not on the record measured today,
+    // and legal rather than forbidden, because refusing it would block a
+    // future run over a correct relabelling. Median 10, read 16.6 twelve
+    // hours before the slot, 15 at it: the change of -1.6 cleared the old
+    // threshold of -1.5 but not the new one of -1.89, and 15 is exactly
+    // `1.5 * 10`.
+    const rows = dryWeek();
+    rows.observations = series({
+      from: '2026-07-01T00:00:00Z',
+      to: '2026-07-21T00:00:00Z',
+      recordedAt: (validTime) => validTime,
+      value: (validTime) => {
+        const points = bendMany([
+          ['2026-07-19T12:00:00Z', 16.6],
+          ['2026-07-20T00:00:00Z', 15],
+        ])(validTime);
+        return points === 200 ? 10 : points;
+      },
+    });
+    const write = writer(rows);
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: write.writer,
+      snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      now: NOW,
+    });
+
+    expect(report.blockers).toEqual([]);
+    expect(write.calls).toEqual([
+      { column: 'prediction', ids: ['p-fell'], regime: 'PEAK' },
+    ]);
+    expect(rows.predictions[0].issueRegime).toBe('PEAK');
   });
 
   it('refuses to write when a PEAK row would move', async () => {
@@ -765,6 +881,54 @@ describe('backfillRegimes: a second relabelling', () => {
     expect(report.blockers.join(' ')).toContain('the store has moved');
   });
 
+  it('saves its snapshot on a report only run, and the write that follows reuses it', async () => {
+    // This pairing is what makes the drift check a control (AC-D8a): the
+    // write's snapshot is the report's, so its `takenAt` is the instant the
+    // report described the store, and an ingest landing between the two runs
+    // is a run started after it. A write that took its own fresh snapshot
+    // would measure drift over the seconds of its own execution and wave the
+    // whole report to write window through.
+    const rows = fixture();
+    rows.predictions[0].issueRegime = 'BASEFLOW';
+    const held = snapshots();
+    const askedSince: Date[] = [];
+    const read: BackfillReader = {
+      ...reader(rows),
+      ingestRunsSince: async (instant) => {
+        askedSince.push(instant);
+        return 0;
+      },
+    };
+
+    const reportRun = await backfillRegimes({
+      reader: read,
+      writer: writer(rows).writer,
+      snapshots: held.store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      now: () => new Date('2026-08-28T18:00:00Z'),
+    });
+
+    expect(reportRun.wrote).toBe(false);
+    expect(held.held()?.takenAt).toBe('2026-08-28T18:00:00.000Z');
+    expect(held.held()?.completedAt).toBeUndefined();
+
+    const writeRun = await backfillRegimes({
+      reader: read,
+      writer: writer(rows).writer,
+      snapshots: held.store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      now: () => new Date('2026-08-28T18:20:00Z'),
+    });
+
+    expect(writeRun.snapshotReused).toBe(true);
+    expect(writeRun.wrote).toBe(true);
+    // Drift was measured from the report's instant, not the write's own.
+    expect(askedSince).toEqual([new Date('2026-08-28T18:00:00.000Z')]);
+  });
+
   it('does not care about intervening runs in report only mode', async () => {
     const rows = fixture();
     rows.ingestRunsSince = 5;
@@ -781,6 +945,119 @@ describe('backfillRegimes: a second relabelling', () => {
     // Nothing is written, so nothing can be written against a moved store.
     expect(report.driftRuns).toBe(0);
     expect(report.blockers).toEqual([]);
+  });
+});
+
+describe('backfillRegimes: the completed stamp', () => {
+  const ISSUE = new Date('2026-07-20T00:00:00Z');
+
+  function fixture(): Fixture {
+    return {
+      predictions: [
+        prediction({ id: 'p-fall', issuedAt: ISSUE, issueRegime: 'BASEFLOW' }),
+      ],
+      scores: [],
+      runStarts: [],
+      observations: series({
+        from: '2026-07-01T00:00:00Z',
+        to: '2026-07-21T00:00:00Z',
+        recordedAt: (validTime) => validTime,
+        value: bendMany([
+          ['2026-07-19T12:00:00Z', 3000],
+          ['2026-07-20T00:00:00Z', 400],
+        ]),
+      }),
+    };
+  }
+
+  it('stamps completedAt when a write finishes cleanly', async () => {
+    const rows = fixture();
+    const held = snapshots();
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: writer(rows).writer,
+      snapshots: held.store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      now: NOW,
+    });
+
+    expect(report.wrote).toBe(true);
+    expect(report.written.predictions).toBe(1);
+    expect(held.held()?.completedAt).toBe(NOW().toISOString());
+  });
+
+  it('does not stamp a run refused for a forbidden cell', async () => {
+    const rows = fixture();
+    rows.predictions[0].issueRegime = 'RISING';
+    const held = snapshots();
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: writer(rows).writer,
+      snapshots: held.store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      now: NOW,
+    });
+
+    expect(report.wrote).toBe(false);
+    // The snapshot itself is kept: it is a genuine pre migration record.
+    expect(held.held()).not.toBeNull();
+    expect(held.held()?.completedAt).toBeUndefined();
+  });
+
+  it('does not stamp an interrupted run', async () => {
+    const rows = fixture();
+    const held = snapshots();
+
+    await expect(
+      backfillRegimes({
+        reader: reader(rows),
+        writer: writer(rows, { failAfter: 0 }).writer,
+        snapshots: held.store,
+        allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+        rule: 'max-v-floor',
+        write: true,
+        now: NOW,
+      }),
+    ).rejects.toThrow('interrupted');
+
+    expect(held.held()).not.toBeNull();
+    expect(held.held()?.completedAt).toBeUndefined();
+  });
+
+  it('refuses any run that loads a snapshot already stamped for its rule', async () => {
+    const rows = fixture();
+    const completed = {
+      rule: 'max-v-floor',
+      takenAt: '2026-08-28T18:00:00Z',
+      completedAt: '2026-08-28T18:25:00Z',
+      predictions: { 'p-fall': 'BASEFLOW' as const },
+      scores: {},
+    };
+
+    // The write is the dangerous one, and the report refuses the same way:
+    // a report against a completed snapshot would show the finished
+    // migration's movements as though they were still pending.
+    for (const write of [true, false]) {
+      const untouched = writer(rows);
+      await expect(
+        backfillRegimes({
+          reader: reader(rows),
+          writer: untouched.writer,
+          snapshots: snapshots(completed).store,
+          allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+          rule: 'max-v-floor',
+          write,
+          now: NOW,
+        }),
+      ).rejects.toThrow(/already ran to completion at 2026-08-28T18:25:00Z/);
+      expect(untouched.calls).toEqual([]);
+    }
   });
 });
 
@@ -1029,5 +1306,13 @@ describe('formatReport', () => {
     const text = formatReport(report);
     expect(text).toContain('MODE: report only, nothing was written');
     expect(text).toContain('checks: AC-F7 and AC-F8 hold.');
+    // AC-D5b: the clean check names its own blind spot rather than reading as
+    // proof. An empty store like this one moves zero rows legitimately, and so
+    // does a store already migrated whose snapshot was deleted; no local test
+    // can tell them apart.
+    expect(text).toContain(
+      'a store already migrated whose snapshot was deleted looks identical',
+    );
+    expect(text).toContain('not proof this run was the first');
   });
 });

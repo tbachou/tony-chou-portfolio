@@ -127,9 +127,12 @@ function median(values: number[]): number {
  * unbiased on. The name is kept because renaming an enum value would cost a
  * rewrite of every stored row to buy a better word.
  *
- * Rising and falling can never both hold, because `d` cannot be at once at or
- * above `0.1 * m` and at or below `-0.1 * max(v, m)` while `m` is positive,
- * which the null checks below already guarantee.
+ * Rising and falling can never both hold. The null checks guarantee `m > 0`
+ * and the guard at the top guarantees `f > 0`, so `max(v, f)` is strictly
+ * positive whatever `v` is, and `d` cannot be at once at or above one positive
+ * number and at or below the negative of another. The floor is what makes this
+ * unconditional: against plain `v` it would need `v > -m`, which nothing
+ * checks.
  *
  * Returns null when there is not enough history to judge, which the caller
  * must handle rather than defaulting to BASEFLOW: guessing calm would quietly
