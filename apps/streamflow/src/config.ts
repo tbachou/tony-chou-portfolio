@@ -82,15 +82,16 @@ export const INTERVAL_QUANTILE_HIGH = 0.9;
  * distribution, for the regime conditioned bucket and the pooled one alike.
  * Inherited from the parent spec.
  *
- * All four regimes clear it on the backfilled record. Measured 2026-08-28,
- * counting predictions by `issueRegime` per model and horizon: persistence
- * holds 2,426 baseflow, 522 rising, 607 falling and 89 peak; climatology holds
- * about 1,483, 359, 411 and 60. The narrowed PEAK is the one to watch, since
- * the falling split took roughly seventy percent of what used to be filed
- * there, but at 60 it is still twice the floor. If a later measurement puts it
- * under 30 the ladder handles it: the bucket falls through to pooled quantiles
- * and the prediction declares itself unseeded rather than claiming a
- * conditioning it does not have.
+ * All four regimes clear it on the relabelled record. Measured 2026-08-28
+ * after the falling denominator relabelling, counting predictions by
+ * `issueRegime` per model and horizon: persistence holds 2,165 baseflow, 522
+ * rising, 870 falling and 89 peak; climatology holds about 1,309, 359, 587
+ * and 60. The denominator change moved rows only between BASEFLOW and
+ * FALLING, so the narrowed PEAK is unchanged and is still the one to watch,
+ * but at 60 it is still twice the floor. If a later measurement puts it under
+ * 30 the ladder handles it: the bucket falls through to pooled quantiles and
+ * the prediction declares itself unseeded rather than claiming a conditioning
+ * it does not have.
  */
 export const MIN_BUCKET_ERRORS = 30;
 

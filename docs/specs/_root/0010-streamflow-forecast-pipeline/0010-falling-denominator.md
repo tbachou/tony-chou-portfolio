@@ -230,6 +230,42 @@ Tracer Bullet, matching the parent. No migration leads this time, since the enum
 - The first migration's snapshot is reused by accident, which would compare this run against labels from before FALLING existed and report the previous migration's movements. Phase 2 and the refusal in **AC-D5** both guard it.
 - The threshold moves again once a second recession is on the record, making this the second of three relabellings. Handled rather than prevented: **AC-D5** is exactly this concession.
 
+## Measured
+
+Report only run against the production store, 2026-08-28 23:41:55 UTC, forecasting off, before any row was written (**AC-D7**). The write run at 23:44:31 UTC reused the report's snapshot and produced the identical matrix, wrote 1,323 predictions and 1,294 scores, and stamped the snapshot `completedAt`. Zero ingest or rescan runs intervened (**AC-D8a**), no forbidden cell appeared, the null sets are identical on both columns (**AC-D9**), no live score took the `scoredAt` fallback, and a rerun against the stamped snapshot refuses by name (**AC-D5a**).
+
+**`Prediction.issueRegime`**, 18,921 rows. Counts are after the relabelling.
+
+| model, horizon | BASEFLOW | RISING | PEAK | FALLING | null | moved |
+|---|---|---|---|---|---|---|
+| climatology h24 | 1,309 | 355 | 60 | 587 | 110 | 176 baseflow to falling |
+| climatology h48 | 1,309 | 359 | 60 | 587 | 110 | 176 baseflow to falling |
+| climatology h72 | 1,310 | 362 | 60 | 587 | 110 | 176 baseflow to falling |
+| persistence h24 | 2,165 | 522 | 89 | 870 | 236 | 264 baseflow to falling, 1 falling to baseflow |
+| persistence h48 | 2,165 | 522 | 89 | 870 | 236 | 264 baseflow to falling, 1 falling to baseflow |
+| persistence h72 | 2,165 | 522 | 89 | 870 | 236 | 264 baseflow to falling, 1 falling to baseflow |
+| **all** | **10,423** | **2,642** | **447** | **4,371** | **1,038** | 1,320 baseflow to falling, 3 falling to baseflow |
+
+**`Score.regime`**, 17,601 rows.
+
+| model, horizon | BASEFLOW | RISING | PEAK | FALLING | null | moved |
+|---|---|---|---|---|---|---|
+| climatology h24 | 1,295 | 351 | 53 | 582 | 9 | 178 baseflow to falling |
+| climatology h48 | 1,295 | 351 | 53 | 578 | 9 | 174 baseflow to falling |
+| climatology h72 | 1,293 | 351 | 53 | 576 | 9 | 172 baseflow to falling |
+| persistence h24 | 2,098 | 518 | 83 | 854 | 36 | 259 baseflow to falling, 1 falling to baseflow |
+| persistence h48 | 2,098 | 518 | 83 | 850 | 32 | 255 baseflow to falling, 1 falling to baseflow |
+| persistence h72 | 2,093 | 518 | 83 | 848 | 31 | 253 baseflow to falling, 1 falling to baseflow |
+| **all** | **10,172** | **2,607** | **408** | **4,288** | **126** | 1,291 baseflow to falling, 3 falling to baseflow |
+
+**What the numbers say.**
+
+The stricter corner **AC-D4a** names is exactly as small as predicted: one slot stops falling, visible as 1 prediction and 1 score per persistence horizon and nothing for climatology, which has no rows at that slot. A matrix that still froze FALLING would have refused the whole relabelling over those six rows, which is why the corrected matrix mattered before the run rather than after it.
+
+PEAK and RISING did not move at all, 447 and 2,642 predictions respectively, which is **AC-D4b** observed rather than argued. FALLING grows from 3,054 to 4,371 predictions, about seventeen to twenty four percent of the 17,883 classifiable, the modest growth the Decision predicted rather than the eighty percent a recession week would suggest. BASEFLOW gives up about eleven percent of its rows, the recession tail it had been carrying.
+
+Every bucket clears the thirty error minimum after the move (**AC-D11**): the smallest is climatology PEAK at 60, untouched by this change, and the new FALLING buckets sit at 587 and 870 per horizon. No bucket falls through to pooled quantiles as a result of this change.
+
 ## Consequences
 
 **Positive**:
@@ -253,7 +289,7 @@ Tracer Bullet, matching the parent. No migration leads this time, since the enum
 
 ## Follow-up
 
-- [ ] Record the measured counts and transition matrix from build step 7 in this spec, the way the falling regime child records its own.
+- [x] Record the measured counts and transition matrix from build step 7 in this spec, the way the falling regime child records its own. Done 2026-08-28, see `## Measured`.
 - [ ] PEAK measures 0.831 with seventy four percent of forecasts too high over 247 scores, even after the split. A genuine plateau should be close to unbiased. Worth its own investigation: either a crest is simply hard to forecast, or PEAK still mixes the crest with the first hours of the drop and wants splitting again. Deliberately not settled here.
 - [ ] The marginal group at `-0.1 * v` still measures 0.816 rather than 0.97, which hints that a looser threshold would catch more real recession. Unmeasured. Sweep `-0.05 * v` and `-0.075 * v` for both bucket share and bias before touching the number again.
 - [ ] Revisit once a second large recession is on the record. Every number here comes from one gauge and one climate, and the mechanism that broke the floor, a seven day median dominated by the event it is meant to give context to, may behave differently after a smaller flood.
