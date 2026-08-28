@@ -99,6 +99,13 @@ Leave `classifyRegime` alone and accept that a recession is filed as PEAK while 
 
 ## Decision
 
+> **Superseded in part, 2026-08-28.** The denominator decided here was revised the same day by
+> [0010-falling-denominator.md](0010-falling-denominator.md), which drops the median floor and measures
+> the fall against the current value alone. Measurement showed the floor holds 742 recession like scores
+> in baseflow. Everything else this child decides, the fourth class, the ladder order, the backfill and
+> its checks, stands and shipped. The counts recorded below are the ones the first relabelling actually
+> produced and are left as written.
+
 **Chosen option**: Option 4: a fall measured against the current value, floored at the seven day median.
 
 `FALLING` joins the enum, and `classifyRegime` tests RISING, then FALLING at `d <= -0.1 * max(v, m)`, then PEAK, then BASEFLOW; the whole stored record is relabelled by the same function while forecasting is paused.
