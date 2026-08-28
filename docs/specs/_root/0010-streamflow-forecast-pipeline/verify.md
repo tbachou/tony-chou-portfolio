@@ -51,3 +51,66 @@ Neither is a defect in this child spec's implementation. Both are recorded here 
 - AC-H7 covered by the two UI steps
 - AC-H8 covered by the public read check on the seeded throwaway
 - AC-H9 covered by the scorable query tests on the validTime axis
+
+---
+
+# Verify: falling regime · spec 0010 · written 2026-08-27
+
+_Steps derived from the acceptance criteria in [0010-falling-regime.md](0010-falling-regime.md). `/check verify` runs these; `/test` locks the durable ones. Boxes marked `[x]` were run during the build; the unticked ones need the production database or the repository variable and are the operator's._
+
+## Commands
+
+- [x] `npm test --workspace=apps/streamflow` → 270 green, including 13 in `regime.spec.ts` and 22 in `backfill-regime.spec.ts` → AC-F1, AC-F2, AC-F3, AC-F5, AC-F6, AC-F7, AC-F8, AC-F9, AC-F10, AC-F13
+- [x] `npx tsc --noEmit -p apps/streamflow/tsconfig.json`, and the same for `apps/web` and `apps/api` → clean
+- [x] `npm run lint` → no errors (11 pre existing warnings in `apps/web`, none in the changed files)
+- [x] Against a throwaway local Postgres with the migrations applied, seeded with one prediction whose old label is PEAK and one score whose old label is BASEFLOW, both FALLING under the new rule: `PIPELINE_DATABASE_URL=postgres://...@localhost:PORT/dev npx tsx apps/streamflow/scripts/backfill-regime.ts` → prints `PEAK -> FALLING` and `BASEFLOW -> FALLING`, per model and horizon, and writes nothing → AC-F6
+- [x] The same fixture with `--write` → the two labels move, and `lowerCfs`, `upperCfs`, `q10Used`, `q90Used`, `intervalSeeded` and `bucketSize` are unchanged on the moved row → AC-F10
+- [x] Rerun with `--write` and the snapshot file left in place → `reusing the one taken ...`, checks hold, 0 rows written → AC-F5, AC-F9
+- [x] Delete `apps/streamflow/.regime-backfill/` and rerun `--write` over the migrated store → refuses, names the missing snapshot, exits non zero → AC-F9
+- [ ] Deploy the enum migration alone and confirm `FALLING` exists in the production `Regime` type before any code that can write it ships → AC-F1
+- [ ] Set the GitHub repository variable `STREAMFLOW_FORECASTING` to `false`, then confirm `.github/workflows/streamflow-score.yml` skips and `streamflow-pipeline.yml` still ingests and rescans → AC-F11
+- [ ] Against production, forecasting off: `npx tsx apps/streamflow/scripts/backfill-regime.ts` → record the four bucket counts and the full transition matrix, per model and horizon, in `0010-falling-regime.md` beside the parent's 2,731 / 518 / 291 line → AC-F6
+- [ ] Only once those numbers are in the file: `npx tsx apps/streamflow/scripts/backfill-regime.ts --write` → no forbidden cell, no row in or out of the null set, `live scores bound at scoredAt` is 0 → AC-F5, AC-F7, AC-F8, AC-F9
+- [ ] Keep `apps/streamflow/.regime-backfill/pre-migration-labels.json` until the write run has finished cleanly. It is what a resumed run compares against, not a cache → AC-F9
+- [ ] Set `STREAMFLOW_FORECASTING` back to `true`, then check the next issued slot: all three horizons present, each either regime conditioned or with `intervalSeeded` false → AC-F11, AC-F12
+- [ ] Visit `/projects/streamflow` → the intervals paragraph names baseflow, rising, falling and at a peak → AC-F14
+
+## Value sourcing checks
+
+One per row of the spec's Value sourcing table, each exercising the edge that breaks if the source is wrong.
+
+- [x] `m`, the seven day median: readings at or after the instant being judged never enter it, so a future spike cannot drag the median → AC-F1
+- [x] `d`, the twelve hour change: a hole more than two hours wide at the twelve hour mark returns null rather than comparing against the wrong reading → AC-F3
+- [x] The rising threshold, still `0.1 * m`: a rise of `0.1 * m` is RISING at baseflow and at a storm peak alike, and rising is tested before falling → AC-F2
+- [x] The falling threshold, `0.1 * max(v, m)`: at 1000 against a median of 200, a fall of exactly 100 is FALLING and a fall of 99 is PEAK → AC-F1, AC-F13
+- [x] The same threshold's floor: at 50 against a median of 200, a fall of 5 (a tenth of the value) is BASEFLOW while a fall of 20 (a tenth of the median) is FALLING → AC-F1, AC-F13
+- [x] The peak multiple, still `1.5 * m`: a high steady river is still PEAK → AC-F1, AC-F13
+- [x] The minimum history, still 224 readings: fewer returns null, and a non positive median returns null → AC-F3
+- [x] A prediction's history: bound at that prediction's own `issuedAt`, computed once per distinct issue slot, and every row the slot wrote carries the same label → AC-F5
+- [x] A live score's history: bound at the `startedAt` of the newest SCORE run at or before its `scoredAt`. Over a fixture where a revision lands between the two instants, `startedAt` gives FALLING and `scoredAt` gives BASEFLOW, so the two really do differ → AC-F5
+- [x] A live score with no SCORE run before it: falls back to `scoredAt` and is counted in the report rather than passing silently → AC-F5
+- [x] A hindcast score's history: bound at its own `scoredAt`, ignoring any SCORE run → AC-F5
+- [x] The pre migration labels: saved before the first row is written, and a resumed run compares against that file. Over a fixture where the store already holds FALLING and the file says RISING, the run reports `RISING -> FALLING` and refuses → AC-F9
+- [x] The knowability axis: over an archive sharing one late `recordedAt`, a hindcast prediction is labelled on `validTime` and would be null on `recordedAt`, while a live prediction is labelled on `recordedAt` → AC-F5
+- [x] `v` for a prediction: the persistence value at issue, drawn from that prediction's own history → AC-F5
+- [x] `v` for a score: the score's stored `actualCfs` → AC-F5
+- [x] How history is loaded: the gauge's whole record read once and walked forward once per axis, rather than a query per row → AC-F5
+- [x] The expected transition matrix: checked rather than printed. A fixture where a RISING row would move fails with the cell named, and writes nothing → AC-F7
+- [ ] The class names in the case study copy: the rendered page names four classes → AC-F14
+
+## Acceptance-criteria coverage
+
+- AC-F1 covered by the ordering, boundary and floor tests in `regime.spec.ts`
+- AC-F2 covered by the rising first tests and the forbidden `RISING ->` cell in the backfill checks
+- AC-F3 covered by the three null tests, unchanged from before this child
+- AC-F4 holds structurally: both columns are written from `classifyRegime`, and the backfill relabels both from the same function
+- AC-F5 covered by the axis, slot sharing, run start, fallback and hindcast binding tests, plus the throwaway database run
+- AC-F6 covered by the report only tests and the throwaway run; the production run is still owed
+- AC-F7 covered by the forbidden cell test and the allowed transition table
+- AC-F8 covered by the null stays null tests and the null set movement refusal
+- AC-F9 covered by the interrupted and resumed test, the snapshot before write ordering test, and the already migrated refusal
+- AC-F10 covered structurally by the writer interface, which can set only a regime, and observed on a real database
+- AC-F11 not covered here: it is a repository variable, and the window is the operator's
+- AC-F12 needs no new mechanism; the existing ladder already falls through to pooled with `intervalSeeded` false
+- AC-F13 covered by the four ordering and floor tests
+- AC-F14 half done: the parent index states the four class rule and the case study copy names four classes

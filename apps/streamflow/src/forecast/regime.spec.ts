@@ -66,17 +66,55 @@ describe('classifyRegime', () => {
     expect(classifyRegime(history, AT, 3000)).toBe('RISING');
   });
 
-  it('calls a falling river baseflow when it is back near normal', () => {
+  it('calls a river draining back towards normal falling', () => {
+    // Median 200, so the bar is a tenth of max(210, 200), which is 21 down.
+    // A drop of 590 clears it many times over. This used to be BASEFLOW, and
+    // pooling a drain with a flat week is what the fourth class exists to end.
     const history = withValueTwelveHoursBack(sevenCalmDays(200), 800);
 
-    expect(classifyRegime(history, AT, 210)).toBe('BASEFLOW');
+    expect(classifyRegime(history, AT, 210)).toBe('FALLING');
   });
 
-  it('still calls a high falling river a peak', () => {
-    // Coming down hard but a long way above normal: not rising, still a peak.
+  it('calls a high river dropping hard falling rather than a peak', () => {
+    // Coming down hard and a long way above normal. It used to be PEAK, which
+    // put a one sided sample in the same bucket as the unbiased plateau.
     const history = withValueTwelveHoursBack(sevenCalmDays(200), 5000);
 
-    expect(classifyRegime(history, AT, 2000)).toBe('PEAK');
+    expect(classifyRegime(history, AT, 2000)).toBe('FALLING');
+  });
+
+  it('counts a fall of exactly a tenth of the current value, and not a hair less', () => {
+    // Above the median, so max(v, m) is v: at 1000 the bar is 100 down.
+    const atTheBar = withValueTwelveHoursBack(sevenCalmDays(200), 1100);
+    const oneShort = withValueTwelveHoursBack(sevenCalmDays(200), 1099);
+
+    expect(classifyRegime(atTheBar, AT, 1000)).toBe('FALLING');
+    // One cubic foot per second short, and still five times the median, so it
+    // falls through to the class the ordering leaves for a high river.
+    expect(classifyRegime(oneShort, AT, 1000)).toBe('PEAK');
+  });
+
+  it('holds the bar at the median when the river is below it', () => {
+    // At a fifth of normal flow a tenth of the current value is five cubic
+    // feet per second, which is ordinary summer drying down. The floor keeps
+    // it out of the class built for post storm drops.
+    const gentle = withValueTwelveHoursBack(sevenCalmDays(200), 55);
+
+    expect(classifyRegime(gentle, AT, 50)).toBe('BASEFLOW');
+
+    // The same low river dropping by a tenth of the median does count, which
+    // is the floor doing its job rather than switching the class off.
+    const steep = withValueTwelveHoursBack(sevenCalmDays(200), 70);
+
+    expect(classifyRegime(steep, AT, 50)).toBe('FALLING');
+  });
+
+  it('prefers rising over falling and peak when the river is climbing', () => {
+    // AC-F2: nothing that was RISING moves. The falling test is only ever
+    // reached by a river that is not climbing.
+    const history = withValueTwelveHoursBack(sevenCalmDays(200), 100);
+
+    expect(classifyRegime(history, AT, 3000)).toBe('RISING');
   });
 
   it('never reads a value from at or after the moment it judges', () => {

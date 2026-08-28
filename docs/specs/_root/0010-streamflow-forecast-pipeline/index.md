@@ -13,6 +13,7 @@ Child specs, added when the decision they settle is reached:
 
 1. [0010-prediction-intervals.md](0010-prediction-intervals.md): how a prediction's lower and upper bounds are derived, which regime conditions them, and what happens before enough scored history exists. Settles the parts of AC-20 and AC-21 this index leaves open.
 2. [0010-hindcast-seeding.md](0010-hindcast-seeding.md): what "knowable at T" means while the seeding hindcast walks an archive that was imported in one pass, and where the interval bucket's time bound moves as a result. Settles what AC-20 leaves open about reconstructing history the pipeline learned all at once.
+3. [0010-falling-regime.md](0010-falling-regime.md): a fourth regime for a river on its way down, and the threshold that decides when a fall counts. Settles the gap AC-12's three class rule leaves over a recession, where persistence is biased in a way the peak and baseflow buckets both hide.
 
 ## Requirements
 
@@ -35,7 +36,7 @@ Child specs, added when the decision they settle is reached:
 - **AC-9**: Every `Prediction` carries a central estimate, a lower bound, an upper bound, and the nominal interval level.
 - **AC-10**: Once truth is available, each prediction gets a `Score` recording the actual value used and the `recordedAt` of the exact revision it came from.
 - **AC-11**: When a revision changes the truth for an already scored prediction, a new `Score` row is written rather than the old one being altered. Unique on (`predictionId`, `actualRecordedAt`).
-- **AC-12**: Every `Score` is tagged with a regime of `BASEFLOW`, `RISING` or `PEAK`, by the documented rule in Value sourcing.
+- **AC-12**: Every `Score` is tagged with a regime of `BASEFLOW`, `RISING`, `FALLING` or `PEAK`, by the documented rule in Value sourcing. The falling class and the threshold that defines it are settled in [0010-falling-regime.md](0010-falling-regime.md).
 - **AC-13**: Feature building reads only through the as of reconstruction. A test proves that the training set for a prediction issued at T contains no row whose `recordedAt` is after T.
 - **AC-14**: The backtest evaluates by walk forward (rolling origin): for each simulated issue time it trains only on data available at that time, and never on later data.
 - **AC-15**: The public dashboard shows, per horizon, model error against each baseline over time, including the periods where the model is worse.
@@ -114,7 +115,7 @@ All read only and public. No writes are exposed; the pipeline writes directly to
 | scoring | `pctError` | derived: `absError / max(actualCfs, floorCfs)` where `floorCfs` is a constant equal to the 5th percentile of the gauge's historical flow, so a near zero denominator cannot produce a meaningless percentage |
 | scoring | cadence and policy | runs hourly, scores any prediction whose `targetTime` has passed and for which an observation exists, using whatever revision is current, provisional included. Waiting for approval would leave the dashboard months stale |
 | dashboard | default windows | constants: 90 days for skill and calibration, 30 days for history, and a hard maximum of 365 days on the observations endpoint before it returns 422 |
-| scoring | `regime` | derived rule: let `m` be the median of the prior 7 days as known at `targetTime`, and `d` the change over the prior 12 hours. `RISING` if `d` is at least 10 percent of `m`. `PEAK` if not rising and the value is at least 1.5 times `m`. `BASEFLOW` otherwise |
+| scoring | `regime` | derived rule: let `m` be the median of the prior 7 days as known at `targetTime`, `d` the change over the prior 12 hours, and `v` the value being classified. `RISING` if `d` is at least 10 percent of `m`. `FALLING` if not rising and `d` is at most minus 10 percent of `max(v, m)`. `PEAK` if neither applies and `v` is at least 1.5 times `m`. `BASEFLOW` otherwise. The falling test is settled in [0010-falling-regime.md](0010-falling-regime.md) |
 | dashboard | display timezone | constant `America/New_York` |
 | dashboard | attribution text | constant, required by Open-Meteo's CC BY 4.0 licence |
 
