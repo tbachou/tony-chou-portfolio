@@ -161,6 +161,7 @@ export async function runHindcast(
       issuedAt: slot,
       hindcast: true,
       axis,
+      flowFloorCfs: floorCfs,
     });
 
     if (drafts.length > 0) {

@@ -65,6 +65,9 @@ function context(over: Partial<DraftContext> = {}): DraftContext {
     history: fullHistory(),
     issuedAt: ISSUED_AT,
     hindcast: false,
+    // The real gauge's frozen floor. Far below anything these fixtures use, so
+    // it bounds the falling threshold without ever deciding a case here.
+    flowFloorCfs: 18.9,
     ...over,
   };
 }
