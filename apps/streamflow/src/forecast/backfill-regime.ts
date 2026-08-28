@@ -79,16 +79,27 @@ export const TRANSITIONS_ADD_FALLING: TransitionMatrix = {
  * Dropping the median floor from the falling test (spec 0010, falling
  * denominator child).
  *
- * Only BASEFLOW may lose rows now. PEAK is frozen because the change cannot
- * reach it: PEAK requires `v >= 1.5 * m`, which forces `v > m`, where the old
- * `max(v, m)` already resolved to `v`. FALLING is frozen because the new
- * threshold is never stricter than the old one, so anything already falling
- * still falls.
+ * PEAK is frozen because the change cannot reach it: PEAK requires
+ * `v >= 1.5 * m`, which forces `v > m`, where the old `max(v, m)` already
+ * resolved to `v`, and the new `max(v, f)` is at least `v`. A row that was not
+ * falling cannot start falling, whatever the floor is (AC-D4b).
+ *
+ * FALLING is not frozen, and an earlier draft of this matrix wrongly had it
+ * so. The change is not uniformly looser: where the seven day median sits
+ * below the frozen floor and the value does too, `max(v, f)` exceeds
+ * `max(v, m)` and the new threshold is stricter, so a row can stop falling
+ * (AC-D4a). It then lands wherever the rest of the ladder puts it, usually
+ * BASEFLOW, and legally PEAK when `v >= 1.5 * m` even though that corner is
+ * not on the record measured today (AC-D4c). On the production record this
+ * touches exactly one slot against 264 moving the other way; a run reporting
+ * more than a handful in that direction is a defect, but the judgement is the
+ * operator's, because a matrix that forbade the cell outright would refuse a
+ * correct relabelling over its one legitimate row.
  */
 export const TRANSITIONS_DROP_MEDIAN_FLOOR: TransitionMatrix = {
   RISING: ['RISING'],
   PEAK: ['PEAK'],
-  FALLING: ['FALLING'],
+  FALLING: ['FALLING', 'BASEFLOW', 'PEAK'],
   BASEFLOW: ['BASEFLOW', 'FALLING'],
   [NO_CLASS]: [NO_CLASS],
 };
@@ -168,6 +179,16 @@ export interface RegimeSnapshot {
   /** The rule this snapshot's labels were produced under, `REGIME_RULE_TAG`. */
   rule: string;
   takenAt: string;
+  /**
+   * Set once, when a write run under this snapshot's rule finished cleanly.
+   *
+   * This is the already migrated guard (AC-D5a). It replaces the label test:
+   * once every class is a legal source, the stored labels genuinely cannot
+   * tell a finished store from an unfinished one, so the only honest record
+   * of what happened is an explicit stamp written by the run that did it. A
+   * run that loads a snapshot carrying this refuses rather than comparing.
+   */
+  completedAt?: string;
   predictions: Record<string, Regime | null>;
   scores: Record<string, Regime | null>;
 }
@@ -249,7 +270,13 @@ export interface BackfillReport {
   forbidden: TransitionCell[];
   /** Ids that entered or left the null set, which AC-F8 forbids. */
   nullSetMoved: { predictions: string[]; scores: string[] };
-  /** True when the store already carried FALLING and no snapshot explained it. */
+  /**
+   * True when the store carries a label the matrix lists no source for and no
+   * snapshot explains it. That catches the first migration's shape, where
+   * FALLING could not yet exist; for a rule change whose matrix admits every
+   * class it can never fire, which is why it is not the already migrated
+   * guard. The `completedAt` stamp on the snapshot is (AC-D5a).
+   */
   alreadyMigrated: boolean;
   /** Ingest or rescan runs that started after the snapshot was taken. */
   driftRuns: number;
@@ -423,6 +450,21 @@ export async function backfillRegimes(
     );
   }
 
+  // The already migrated guard (AC-D5a). A completed stamp is the one record
+  // that survives the relabelling itself: after it, every stored label is a
+  // legal starting point for this rule, so no label test can tell a finished
+  // store from an unfinished one. Refusing on the stamp rather than inferring
+  // from row counts also keeps an empty store or a fresh gauge runnable, which
+  // legitimately move zero rows and deserve no accusing message.
+  if (loaded?.completedAt) {
+    throw new Error(
+      `this migration ("${rule}") already ran to completion at ${loaded.completedAt}, ` +
+        'as recorded on its snapshot. Rerunning it would report no movement and prove ' +
+        'nothing. If a fresh relabelling is genuinely intended, archive the snapshot ' +
+        'and run again.',
+    );
+  }
+
   const snapshotReused = loaded !== null;
   const snapshot: RegimeSnapshot = loaded ?? {
     rule,
@@ -458,7 +500,15 @@ export async function backfillRegimes(
   // very check that just refused. Saving before the other checks is still
   // right: a run refused for a forbidden cell has a genuine pre migration
   // snapshot worth keeping.
-  if (write && !snapshotReused && !alreadyMigrated) {
+  //
+  // A report only run saves too, and that is what anchors the drift check
+  // (AC-D8a). The write run that follows it reuses this snapshot, so its
+  // `takenAt` is the instant the report described the store, and an ingest or
+  // rescan landing between the two runs is a run started after it. A write
+  // that took its own fresh snapshot instead would measure drift over the few
+  // seconds of its own execution and wave the whole report to write window
+  // through.
+  if (!snapshotReused && !alreadyMigrated) {
     await snapshots.save(snapshot);
   }
 
@@ -714,6 +764,14 @@ export async function backfillRegimes(
         written.scores += ids.length;
       }
     }
+
+    // Only now, after every write landed. A refused run must not stamp, and an
+    // interrupted one never reaches this line, which leaves its snapshot
+    // unstamped and the store resumable. If the process dies between the last
+    // write and this save, the store is migrated but unstamped; a rerun then
+    // reuses the snapshot, finds nothing left to move, passes its checks, and
+    // stamps, so the record heals rather than wedges.
+    await snapshots.save({ ...snapshot, completedAt: clock().toISOString() });
   }
 
   return {
@@ -809,6 +867,16 @@ export function formatReport(report: BackfillReport): string {
   if (report.blockers.length === 0) {
     lines.push('');
     lines.push('checks: AC-F7 and AC-F8 hold.');
+    // AC-D5b. A clean check must not read as more than it is: a store that was
+    // migrated and then had its snapshot deleted is indistinguishable, by any
+    // local test, from one never touched. Zero movement proves nothing either
+    // way, because an empty store, a new gauge and a reset development
+    // database all move zero rows legitimately.
+    lines.push(
+      'what these checks cannot see: a store already migrated whose snapshot was ' +
+        'deleted looks identical to one never touched. A clean result here is not ' +
+        'proof this run was the first.',
+    );
   } else {
     lines.push('');
     lines.push('checks FAILED:');

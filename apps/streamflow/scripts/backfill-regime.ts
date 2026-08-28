@@ -36,6 +36,13 @@ import type { Regime } from '../src/forecast/regime';
  * different rule is refused rather than compared against, which is what makes
  * a second relabelling of the same column safe.
  *
+ * Pass the same path to the report run and the write run. The report saves
+ * the snapshot and the write reuses it, so the drift check measures from the
+ * instant the report described the store, and both runs print matrices built
+ * against the same labels. A write that finishes cleanly stamps `completedAt`
+ * into the file, after which any further run against it refuses; archive the
+ * file once its numbers are recorded.
+ *
  * `STREAMFLOW_FORECASTING` must be false for the whole window between the rule
  * landing and this having run and been checked. Ingest and rescan keep going
  * and write no regime, but a rescan can revise an old reading, which a hindcast
