@@ -21,7 +21,7 @@ variable "bedrock_monthly_budget_usd" {
     is the classifier's reserved concurrency plus the api's per-IP rate limits.
   EOT
   type        = string
-  default     = "10"
+  default     = "25"
 }
 
 variable "classifier_reserved_concurrency" {
