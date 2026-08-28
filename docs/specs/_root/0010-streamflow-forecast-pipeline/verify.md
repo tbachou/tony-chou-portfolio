@@ -67,13 +67,13 @@ _Steps derived from the acceptance criteria in [0010-falling-regime.md](0010-fal
 - [x] The same fixture with `--write` → the two labels move, and `lowerCfs`, `upperCfs`, `q10Used`, `q90Used`, `intervalSeeded` and `bucketSize` are unchanged on the moved row → AC-F10
 - [x] Rerun with `--write` and the snapshot file left in place → `reusing the one taken ...`, checks hold, 0 rows written → AC-F5, AC-F9
 - [x] Delete `apps/streamflow/.regime-backfill/` and rerun `--write` over the migrated store → refuses, names the missing snapshot, exits non zero → AC-F9
-- [ ] Deploy the enum migration alone and confirm `FALLING` exists in the production `Regime` type before any code that can write it ships → AC-F1
-- [ ] Set the GitHub repository variable `STREAMFLOW_FORECASTING` to `false`, then confirm `.github/workflows/streamflow-score.yml` skips and `streamflow-pipeline.yml` still ingests and rescans → AC-F11
-- [ ] Against production, forecasting off: `npx tsx apps/streamflow/scripts/backfill-regime.ts` → record the four bucket counts and the full transition matrix, per model and horizon, in `0010-falling-regime.md` beside the parent's 2,731 / 518 / 291 line → AC-F6
-- [ ] Only once those numbers are in the file: `npx tsx apps/streamflow/scripts/backfill-regime.ts --write` → no forbidden cell, no row in or out of the null set, `live scores bound at scoredAt` is 0 → AC-F5, AC-F7, AC-F8, AC-F9
-- [ ] Keep `apps/streamflow/.regime-backfill/pre-migration-labels.json` until the write run has finished cleanly. It is what a resumed run compares against, not a cache → AC-F9
-- [ ] Set `STREAMFLOW_FORECASTING` back to `true`, then check the next issued slot: all three horizons present, each either regime conditioned or with `intervalSeeded` false → AC-F11, AC-F12
-- [ ] Visit `/projects/streamflow` → the intervals paragraph names baseflow, rising, falling and at a peak → AC-F14
+- [x] Deploy the enum migration alone and confirm `FALLING` exists in the production `Regime` type before any code that can write it ships. Applied 2026-08-28 with `prisma migrate deploy`; `migrate status` clean and the enum reads `BASEFLOW, RISING, PEAK, FALLING` → AC-F1
+- [x] Set the GitHub repository variable `STREAMFLOW_FORECASTING` to `false`, then confirm `.github/workflows/streamflow-score.yml` skips and `streamflow-pipeline.yml` still ingests and rescans. Scoring run 33170642752 shows `skipped`; pipeline run 33158495888 ingested 48 rows → AC-F11
+- [x] Against production, forecasting off: report only run → counts and full transition matrix recorded in [0010-falling-regime.md](0010-falling-regime.md) under `## Measured` → AC-F6
+- [x] `--write` → 3,054 predictions and 3,000 scores relabelled, no forbidden cell, null sets unchanged, 0 fallback scores, and the write run's matrix byte identical to the report run's → AC-F5, AC-F7, AC-F8, AC-F9
+- [x] Snapshot kept through the write. A rerun with it present wrote 0 rows; deleting it and rerunning refused, naming the missing pre migration labels → AC-F9
+- [x] Flag back on 13:11 UTC. The 12:00 slot issued at 16:12 with all 6 rows present (2 models x 3 horizons), every one `intervalSeeded` true against buckets of 1,450 to 2,342, so AC-F12's fall through was never needed → AC-F11, AC-F12
+- [x] Visited the live page → the intervals paragraph names baseflow, rising, falling and at a peak → AC-F14
 
 ## Value sourcing checks
 
@@ -96,7 +96,7 @@ One per row of the spec's Value sourcing table, each exercising the edge that br
 - [x] `v` for a score: the score's stored `actualCfs` → AC-F5
 - [x] How history is loaded: the gauge's whole record read once and walked forward once per axis, rather than a query per row → AC-F5
 - [x] The expected transition matrix: checked rather than printed. A fixture where a RISING row would move fails with the cell named, and writes nothing → AC-F7
-- [ ] The class names in the case study copy: the rendered page names four classes → AC-F14
+- [x] The class names in the case study copy: the rendered page names four classes → AC-F14
 
 ## Acceptance-criteria coverage
 
