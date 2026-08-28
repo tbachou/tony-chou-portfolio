@@ -2,6 +2,8 @@ import {
   backfillRegimes,
   formatReport,
   greatestAtOrBefore,
+  TRANSITIONS_ADD_FALLING,
+  TRANSITIONS_DROP_MEDIAN_FLOOR,
 } from './backfill-regime';
 import type {
   BackfillReader,
@@ -64,7 +66,11 @@ interface Fixture {
   scores: ScoreRow[];
   runStarts: Date[];
   observations: StoredObservation[];
+  /** Ingest or rescan runs since the snapshot, which must refuse a write. */
+  ingestRunsSince?: number;
 }
+
+const FLOOR = 18.9;
 
 function reader(fixture: Fixture): BackfillReader {
   return {
@@ -72,6 +78,8 @@ function reader(fixture: Fixture): BackfillReader {
     scores: async () => fixture.scores,
     scoreRunStarts: async () => fixture.runStarts,
     observations: async () => fixture.observations,
+    flowFloor: async () => FLOOR,
+    ingestRunsSince: async () => fixture.ingestRunsSince ?? 0,
   };
 }
 
@@ -122,6 +130,8 @@ function writer(
     },
   };
 }
+
+const FIRST_RULE = 'max-v-m';
 
 function snapshots(initial: RegimeSnapshot | null = null): {
   store: SnapshotStore;
@@ -257,6 +267,8 @@ describe('backfillRegimes: predictions', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -280,6 +292,8 @@ describe('backfillRegimes: predictions', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -299,6 +313,8 @@ describe('backfillRegimes: predictions', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       now: NOW,
     });
 
@@ -320,6 +336,8 @@ describe('backfillRegimes: predictions', () => {
       reader: reader(rows),
       writer: writer(rows).writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       now: NOW,
     });
 
@@ -355,6 +373,8 @@ describe('backfillRegimes: predictions', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -378,6 +398,8 @@ describe('backfillRegimes: predictions', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -400,6 +422,8 @@ describe('backfillRegimes: predictions', () => {
       reader: reader(rows),
       writer: writer(rows).writer,
       snapshots: held.store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -409,6 +433,8 @@ describe('backfillRegimes: predictions', () => {
       reader: reader(rows),
       writer: secondWrite.writer,
       snapshots: held.store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -461,6 +487,8 @@ describe('backfillRegimes: the snapshot', () => {
         reader: reader(rows),
         writer: interrupted.writer,
         snapshots: held.store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
         write: true,
         now: NOW,
       }),
@@ -472,6 +500,7 @@ describe('backfillRegimes: the snapshot', () => {
     // which may never move. A rerun that re-read the store would see FALLING
     // sitting where it put it, call that no movement, and pass.
     held.store.save({
+      rule: FIRST_RULE,
       takenAt: '2026-08-27T11:00:00Z',
       predictions: { 'p-fall': 'RISING' },
       scores: {},
@@ -482,6 +511,8 @@ describe('backfillRegimes: the snapshot', () => {
       reader: reader(rows),
       writer: resumed.writer,
       snapshots: held.store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -522,6 +553,8 @@ describe('backfillRegimes: the snapshot', () => {
       reader: reader(rows),
       writer: watched,
       snapshots: store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -540,6 +573,8 @@ describe('backfillRegimes: the snapshot', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: held.store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -567,6 +602,8 @@ describe('backfillRegimes: the snapshot', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: held.store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -579,6 +616,7 @@ describe('backfillRegimes: the snapshot', () => {
   it('refuses a write when a row appeared after the snapshot was taken', async () => {
     const rows = fixture();
     const held = snapshots({
+      rule: FIRST_RULE,
       takenAt: '2026-08-27T11:00:00Z',
       predictions: {},
       scores: {},
@@ -589,6 +627,8 @@ describe('backfillRegimes: the snapshot', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: held.store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -598,6 +638,149 @@ describe('backfillRegimes: the snapshot', () => {
     expect(report.unsnapshotted.predictions).toEqual(['p-fall']);
     expect(report.wrote).toBe(false);
     expect(write.calls).toEqual([]);
+  });
+});
+
+describe('backfillRegimes: a second relabelling', () => {
+  const ISSUE = new Date('2026-07-20T00:00:00Z');
+
+  function fixture(): Fixture {
+    return {
+      predictions: [
+        // The store as the first migration left it.
+        prediction({ id: 'p-fell', issuedAt: ISSUE, issueRegime: 'FALLING' }),
+      ],
+      scores: [],
+      runStarts: [],
+      observations: series({
+        from: '2026-07-01T00:00:00Z',
+        to: '2026-07-21T00:00:00Z',
+        recordedAt: (validTime) => validTime,
+        value: bendMany([
+          ['2026-07-19T12:00:00Z', 3000],
+          ['2026-07-20T00:00:00Z', 400],
+        ]),
+      }),
+    };
+  }
+
+  it('refuses a snapshot taken under a different rule', async () => {
+    const rows = fixture();
+    const held = snapshots({
+      rule: FIRST_RULE,
+      takenAt: '2026-08-28T13:10:00Z',
+      predictions: { 'p-fell': 'PEAK' },
+      scores: {},
+    });
+    const write = writer(rows);
+
+    // The labels in that file are the first migration's starting point, not
+    // this one's. Comparing against them would replay its movements and hide
+    // this run's entirely.
+    await expect(
+      backfillRegimes({
+        reader: reader(rows),
+        writer: write.writer,
+        snapshots: held.store,
+        allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+        rule: 'max-v-floor',
+        write: true,
+        now: NOW,
+      }),
+    ).rejects.toThrow(/taken under rule "max-v-m".*implements "max-v-floor"/s);
+    expect(write.calls).toEqual([]);
+  });
+
+  it('leaves a row the first migration already moved where it is', async () => {
+    const rows = fixture();
+    const write = writer(rows);
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: write.writer,
+      snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      now: NOW,
+    });
+
+    // FALLING is a legal source now, and frozen: the new threshold is never
+    // stricter than the old one, so nothing already falling can stop falling.
+    expect(rows.predictions[0].issueRegime).toBe('FALLING');
+    expect(report.blockers).toEqual([]);
+    expect(write.calls).toEqual([]);
+  });
+
+  it('refuses to write when a PEAK row would move', async () => {
+    const rows = fixture();
+    rows.predictions[0].issueRegime = 'PEAK';
+    const write = writer(rows);
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: write.writer,
+      snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      now: NOW,
+    });
+
+    // Dropping the median floor cannot reach a PEAK row: PEAK needs
+    // v >= 1.5 * m, so max(v, m) already was v there. One that moves means the
+    // reconstruction is reading history the original job did not read.
+    expect(report.forbidden).toContainEqual({
+      from: 'PEAK',
+      to: 'FALLING',
+      count: 1,
+    });
+    expect(report.wrote).toBe(false);
+    expect(write.calls).toEqual([]);
+  });
+
+  it('refuses to write when an ingest or rescan ran since the snapshot', async () => {
+    const rows = fixture();
+    rows.predictions[0].issueRegime = 'BASEFLOW';
+    rows.ingestRunsSince = 2;
+    const write = writer(rows);
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: write.writer,
+      snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      now: NOW,
+    });
+
+    // A rescan can revise an old reading, which a hindcast row's validTime
+    // reconstruction can see at a past instant. The store is then not the one
+    // the report described, and comparing two printed tables by eye is not a
+    // control.
+    expect(report.driftRuns).toBe(2);
+    expect(report.wrote).toBe(false);
+    expect(write.calls).toEqual([]);
+    expect(report.blockers.join(' ')).toContain('the store has moved');
+  });
+
+  it('does not care about intervening runs in report only mode', async () => {
+    const rows = fixture();
+    rows.ingestRunsSince = 5;
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: writer(rows).writer,
+      snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      now: NOW,
+    });
+
+    // Nothing is written, so nothing can be written against a moved store.
+    expect(report.driftRuns).toBe(0);
+    expect(report.blockers).toEqual([]);
   });
 });
 
@@ -658,6 +841,8 @@ describe('backfillRegimes: scores', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -678,6 +863,8 @@ describe('backfillRegimes: scores', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -711,6 +898,8 @@ describe('backfillRegimes: scores', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -733,6 +922,8 @@ describe('backfillRegimes: scores', () => {
       reader: reader(rows),
       writer: writer(rows).writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -761,6 +952,8 @@ describe('backfillRegimes: scores', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -799,6 +992,8 @@ describe('backfillRegimes: the interval columns', () => {
       reader: reader(rows),
       writer: write.writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       write: true,
       now: NOW,
     });
@@ -826,6 +1021,8 @@ describe('formatReport', () => {
       reader: reader(rows),
       writer: writer(rows).writer,
       snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_ADD_FALLING,
+      rule: FIRST_RULE,
       now: NOW,
     });
 

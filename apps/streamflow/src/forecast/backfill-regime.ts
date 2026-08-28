@@ -1,7 +1,7 @@
 import { asOfWalk } from '../asof/as-of';
 import type { KnowabilityAxis, StoredObservation } from '../types';
 import { persistenceForecast } from './baselines';
-import { classifyRegime, REGIME_CLASSES } from './regime';
+import { classifyRegime, REGIME_CLASSES, REGIME_RULE_TAG } from './regime';
 import type { Regime } from './regime';
 
 /**
@@ -50,20 +50,45 @@ function labelOf(regime: Regime | null): string {
 }
 
 /**
- * The only movements a correct backfill can produce (AC-F7).
+ * Which movements a given rule change is allowed to produce.
+ *
+ * Passed in per run rather than fixed, because the answer is a property of the
+ * change being made and this column has now been rewritten twice. A matrix
+ * hardcoded to the first migration's shape would wave through exactly the
+ * movements the second one must forbid.
+ */
+export type TransitionMatrix = Readonly<Record<string, readonly string[]>>;
+
+/**
+ * Adding FALLING to a three class store (spec 0010, falling regime child).
  *
  * RISING never moves, because its denominator did not change. PEAK and
  * BASEFLOW may lose rows to FALLING and may not go anywhere else. Null stays
- * null, because none of the three conditions that return null changed and an
- * as of reconstruction at a past instant is stable over an append only store.
- *
- * FALLING is deliberately absent as a source. Before this migration no row can
- * carry it, and the snapshot always holds pre migration labels, so a FALLING
- * row on the left hand side means the snapshot is not what it claims to be.
+ * null. FALLING is absent as a source: before that migration no row could
+ * carry it, so a FALLING row on the left means the snapshot is not what it
+ * claims to be.
  */
-const ALLOWED_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+export const TRANSITIONS_ADD_FALLING: TransitionMatrix = {
   RISING: ['RISING'],
   PEAK: ['PEAK', 'FALLING'],
+  BASEFLOW: ['BASEFLOW', 'FALLING'],
+  [NO_CLASS]: [NO_CLASS],
+};
+
+/**
+ * Dropping the median floor from the falling test (spec 0010, falling
+ * denominator child).
+ *
+ * Only BASEFLOW may lose rows now. PEAK is frozen because the change cannot
+ * reach it: PEAK requires `v >= 1.5 * m`, which forces `v > m`, where the old
+ * `max(v, m)` already resolved to `v`. FALLING is frozen because the new
+ * threshold is never stricter than the old one, so anything already falling
+ * still falls.
+ */
+export const TRANSITIONS_DROP_MEDIAN_FLOOR: TransitionMatrix = {
+  RISING: ['RISING'],
+  PEAK: ['PEAK'],
+  FALLING: ['FALLING'],
   BASEFLOW: ['BASEFLOW', 'FALLING'],
   [NO_CLASS]: [NO_CLASS],
 };
@@ -105,6 +130,23 @@ export interface BackfillReader {
   scoreRunStarts(): Promise<Date[]>;
   /** One gauge's whole observation record, every revision. */
   observations(gaugeId: string): Promise<StoredObservation[]>;
+  /**
+   * The gauge's frozen flow floor, which bounds the falling threshold. Read
+   * rather than derived here, so the backfill divides by the same constant the
+   * live jobs do.
+   */
+  flowFloor(gaugeId: string): Promise<number>;
+  /**
+   * How many ingest or rescan runs started after `instant`.
+   *
+   * This is the drift detector. Ingest and rescan are deliberately not gated
+   * while forecasting is paused, and they do not write a regime, but a rescan
+   * can write a revision for an old `validTime`, which a hindcast row's
+   * `validTime` axis reconstruction can see at a past instant. If any ran since
+   * the snapshot was taken, the store the write would relabel is not the store
+   * the report described.
+   */
+  ingestRunsSince(instant: Date): Promise<number>;
 }
 
 /**
@@ -123,6 +165,8 @@ export interface BackfillWriter {
 
 /** The pre migration labels, as read once before anything was written. */
 export interface RegimeSnapshot {
+  /** The rule this snapshot's labels were produced under, `REGIME_RULE_TAG`. */
+  rule: string;
   takenAt: string;
   predictions: Record<string, Regime | null>;
   scores: Record<string, Regime | null>;
@@ -147,6 +191,13 @@ export interface BackfillOptions {
   reader: BackfillReader;
   writer: BackfillWriter;
   snapshots: SnapshotStore;
+  /**
+   * The rule this run implements. Defaults to the one the classifier currently
+   * carries; a test overrides it to exercise the mismatch refusal.
+   */
+  rule?: string;
+  /** Which movements this rule change may produce. Required: see the presets. */
+  allowedTransitions: TransitionMatrix;
   /** Report only unless this is true. Nothing is written in report only mode. */
   write?: boolean;
   now?: () => Date;
@@ -200,6 +251,8 @@ export interface BackfillReport {
   nullSetMoved: { predictions: string[]; scores: string[] };
   /** True when the store already carried FALLING and no snapshot explained it. */
   alreadyMigrated: boolean;
+  /** Ingest or rescan runs that started after the snapshot was taken. */
+  driftRuns: number;
   written: { predictions: number; scores: number };
   /** Why a write was refused, empty when nothing blocked it. */
   blockers: string[];
@@ -312,11 +365,14 @@ function buildColumnReport(
   };
 }
 
-function forbiddenCells(movements: readonly Movement[]): TransitionCell[] {
+function forbiddenCells(
+  movements: readonly Movement[],
+  allowedTransitions: TransitionMatrix,
+): TransitionCell[] {
   const cells = new Map<string, number>();
 
   for (const movement of movements) {
-    const allowed = ALLOWED_TRANSITIONS[movement.old];
+    const allowed = allowedTransitions[movement.old];
     if (allowed && allowed.includes(movement.next)) continue;
     const key = `${movement.old}|${movement.next}`;
     cells.set(key, (cells.get(key) ?? 0) + 1);
@@ -340,8 +396,9 @@ const SAMPLE_IDS = 5;
 export async function backfillRegimes(
   options: BackfillOptions,
 ): Promise<BackfillReport> {
-  const { reader, writer, snapshots } = options;
+  const { reader, writer, snapshots, allowedTransitions } = options;
   const write = options.write ?? false;
+  const rule = options.rule ?? REGIME_RULE_TAG;
   const clock = options.now ?? (() => new Date());
 
   const predictions = await reader.predictions();
@@ -353,8 +410,22 @@ export async function backfillRegimes(
   // them. A run that wrote rows and then crashed leaves this file behind as
   // the thing its successor must compare against.
   const loaded = await snapshots.load();
+
+  // A snapshot taken under a different rule holds labels that are not this
+  // run's starting point. Refusing here is what closes the hole the first
+  // migration left: `alreadyMigrated` below is gated on there being no
+  // snapshot at all, so a stale file that loads cleanly would sail past it.
+  if (loaded && loaded.rule !== rule) {
+    throw new Error(
+      `snapshot was taken under rule "${loaded.rule}" but this run implements "${rule}". ` +
+        'Archive it and take a fresh one; comparing against it would report the earlier ' +
+        "migration's movements and hide this one's.",
+    );
+  }
+
   const snapshotReused = loaded !== null;
   const snapshot: RegimeSnapshot = loaded ?? {
+    rule,
     takenAt: clock().toISOString(),
     predictions: Object.fromEntries(
       predictions.map((row) => [row.id, row.issueRegime]),
@@ -362,10 +433,23 @@ export async function backfillRegimes(
     scores: Object.fromEntries(scores.map((row) => [row.id, row.regime])),
   };
 
-  const alreadyMigrated =
-    !snapshotReused &&
-    (predictions.some((row) => row.issueRegime === 'FALLING') ||
-      scores.some((row) => row.regime === 'FALLING'));
+  // A label the matrix does not list as a legal source cannot be a starting
+  // point for this rule change, so the store has already moved past what a
+  // fresh snapshot could describe. Derived from the matrix rather than named
+  // outright, for the same reason the matrix is passed in: the answer belongs
+  // to the change being made. Adding FALLING to a three class store makes
+  // FALLING illegal as a source; dropping the median floor makes it the normal
+  // starting state.
+  const illegalSources = new Set<string>();
+  for (const row of predictions) {
+    const label = labelOf(row.issueRegime);
+    if (!(label in allowedTransitions)) illegalSources.add(label);
+  }
+  for (const row of scores) {
+    const label = labelOf(row.regime);
+    if (!(label in allowedTransitions)) illegalSources.add(label);
+  }
+  const alreadyMigrated = !snapshotReused && illegalSources.size > 0;
 
   // Not when the store is already migrated. The labels read back there are
   // this migration's own output, so saving them would put a file on disk
@@ -395,6 +479,17 @@ export async function backfillRegimes(
 
   const computedPredictions = new Map<string, Regime | null>();
   const computedScores = new Map<string, Regime | null>();
+
+  // One read per gauge, shared by every job on it. The floor is frozen on the
+  // gauge, so this is a constant for the whole run.
+  const floors = new Map<string, number>();
+  async function floorFor(gaugeId: string): Promise<number> {
+    const held = floors.get(gaugeId);
+    if (held !== undefined) return held;
+    const value = await reader.flowFloor(gaugeId);
+    floors.set(gaugeId, value);
+    return value;
+  }
 
   // One judgement per issue slot, shared by every prediction the slot wrote,
   // which is exactly what `draftPredictions` does. Grouped by axis as well as
@@ -428,6 +523,7 @@ export async function backfillRegimes(
   for (const rows of slots.values()) {
     const first = rows[0];
     const issuedAt = first.issuedAt;
+    const floorCfs = await floorFor(first.gaugeId);
     addJob(first.gaugeId, axisFor(first.hindcast), {
       asOf: issuedAt,
       run: (history) => {
@@ -438,7 +534,7 @@ export async function backfillRegimes(
         const regime =
           valueAtIssue === null
             ? null
-            : classifyRegime(history, issuedAt, valueAtIssue);
+            : classifyRegime(history, issuedAt, valueAtIssue, floorCfs);
         for (const row of rows) computedPredictions.set(row.id, regime);
       },
     });
@@ -461,12 +557,13 @@ export async function backfillRegimes(
       }
     }
 
+    const floorCfs = await floorFor(score.gaugeId);
     addJob(score.gaugeId, axisFor(score.hindcast), {
       asOf,
       run: (history) => {
         computedScores.set(
           score.id,
-          classifyRegime(history, score.targetTime, score.actualCfs),
+          classifyRegime(history, score.targetTime, score.actualCfs, floorCfs),
         );
       },
     });
@@ -542,9 +639,15 @@ export async function backfillRegimes(
   };
 
   const forbidden = [
-    ...forbiddenCells(predictionMovements),
-    ...forbiddenCells(scoreMovements),
+    ...forbiddenCells(predictionMovements, allowedTransitions),
+    ...forbiddenCells(scoreMovements, allowedTransitions),
   ];
+
+  // Only meaningful for a write: a report run is read only, so an ingest
+  // landing during it costs nothing.
+  const driftRuns = write
+    ? await reader.ingestRunsSince(new Date(snapshot.takenAt))
+    : 0;
 
   const blockers: string[] = [];
   if (forbidden.length > 0) {
@@ -569,9 +672,18 @@ export async function backfillRegimes(
       `${missingFromStore.predictions.length + missingFromStore.scores.length} snapshot row(s) are no longer in the store, which an append only record cannot do`,
     );
   }
+  if (driftRuns > 0) {
+    blockers.push(
+      `${driftRuns} ingest or rescan run(s) started after the snapshot was taken, so the store ` +
+        'has moved since the report described it. Re run the report and the write together, ' +
+        'inside one gap between pipeline runs.',
+    );
+  }
   if (alreadyMigrated) {
     blockers.push(
-      'the store already holds FALLING labels and no snapshot explains them, so the pre migration labels this run would check against are gone',
+      `the store already holds ${[...illegalSources].sort().join(', ')} label(s), which this rule change ` +
+        'cannot start from, and no snapshot explains them. The pre migration labels this run would ' +
+        'check against are gone.',
     );
   }
 
@@ -629,6 +741,7 @@ export async function backfillRegimes(
       scores: nullSetMoved.scores.slice(0, SAMPLE_IDS),
     },
     alreadyMigrated,
+    driftRuns,
     written,
     blockers,
   };
@@ -684,6 +797,9 @@ export function formatReport(report: BackfillReport): string {
   );
   lines.push(
     `issue slots holding both a live and a hindcast prediction: ${report.mixedAxisSlots}`,
+  );
+  lines.push(
+    `ingest or rescan runs since the snapshot was taken: ${report.driftRuns}`,
   );
 
   const nullMoved =

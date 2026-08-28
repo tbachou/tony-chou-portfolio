@@ -3,7 +3,11 @@ import { dirname, join } from 'node:path';
 
 import { config as loadEnvFile } from 'dotenv';
 
-import { backfillRegimes, formatReport } from '../src/forecast/backfill-regime';
+import {
+  backfillRegimes,
+  formatReport,
+  TRANSITIONS_DROP_MEDIAN_FLOOR,
+} from '../src/forecast/backfill-regime';
 import type {
   BackfillReader,
   BackfillWriter,
@@ -16,7 +20,7 @@ import type { PrismaClient } from '../src/generated/prisma/client';
 import type { Regime } from '../src/forecast/regime';
 
 /**
- * Relabels every stored regime under spec 0010's four class rule.
+ * Relabels every stored regime under the rule the classifier currently carries.
  *
  * Report only unless `--write` is passed, because the numbers it prints are
  * meant to be read and recorded in the spec before a single row moves. Once
@@ -24,26 +28,38 @@ import type { Regime } from '../src/forecast/regime';
  * and AC-I11 makes those bounds permanent, so the report only run is the last
  * cheap place to catch a mistake.
  *
- *   npx tsx apps/streamflow/scripts/backfill-regime.ts
- *   npx tsx apps/streamflow/scripts/backfill-regime.ts --write
+ *   npx tsx apps/streamflow/scripts/backfill-regime.ts --snapshot=<path>
+ *   npx tsx apps/streamflow/scripts/backfill-regime.ts --snapshot=<path> --write
+ *
+ * `--snapshot` is required and has no default, and the snapshot it names is
+ * stamped with the rule that produced its labels. A snapshot taken under a
+ * different rule is refused rather than compared against, which is what makes
+ * a second relabelling of the same column safe.
  *
  * `STREAMFLOW_FORECASTING` must be false for the whole window between the rule
- * landing and this having run and been checked (AC-F11). Ingest and rescan can
- * keep going; they do not touch a regime.
+ * landing and this having run and been checked. Ingest and rescan keep going
+ * and write no regime, but a rescan can revise an old reading, which a hindcast
+ * row's reconstruction can see. A write run therefore refuses outright if any
+ * ingest or rescan started after its snapshot was taken: run the report and the
+ * write together, inside one gap between pipeline runs.
  *
  * The snapshot file is not a cache and must not be deleted between an
  * interrupted run and its retry. It holds the labels as they were before this
  * migration touched anything, and it is what a resumed run compares against. A
  * resumed run that took a fresh snapshot would read its own already migrated
  * labels back as the old ones, see no movement in the rows most likely to be
- * wrong, and pass every check without examining them (AC-F9).
+ * wrong, and pass every check without examining them.
  */
-const SNAPSHOT_PATH = join(
-  __dirname,
-  '..',
-  '.regime-backfill',
-  'pre-migration-labels.json',
-);
+
+/**
+ * Where a snapshot goes if `--snapshot` is not given.
+ *
+ * There is deliberately no default. The first migration left a file at a fixed
+ * path, and a run that silently picks it up compares this rule's labels against
+ * labels taken under a different one. The rule tag on the snapshot refuses that
+ * anyway, but a default path is a loaded gun and this removes it.
+ */
+const SNAPSHOT_DIR = join(__dirname, '..', '.regime-backfill');
 
 /** Ids per statement, so a 36,000 row update is not one enormous IN list. */
 const WRITE_CHUNK = 1000;
@@ -127,6 +143,28 @@ function prismaReader(prisma: PrismaClient): BackfillReader {
       return rows.map((row) => row.startedAt);
     },
 
+    flowFloor: async (gaugeId) => {
+      const gauge = await prisma.gauge.findUniqueOrThrow({
+        where: { id: gaugeId },
+        select: { flowFloorCfs: true },
+      });
+      if (gauge.flowFloorCfs === null) {
+        throw new Error(
+          `gauge ${gaugeId} has no frozen flow floor yet, so the falling threshold has no bound. ` +
+            'Run the scoring job once against this gauge first; it derives and freezes the floor.',
+        );
+      }
+      return gauge.flowFloorCfs;
+    },
+
+    ingestRunsSince: async (instant) =>
+      prisma.pipelineRun.count({
+        where: {
+          job: { in: ['USGS_INGEST', 'USGS_RESCAN'] },
+          startedAt: { gt: instant },
+        },
+      }),
+
     // The whole record once. One gauge at a quarter hour resolution since 2024
     // is a small table, and a query per row is not.
     observations: async (gaugeId) =>
@@ -202,7 +240,13 @@ async function main(): Promise<void> {
   loadEnvFile();
 
   const write = flag('write');
-  const path = option('snapshot') ?? SNAPSHOT_PATH;
+  const path = option('snapshot');
+  if (!path) {
+    throw new Error(
+      'pass --snapshot=<path> naming where this run\'s pre migration labels go. ' +
+        `There is no default on purpose. Suggested: ${join(SNAPSHOT_DIR, '<rule>.json')}`,
+    );
+  }
   const prisma = createPrismaClient();
 
   try {
@@ -210,6 +254,7 @@ async function main(): Promise<void> {
       reader: prismaReader(prisma),
       writer: prismaWriter(prisma),
       snapshots: fileSnapshots(path),
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
       write,
     });
 
