@@ -32,7 +32,7 @@ export function Calc({
         tabIndex={0}
         role="region"
         aria-label={`${label}. Scrolls sideways.`}
-        className="terminal-scrollable overflow-x-auto border-b border-term-border px-3 py-3 text-term-sm text-term-ink focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-term-accent"
+        className="terminal-scrollable overflow-x-auto border-b border-term-border px-3 py-3 text-term-sm text-term-ink"
       >
         {formula}
       </pre>
