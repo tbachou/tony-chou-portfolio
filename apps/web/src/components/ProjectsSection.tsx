@@ -1,54 +1,6 @@
 import Link from 'next/link';
+import { PROJECTS } from '@/lib/projects';
 import { TerminalWindow } from './TerminalWindow';
-
-type Project = {
-  slug: string;
-  name: string;
-  pitch: string;
-  status: string;
-  href: string;
-};
-
-const PROJECTS: Project[] = [
-  {
-    slug: 'beta',
-    name: 'beta/',
-    pitch:
-      'An AI return-to-climbing rehab planner - three agents with hard safety rails, live in the browser.',
-    status: 'live',
-    href: '/projects/beta'
-  },
-  {
-    slug: 'panel',
-    name: 'panel/',
-    pitch: 'A local-first, multi-agent code review companion for git repos.',
-    status: 'in progress',
-    href: '/projects/panel'
-  },
-  {
-    slug: 'carryover',
-    name: 'carryover/',
-    pitch: 'A drafting aid for OT/PT clinicians building home exercise program handouts.',
-    status: 'in progress',
-    href: '/projects/carryover'
-  },
-  {
-    slug: 'streamflow',
-    name: 'streamflow/',
-    pitch:
-      'A river forecasting pipeline that scores every prediction it has ever made, in public.',
-    status: 'live',
-    href: '/projects/streamflow'
-  },
-  {
-    slug: 'aws-genai',
-    name: 'aws-genai/',
-    pitch:
-      'The event-driven GenAI infrastructure behind this site - Terraform, SNS, Lambda, Bedrock, SES.',
-    status: 'live',
-    href: '/projects/aws-genai'
-  }
-];
 
 /**
  * The one line teaser for Grade Guesser (spec 0006, AC-12).
