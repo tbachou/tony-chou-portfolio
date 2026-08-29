@@ -58,7 +58,6 @@ Each entry: **[OWNERSHIP LEVEL]** Story — key technical facts an AI "answering
 ### Ongoing / current
 
 21. **[SOLO, ONGOING]** Mentors a software engineer on the Product Forge team via structured 1:1s — career guidance and technical development support. This is a Tensure-wide activity, independent of any single client engagement, and continues even though Tony has rotated off Product Forge itself.
-22. **[SOLO, ACTIVE/EARLY-STAGE]** HubSpot-to-Ruddr integration reliability diagnosis (Tensure Consulting internal project, Jul 2026 – present). Diagnosed reliability failures in an internal HubSpot-to-Ruddr integration, tracing the root cause to strict downstream data-formatting requirements and the absence of automated error recovery, which had been forcing manual intervention to keep resourcing data accurate. Recommended deprioritizing the direct system-to-system integration in favor of a custom dashboard aggregating multi-platform data for reliable resourcing visibility. Scope note: still in the requirements/technical-approach scoping phase — the dashboard itself is not built or shipped yet, don't imply otherwise.
 
 ## Explicitly NOT verified / do not claim
 

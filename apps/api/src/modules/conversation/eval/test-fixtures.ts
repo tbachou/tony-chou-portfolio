@@ -1,7 +1,6 @@
 import type {
   CaseResult,
   Difficulty,
-  Dimension,
   DimensionResult,
   RunResults,
 } from './eval-types';
@@ -53,10 +52,9 @@ export function makeRun(
       tokenTotals: { inputTokens: 0, outputTokens: 0 },
       estimatedCostUsd: 0.1,
       aborted: false,
+      partial: false,
       ...metaOverrides,
     },
     cases,
   };
 }
-
-export const ALL_DIMENSIONS: Dimension[] = ['honesty', 'grounding', 'persona'];

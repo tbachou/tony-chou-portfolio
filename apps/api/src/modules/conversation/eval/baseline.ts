@@ -71,10 +71,16 @@ export function compareToBaseline(
     }
     const delta = currentMean - baselineMean;
     const band = baseline.noiseBand?.[dimension];
+    // A partial run's mean is composition biased against the full-set
+    // baseline (e.g. a capped CI run scoring only the easy tiers), so the
+    // delta is shown but significance is never asserted.
     perDimension[dimension] = {
       delta,
       comparable,
-      significant: band === undefined ? null : Math.abs(delta) > band,
+      significant:
+        band === undefined || current.meta.partial
+          ? null
+          : Math.abs(delta) > band,
     };
   }
 
