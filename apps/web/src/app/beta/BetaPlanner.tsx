@@ -600,14 +600,22 @@ export function BetaPlanner() {
 
       {!acknowledged ? (
         <div className="beta-card p-6 sm:p-8">
-          <h3 className="text-[length:var(--beta-text-xl)]">Before you start</h3>
-          <div className="mt-4 beta-measure space-y-3">
-            <p>
-              Beta drafts <strong className="font-semibold text-[color:var(--beta-ink)]">educational</strong>{' '}
-              return-to-climbing plans. It is not medical advice, a diagnosis, or physical
-              therapy, and it has never met your finger.
-            </p>
-            <ul className="space-y-2">
+          {/* Two columns from md up: the statement on the left, the specific
+              cautions on the right. Stacked, the card spanned the planner
+              column while every line inside stopped at its own measure, so
+              the right ~40% of a solid white card sat empty. The split uses
+              that width instead of capping the card, which the page
+              deliberately does not do to any of its cards. */}
+          <div className="grid gap-6 md:grid-cols-2 md:gap-10">
+            <div>
+              <h3 className="text-[length:var(--beta-text-xl)]">Before you start</h3>
+              <p className="mt-4 beta-measure">
+                Beta drafts <strong className="font-semibold text-[color:var(--beta-ink)]">educational</strong>{' '}
+                return-to-climbing plans. It is not medical advice, a diagnosis, or physical
+                therapy, and it has never met your finger.
+              </p>
+            </div>
+            <ul className="space-y-2 beta-measure">
               {[
                 'It draws on common rehab patterns for three well-studied climbing injuries — nothing here is tailored by an examination.',
                 'Warning-sign symptoms are hard-blocked: if you report one, Beta stops and points you to a professional instead of drafting a plan.',
@@ -623,13 +631,16 @@ export function BetaPlanner() {
                 </li>
               ))}
             </ul>
+          </div>
+          {/* Same button-plus-hint row as the hero's CTA. */}
+          <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
+            <button type="button" onClick={acknowledge} className="beta-btn beta-btn-primary">
+              I understand — draft me a plan
+            </button>
             <p className="beta-hint">
               Nothing you type into the planner is stored — the form clears when you leave.
             </p>
           </div>
-          <button type="button" onClick={acknowledge} className="beta-btn beta-btn-primary mt-6">
-            I understand — draft me a plan
-          </button>
         </div>
       ) : (
         <form

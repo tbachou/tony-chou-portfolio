@@ -535,11 +535,15 @@ select.beta-input {
   border-radius: var(--beta-radius-card);
 }
 
+/* The marker sits next to the question, not at the far edge of the card:
+   space-between put a small `+` roughly 600px from the text it belongs to
+   on a wide viewport, which read as an empty row. The row itself stays
+   full width, so the whole card is still the click target. */
 .beta-faq summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: flex-start;
+  gap: 0.75rem;
   min-height: 2.75rem;
   padding: 1rem 1.25rem;
   color: var(--beta-ink);
