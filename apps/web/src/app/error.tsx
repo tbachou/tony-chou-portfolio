@@ -35,7 +35,7 @@ export default function RootError({
         <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
           This page threw
         </h1>
-        <p className="mt-3 max-w-prose text-term-base leading-relaxed text-term-body">
+        <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
           Something on this route failed while it was rendering. The rest of the site is still
           running — run it again, or head back to the start.
         </p>
