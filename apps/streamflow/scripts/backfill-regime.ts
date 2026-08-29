@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { config as loadEnvFile } from 'dotenv';
@@ -16,6 +16,7 @@ import type {
 } from '../src/forecast/backfill-regime';
 import { createPrismaClient } from '../src/db';
 import { sanitizeError } from '../src/errors';
+import { usableFloor } from '../src/forecast/score.repository';
 import type { PrismaClient } from '../src/generated/prisma/client';
 import type { Regime } from '../src/forecast/regime';
 
@@ -59,12 +60,14 @@ import type { Regime } from '../src/forecast/regime';
  */
 
 /**
- * Where a snapshot goes if `--snapshot` is not given.
+ * The suggested home for snapshot files, named only in the missing flag error
+ * message below. Nothing falls back to it.
  *
- * There is deliberately no default. The first migration left a file at a fixed
- * path, and a run that silently picks it up compares this rule's labels against
- * labels taken under a different one. The rule tag on the snapshot refuses that
- * anyway, but a default path is a loaded gun and this removes it.
+ * There is deliberately no default path. The first migration left a file at a
+ * fixed location, and a run that silently picks such a file up compares this
+ * rule's labels against labels taken under a different one. The rule tag on
+ * the snapshot refuses that anyway, but a default is a loaded gun and
+ * requiring the flag removes it.
  */
 const SNAPSHOT_DIR = join(__dirname, '..', '.regime-backfill');
 
@@ -158,18 +161,25 @@ function prismaReader(prisma: PrismaClient): BackfillReader {
       if (gauge.flowFloorCfs === null) {
         throw new Error(
           `gauge ${gaugeId} has no frozen flow floor yet, so the falling threshold has no bound. ` +
-            'Run the scoring job once against this gauge first; it derives and freezes the floor.',
+            'The prediction job derives and freezes it the next time it issues with forecasting ' +
+            'on; during a pause, or for a gauge with nothing left to score, freeze it by hand at ' +
+            "the 5th percentile of the gauge's whole record, the way score.repository.ts derives it.",
         );
       }
-      return gauge.flowFloorCfs;
+      // The same validity bar the live jobs hold it to: a hand corrected zero
+      // or negative floor fails here by name, not two calls later inside the
+      // classifier.
+      return usableFloor(gauge.flowFloorCfs, `frozen on gauge ${gaugeId}`);
     },
 
-    ingestRunsSince: async (instant) =>
-      prisma.pipelineRun.count({
+    ingestRuns: async (since) =>
+      prisma.pipelineRun.findMany({
         where: {
           job: { in: ['USGS_INGEST', 'USGS_RESCAN'] },
-          startedAt: { gt: instant },
+          startedAt: { gt: since },
         },
+        select: { startedAt: true, finishedAt: true },
+        orderBy: { startedAt: 'asc' },
       }),
 
     // The whole record once. One gauge at a quarter hour resolution since 2024
@@ -231,14 +241,33 @@ function fileSnapshots(path: string): SnapshotStore {
       let raw: string;
       try {
         raw = readFileSync(path, 'utf8');
-      } catch {
-        return null;
+      } catch (cause) {
+        // Only a genuinely missing file means a fresh run. Any other read
+        // failure (permissions, I/O) surfaces, because treating it as absent
+        // would quietly discard the pre migration record.
+        if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw cause;
       }
-      return JSON.parse(raw) as RegimeSnapshot;
+      try {
+        return JSON.parse(raw) as RegimeSnapshot;
+      } catch {
+        // Deliberately not treated as absent. This file is the pre migration
+        // record; silently taking a fresh snapshot over a torn one would
+        // discard the labels every check compares against.
+        throw new Error(
+          `the snapshot at ${path} is not valid JSON. If a save was killed partway this is ` +
+            'the torn half; restore the file, or archive it deliberately and rerun.',
+        );
+      }
     },
     save: async (snapshot) => {
       mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, `${JSON.stringify(snapshot)}\n`, 'utf8');
+      // Write beside, then rename over. The rename is atomic on one file
+      // system, so a kill mid save leaves the previous file whole instead of
+      // half of the new one.
+      const scratch = `${path}.tmp`;
+      writeFileSync(scratch, `${JSON.stringify(snapshot)}\n`, 'utf8');
+      renameSync(scratch, path);
     },
   };
 }

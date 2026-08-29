@@ -148,17 +148,36 @@ export interface BackfillReader {
    */
   flowFloor(gaugeId: string): Promise<number>;
   /**
-   * How many ingest or rescan runs started after `instant`.
+   * Every ingest or rescan run whose `startedAt` is after `since`, with its
+   * `finishedAt`.
    *
-   * This is the drift detector. Ingest and rescan are deliberately not gated
-   * while forecasting is paused, and they do not write a regime, but a rescan
-   * can write a revision for an old `validTime`, which a hindcast row's
-   * `validTime` axis reconstruction can see at a past instant. If any ran since
-   * the snapshot was taken, the store the write would relabel is not the store
-   * the report described.
+   * This feeds the drift detector. Ingest and rescan are deliberately not
+   * gated while forecasting is paused, and they do not write a regime, but a
+   * rescan can write a revision for an old `validTime`, which a hindcast row's
+   * `validTime` axis reconstruction can see at a past instant. The runs come
+   * back raw rather than counted, because judging which of them could have
+   * written after the snapshot instant belongs to the module, not the store.
    */
-  ingestRunsSince(instant: Date): Promise<number>;
+  ingestRuns(since: Date): Promise<PipelineRunWindow[]>;
 }
+
+/** One ingest or rescan run's lifetime, as the drift detector reads it. */
+export interface PipelineRunWindow {
+  startedAt: Date;
+  /** Null while the run lives, and forever if it was killed mid write. */
+  finishedAt: Date | null;
+}
+
+/**
+ * How far before the snapshot instant the drift detector still asks about
+ * runs.
+ *
+ * A run can only write while it lives, and the pipeline workflow kills a job
+ * after twenty minutes, so an hour is a comfortable ceiling. The bound exists
+ * because a run with no `finishedAt` must be presumed still writing, and
+ * without it one crashed run from months ago would trip the check forever.
+ */
+export const DRIFT_LOOKBACK_MS = 60 * 60 * 1000;
 
 /**
  * The only writes this is allowed to make.
@@ -221,6 +240,14 @@ export interface BackfillOptions {
   allowedTransitions: TransitionMatrix;
   /** Report only unless this is true. Nothing is written in report only mode. */
   write?: boolean;
+  /**
+   * Lets a write run proceed with a snapshot it takes itself, instead of
+   * refusing when the path holds none. Refusal is the default because an
+   * unpaired write silently skips the reviewed report comparison and anchors
+   * the drift check at its own start. Fixtures and a deliberate single shot
+   * run set this; the operator script never does.
+   */
+  allowUnpairedWrite?: boolean;
   now?: () => Date;
 }
 
@@ -465,6 +492,18 @@ export async function backfillRegimes(
     );
   }
 
+  // The report and the write are a pair (AC-D7, AC-D8a): the report saves the
+  // snapshot, the write reuses it, and the drift check measures from the
+  // report's instant. A write that loads nothing would silently become its
+  // own report, reviewed by nobody, so it refuses instead of proceeding.
+  if (write && !loaded && !options.allowUnpairedWrite) {
+    throw new Error(
+      'a write run pairs with a report run through the snapshot, and no snapshot exists ' +
+        'at this path. Run report only first with the same snapshot path, read its ' +
+        'numbers, then rerun with the write flag.',
+    );
+  }
+
   const snapshotReused = loaded !== null;
   const snapshot: RegimeSnapshot = loaded ?? {
     rule,
@@ -694,9 +733,22 @@ export async function backfillRegimes(
   ];
 
   // Only meaningful for a write: a report run is read only, so an ingest
-  // landing during it costs nothing.
+  // landing during it costs nothing. A run drifts the store if any part of
+  // its life falls after the snapshot instant: started after it, finished
+  // after it, or never finished at all (killed mid write, its rows already
+  // committed). Matching on `startedAt` alone would miss a run that started
+  // just before the snapshot and committed revisions just after it, which is
+  // exactly the straddle the report to write window is exposed to.
+  const takenAtMs = new Date(snapshot.takenAt).getTime();
   const driftRuns = write
-    ? await reader.ingestRunsSince(new Date(snapshot.takenAt))
+    ? (
+        await reader.ingestRuns(new Date(takenAtMs - DRIFT_LOOKBACK_MS))
+      ).filter(
+        (run) =>
+          run.startedAt.getTime() > takenAtMs ||
+          run.finishedAt === null ||
+          run.finishedAt.getTime() > takenAtMs,
+      ).length
     : 0;
 
   const blockers: string[] = [];
@@ -724,9 +776,9 @@ export async function backfillRegimes(
   }
   if (driftRuns > 0) {
     blockers.push(
-      `${driftRuns} ingest or rescan run(s) started after the snapshot was taken, so the store ` +
-        'has moved since the report described it. Re run the report and the write together, ' +
-        'inside one gap between pipeline runs.',
+      `${driftRuns} ingest or rescan run(s) ran past the instant the snapshot was taken, so ` +
+        'the store has moved since the report described it. Re run the report and the write ' +
+        'together, inside one gap between pipeline runs.',
     );
   }
   if (alreadyMigrated) {
@@ -857,7 +909,7 @@ export function formatReport(report: BackfillReport): string {
     `issue slots holding both a live and a hindcast prediction: ${report.mixedAxisSlots}`,
   );
   lines.push(
-    `ingest or rescan runs since the snapshot was taken: ${report.driftRuns}`,
+    `ingest or rescan runs alive past the snapshot instant: ${report.driftRuns}`,
   );
 
   const nullMoved =
