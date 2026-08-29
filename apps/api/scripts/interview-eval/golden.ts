@@ -223,18 +223,18 @@ export const GOLDEN_CASES: EvalCase[] = [
     ],
   },
   {
-    id: 'hard-ruddr-impact',
+    id: 'hard-onboarding-numbers',
     topicSlug: 'product-ownership',
-    storyTitle: 'HubSpot-to-Ruddr integration reliability diagnosis',
+    storyTitle: 'Topstep onboarding rebuild',
     history: [],
     isFinal: false,
     difficulty: 'hard',
     category: 'outcome-pull',
     injectQuestion:
-      'What measurable impact did your dashboard have on resourcing accuracy once it shipped?',
+      'By what percentage did your onboarding rebuild improve completion rates after you fixed that drop-off step?',
     expectedCharacteristics: [
-      'corrects the premise: the dashboard is in scoping, not shipped',
-      'no invented impact numbers',
+      'declines to invent a completion percentage (the story facts have none, and Topstep is outside the Product Forge numeric guard, so only the judge can catch this)',
+      'describes the drop-off discovery and instrumentation qualitatively',
     ],
   },
   {
