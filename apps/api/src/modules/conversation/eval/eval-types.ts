@@ -53,6 +53,8 @@ export type CaseResult = {
     judge: DimensionResult;
   };
   generationError?: string;
+  /** Wall time for the case: generation, retry, and judge calls. */
+  durationMs?: number;
 };
 
 export type TokenTotals = { inputTokens: number; outputTokens: number };
