@@ -4,7 +4,7 @@ _Steps derived from spec 0011 acceptance criteria and the value sourcing table. 
 ## Commands
 - [ ] `npm run eval:interview --workspace=apps/api -- --cases 2` → runs 2 cases through the real `generateTurnPair`, writes a results JSON under `docs/evals/interview/results/` and regenerates `scoreboard.md` → AC-1
 - [ ] Unset `ANTHROPIC_API_KEY` (and remove it from `apps/api/.env`), run the script → exits 1 before any model call → AC-1
-- [ ] Same, but with `--ci-skip-without-key` → exits 0 with a skipped notice → AC-1, AC-8
+- [ ] In CI with no `ANTHROPIC_API_KEY` secret, the workflow's bash guard exits 0 with a skipped notice in the job summary (the script itself always exits 1 without a key) → AC-1, AC-8
 - [ ] `export AI_PROVIDER=bedrock`, run without `--provider` → refuses with exit 1; with `--provider bedrock` it proceeds (needs AWS credentials) → value sourcing: provider pinning
 - [ ] `npm test --workspace=apps/api` → the eval module specs (aggregate, baseline, dataset-hash, pricing, scoreboard) pass fully mocked → AC-6, AC-7
 - [ ] Run with `--max-cost 0.001` → the run aborts partway, results marked `aborted: true`, scoreboard says partial → AC-7
