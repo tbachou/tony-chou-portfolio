@@ -501,7 +501,7 @@ export default function StreamflowWalkthroughPage() {
               tabIndex={0}
               role="region"
               aria-label="Table, scrolls sideways"
-              className="terminal-scrollable mt-4 overflow-x-auto border border-term-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent"
+              className="terminal-scrollable mt-4 overflow-x-auto border border-term-border"
             >
               <table className="w-full border-collapse text-term-sm">
                 <thead>
@@ -896,7 +896,7 @@ export default function StreamflowWalkthroughPage() {
               tabIndex={0}
               role="region"
               aria-label="Table, scrolls sideways"
-              className="terminal-scrollable mt-4 overflow-x-auto border border-term-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent"
+              className="terminal-scrollable mt-4 overflow-x-auto border border-term-border"
             >
               <table className="w-full border-collapse text-term-sm">
                 <thead>

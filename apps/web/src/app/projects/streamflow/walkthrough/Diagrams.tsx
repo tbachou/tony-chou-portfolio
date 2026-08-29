@@ -47,7 +47,7 @@ function Figure({
         tabIndex={0}
         role="region"
         aria-label={`${label} Scrolls sideways.`}
-        className="terminal-scrollable overflow-x-auto border border-term-border p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent"
+        className="terminal-scrollable overflow-x-auto border border-term-border p-4"
       >
         <svg
           role="img"
