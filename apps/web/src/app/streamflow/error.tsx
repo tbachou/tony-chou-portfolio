@@ -48,15 +48,15 @@ export default function StreamflowError({
             <button
               type="button"
               onClick={reset}
-              className="terminal-select text-term-sm text-term-ink"
+              className="inline-flex min-h-[44px] items-center border border-term-accent px-4 py-2 text-term-base font-bold text-term-accent transition-colors duration-term-instant hover:bg-term-accent hover:text-term-on-accent"
             >
-              [ try the read again ]
+              [ try again ]
             </button>
           </div>
 
           {error.digest && (
             <p className="mt-6 text-term-xs text-term-muted">
-              reference{' '}
+              digest{' '}
               <span className="tabular-nums text-term-body">
                 {error.digest}
               </span>

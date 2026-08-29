@@ -43,6 +43,11 @@
      rgb triple + alphas so the textures re-tint with the palette
      instead of being hardcoded phosphor green. */
   --texture-rgb: 57, 255, 20;
+  /* The edge shading on a container that scrolls. Deliberately NOT
+     --texture-rgb: that is the phosphor, and a 12px accent band down the
+     side of every wide table is exactly the large accent surface this
+     system forbids. A dimmed border green reads as depth instead. */
+  --scroll-shadow: rgba(69, 128, 69, 0.5);
   --texture-glow-alpha: 0.07;
   --texture-scanline-alpha: 0.035;
   --glow-alpha-near: 0.55;
@@ -89,6 +94,8 @@
      interviewer, the red half of the ribbon for Tony. */
   --paper-tony: #9a3412;
   --paper-texture-rgb: 22, 48, 79;
+  /* Ink, softened. On paper a shadow is a real shadow. */
+  --paper-scroll-shadow: rgba(22, 48, 79, 0.22);
 
   /* Tractor-feed holes: punched through the stock, so they show the
      desk under the paper rather than any ink color. */
@@ -190,6 +197,7 @@
     --color-interviewer: var(--paper-ink);
     --color-tony: var(--paper-tony);
     --texture-rgb: var(--paper-texture-rgb);
+    --scroll-shadow: var(--paper-scroll-shadow);
     /* Paper neither blooms nor rasters. The CRT halo and the scanline
        overlay both go to zero here; the ruling the light theme used to
        fake with re-inked scanlines is now the real article — the green
@@ -259,6 +267,7 @@
   --color-interviewer: var(--paper-ink);
   --color-tony: var(--paper-tony);
   --texture-rgb: var(--paper-texture-rgb);
+  --scroll-shadow: var(--paper-scroll-shadow);
   --texture-glow-alpha: 0;
   --texture-scanline-alpha: 0;
   --glow-alpha-near: 0.45;
@@ -444,8 +453,8 @@
   background-image:
     linear-gradient(to right, var(--color-canvas) 40%, transparent),
     linear-gradient(to left, var(--color-canvas) 40%, transparent),
-    linear-gradient(to right, rgba(var(--texture-rgb), 0.28), transparent),
-    linear-gradient(to left, rgba(var(--texture-rgb), 0.28), transparent);
+    linear-gradient(to right, var(--scroll-shadow), transparent),
+    linear-gradient(to left, var(--scroll-shadow), transparent);
   background-position:
     0 0,
     100% 0,
