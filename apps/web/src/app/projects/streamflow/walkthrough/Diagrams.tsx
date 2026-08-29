@@ -37,11 +37,22 @@ function Figure({
 }) {
   return (
     <figure className="mt-6">
-      <div className="overflow-x-auto border border-term-border p-4">
+      {/* Scrolls sideways rather than shrinking. Letting a 720 unit drawing
+          squeeze into a 267px phone renders its labels at four or five
+          pixels, which is not a smaller diagram but an unreadable one. The
+          tables on this page already solve it this way; the figures now
+          match. Focusable because a container that scrolls must be operable
+          from the keyboard. */}
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label={`${label} Scrolls sideways.`}
+        className="terminal-scrollable overflow-x-auto border border-term-border p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent"
+      >
         <svg
           role="img"
           aria-label={label}
-          className="mx-auto block h-auto w-full text-term-body"
+          className="mx-auto block h-auto w-full min-w-[45rem] text-term-body"
           viewBox={`0 0 720 ${height}`}
         >
           {children}

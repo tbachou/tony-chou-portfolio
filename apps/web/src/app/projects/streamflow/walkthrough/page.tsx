@@ -309,12 +309,53 @@ const REFERENCES = [
   }
 ];
 
-function SectionHeading({ file }: { file: string }) {
+/**
+ * The nine parts of the document, in reading order.
+ *
+ * One list drives three things that must agree: the contents at the top, the
+ * `id` each section anchors on, and the label the return link shows. A
+ * document this tall is unusable without deep links — a reader who wants to
+ * send a colleague the limitations section has nothing to send them
+ * otherwise.
+ */
+const SECTIONS = [
+  { id: 'vocabulary', file: 'cat vocabulary.txt', title: 'Words you will need' },
+  { id: 'two-timestamps', file: 'cat why-two-timestamps.txt', title: 'The central idea' },
+  { id: 'architecture', file: 'ls jobs/', title: 'How it is put together' },
+  { id: 'pipeline', file: 'run ingest', title: 'A reading becomes a forecast' },
+  { id: 'intervals', file: 'cat interval-rules', title: 'Where the range comes from' },
+  { id: 'scoring', file: 'run score', title: 'A forecast is graded' },
+  { id: 'limitations', file: 'cat limitations.txt', title: 'What it does not do' },
+  { id: 'build-order', file: 'cat build-order.txt', title: 'The build order' },
+  { id: 'reference', file: 'cat glossary.txt', title: 'Glossary and references' }
+] as const;
+
+function SectionHeading({ file, id }: { file: string; id?: string }) {
   return (
-    <h2 className="text-term-sm text-term-muted">
+    <h2 id={id} className="scroll-mt-24 text-term-sm text-term-muted">
       <span aria-hidden="true">$ </span>
       {file}
     </h2>
+  );
+}
+
+/**
+ * Sends a reader back to the contents without scrolling nine screens.
+ *
+ * Sits at the foot of each window rather than floating: a fixed control would
+ * be a second piece of chrome over a page that already has a sticky nav, and
+ * the window edge is a natural place to stop.
+ */
+function BackToContents() {
+  return (
+    <div className="mt-8 border-t border-term-border pt-4">
+      {/* text-term-sm, not xs: at 11px this rendered a 16.5px target, which
+          even with the hit overlay stays under the 24px minimum. */}
+      <a href="#contents" className="terminal-select text-term-sm text-term-muted">
+        <span aria-hidden="true">$ </span>
+        cd ~/walkthrough
+      </a>
+    </div>
   );
 }
 
@@ -369,8 +410,27 @@ export default function StreamflowWalkthroughPage() {
             ))}
           </dl>
 
+          <nav id="contents" className="mt-10 scroll-mt-24" aria-label="Contents">
+            <h2 className="text-term-sm text-term-muted">
+              <span aria-hidden="true">$ </span>
+              ls sections/
+            </h2>
+            <ol className="mt-3 max-w-[39rem] space-y-2">
+              {SECTIONS.map((section, index) => (
+                <li key={section.id} className="flex gap-3 text-term-sm">
+                  <span aria-hidden="true" className="text-term-border tabular-nums">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <a href={`#${section.id}`} className="terminal-select text-term-body">
+                    {section.title}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+
           <section className="mt-10">
-            <SectionHeading file="cat vocabulary.txt" />
+            <SectionHeading file="cat vocabulary.txt" id="vocabulary" />
             <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
               This project sits where hydrology meets forecasting, and both fields bring their own
               vocabulary. These six carry most of the weight.
@@ -390,7 +450,7 @@ export default function StreamflowWalkthroughPage() {
 
         {/* ---------- the central idea ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/two-timestamps$">
-          <SectionHeading file="cat why-two-timestamps.txt" />
+          <SectionHeading file="cat why-two-timestamps.txt" id="two-timestamps" />
           <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             USGS publishes a reading within minutes of taking it, marked provisional. Months later
             a hydrologist reviews it, and the number can change. If you store one timestamp per
@@ -413,11 +473,12 @@ export default function StreamflowWalkthroughPage() {
           </p>
 
           <TwoTimestampsDiagram />
+          <BackToContents />
         </TerminalWindow>
 
         {/* ---------- architecture + schema ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/architecture$">
-          <SectionHeading file="ls jobs/" />
+          <SectionHeading file="ls jobs/" id="architecture" />
           <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             The pipeline has no web server at all. It is four programs that run top to bottom and
             exit, started on a schedule — traditionally called cron jobs, after the old Unix program
@@ -435,7 +496,12 @@ export default function StreamflowWalkthroughPage() {
               rules are what make revision expressible without ever editing a row.
             </p>
 
-            <div className="mt-4 overflow-x-auto border border-term-border">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label="Table, scrolls sideways"
+              className="terminal-scrollable mt-4 overflow-x-auto border border-term-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent"
+            >
               <table className="w-full border-collapse text-term-sm">
                 <thead>
                   <tr className="border-b border-term-border">
@@ -485,11 +551,12 @@ export default function StreamflowWalkthroughPage() {
               problem itself.
             </p>
           </section>
+          <BackToContents />
         </TerminalWindow>
 
         {/* ---------- ingest + as-of ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/pipeline$">
-          <SectionHeading file="run ingest" />
+          <SectionHeading file="run ingest" id="pipeline" />
           <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             Pulling new readings in, without ever overwriting an old one.
           </p>
@@ -651,11 +718,12 @@ export default function StreamflowWalkthroughPage() {
               </p>
             </Calc>
           </section>
+          <BackToContents />
         </TerminalWindow>
 
         {/* ---------- intervals ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/intervals$">
-          <SectionHeading file="cat interval-rules" />
+          <SectionHeading file="cat interval-rules" id="intervals" />
           <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             A forecast of “262 cfs” alone is close to useless, because it says nothing about how
             sure it is. So every forecast carries a prediction interval: a low and a high bound with
@@ -745,11 +813,12 @@ export default function StreamflowWalkthroughPage() {
             they came from. That is necessary rather than tidy: the bucket keeps growing, so a range
             published today could not be reproduced from the same query tomorrow.
           </p>
+          <BackToContents />
         </TerminalWindow>
 
         {/* ---------- scoring + river states ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/scoring$">
-          <SectionHeading file="run score" />
+          <SectionHeading file="run score" id="scoring" />
           <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             Every hour, the job finds forecasts whose target time has passed and for which a real
             reading now exists, skipping any already graded against that same version of the truth.
@@ -822,7 +891,12 @@ export default function StreamflowWalkthroughPage() {
               It works from three measurements and one constant:
             </p>
 
-            <div className="mt-4 overflow-x-auto border border-term-border">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label="Table, scrolls sideways"
+              className="terminal-scrollable mt-4 overflow-x-auto border border-term-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-term-accent"
+            >
               <table className="w-full border-collapse text-term-sm">
                 <thead>
                   <tr className="border-b border-term-border">
@@ -940,6 +1014,7 @@ export default function StreamflowWalkthroughPage() {
               It last moved 1,323 forecasts and 1,294 grades.
             </p>
           </section>
+          <BackToContents />
         </TerminalWindow>
 
         {/* ---------- bootstrap + limitations ---------- */}
@@ -962,7 +1037,7 @@ export default function StreamflowWalkthroughPage() {
           </p>
 
           <section className="mt-10">
-            <SectionHeading file="cat limitations.txt" />
+            <SectionHeading file="cat limitations.txt" id="limitations" />
             <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
               What the numbers currently say, including where they are uncomfortable.
             </p>
@@ -1037,11 +1112,12 @@ export default function StreamflowWalkthroughPage() {
               a dam operator rather than by rainfall.
             </p>
           </section>
+          <BackToContents />
         </TerminalWindow>
 
         {/* ---------- build order ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/build-order$">
-          <SectionHeading file="cat build-order.txt" />
+          <SectionHeading file="cat build-order.txt" id="build-order" />
           <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             The order is not the fastest route to a model. It is arranged so that each stage teaches
             the thing the next one depends on — which is why a complete, live, publicly graded
@@ -1061,6 +1137,9 @@ export default function StreamflowWalkthroughPage() {
                 <div>
                   <h3 className="text-term-base font-bold text-term-ink">
                     {stage.name}
+                    {/* A real space, not just a margin: without it the heading
+                        announces as "Two time axesshipped". */}
+                    <span className="sr-only"> — </span>
                     <span
                       className={
                         stage.tag === 'next'
@@ -1080,11 +1159,12 @@ export default function StreamflowWalkthroughPage() {
               </li>
             ))}
           </ol>
+          <BackToContents />
         </TerminalWindow>
 
         {/* ---------- glossary + references ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/reference$">
-          <SectionHeading file="cat glossary.txt" />
+          <SectionHeading file="cat glossary.txt" id="reference" />
           <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
             Every term and abbreviation used above, in one place.
           </p>
