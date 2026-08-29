@@ -67,7 +67,7 @@ export default function StreamflowProjectPage() {
           <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
             Streamflow
           </h1>
-          <p className="mt-1 max-w-prose text-term-base text-term-body">
+          <p className="mt-1 max-w-[39rem] text-term-base text-term-body">
             A river forecasting pipeline that grades its own homework in public.
           </p>
 
@@ -91,7 +91,7 @@ export default function StreamflowProjectPage() {
               <span aria-hidden="true">$ </span>
               cat what-it-does.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Every six hours it predicts the flow of Big Darby Creek at Darbyville, Ohio, 24, 48
               and 72 hours ahead. Every hour it goes back and scores the predictions whose target
               time has passed, against whatever the gauge actually read. Both halves are public:
@@ -107,11 +107,11 @@ export default function StreamflowProjectPage() {
               <span aria-hidden="true">$ </span>
               cat two-clocks.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               The central engineering idea, and the reason the rest of it can be trusted. Every
               fact is stored with two timestamps rather than one:
             </p>
-            <ol className="mt-4 max-w-prose space-y-4">
+            <ol className="mt-4 max-w-[39rem] space-y-4">
               {CLOCKS.map((clock, index) => (
                 <li key={clock.name} className="flex gap-3 border-l border-term-border pl-4">
                   <span aria-hidden="true" className="text-term-muted tabular-nums">
@@ -119,12 +119,12 @@ export default function StreamflowProjectPage() {
                   </span>
                   <div>
                     <p className="text-term-sm font-bold text-term-ink">{clock.name}</p>
-                    <p className="mt-1 text-term-sm leading-relaxed text-term-body">{clock.role}</p>
+                    <p className="mt-1 text-term-base leading-relaxed text-term-body">{clock.role}</p>
                   </div>
                 </li>
               ))}
             </ol>
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Keeping both is what makes it possible to ask what was knowable at a past moment,
               rather than what is known now. That question is the whole difference between a
               backtest and a story. The dashboard exposes it directly: drag the slider back and
@@ -138,12 +138,12 @@ export default function StreamflowProjectPage() {
               <span aria-hidden="true">$ </span>
               cat forecasters.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               Two baselines run today, and neither is a placeholder. They are the bar a real model
               has to clear before it has earned a place on the chart.
             </p>
-            <ul className="mt-4 max-w-prose space-y-3">
-              <li className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+            <ul className="mt-4 max-w-[39rem] space-y-3">
+              <li className="flex gap-2 text-term-base leading-relaxed text-term-body">
                 <span aria-hidden="true" className="text-term-muted">
                   ›
                 </span>
@@ -155,7 +155,7 @@ export default function StreamflowProjectPage() {
                   it cannot know rain is coming.
                 </span>
               </li>
-              <li className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+              <li className="flex gap-2 text-term-base leading-relaxed text-term-body">
                 <span aria-hidden="true" className="text-term-muted">
                   ›
                 </span>
@@ -175,7 +175,7 @@ export default function StreamflowProjectPage() {
               <span aria-hidden="true">$ </span>
               cat intervals.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Every forecast carries a range, and the range is not a guess. It is the spread of
               that forecaster’s own past errors, at the same horizon, in the same river
               conditions. Conditions matter more than the horizon does: persistence is around 10
@@ -187,7 +187,7 @@ export default function StreamflowProjectPage() {
               that is roughly even handed on a crest is wrong in one direction the whole way
               down.
             </p>
-            <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Which leaves a chicken and egg problem on day one, since a brand new pipeline has no
               past errors to measure. Rather than ship a wide invented band and quietly keep it
               forever, the whole record was replayed first: roughly 19,000 forecasts made and
@@ -202,13 +202,13 @@ export default function StreamflowProjectPage() {
               <span aria-hidden="true">$ </span>
               cat honesty.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               A scorecard is only worth reading if it can lose. Most of the engineering here is
               spent making it hard to cheat by accident:
             </p>
-            <ul className="mt-4 max-w-prose space-y-3">
+            <ul className="mt-4 max-w-[39rem] space-y-3">
               {HONESTY.map((item) => (
-                <li key={item} className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+                <li key={item} className="flex gap-2 text-term-base leading-relaxed text-term-body">
                   <span aria-hidden="true" className="text-term-muted">
                     ›
                   </span>
@@ -223,7 +223,7 @@ export default function StreamflowProjectPage() {
               <span aria-hidden="true">$ </span>
               cat why.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Tony is a strong TypeScript engineer with little background in time series work, so
               this was built to learn the concepts rather than to ship the shortest path: the
               build order follows ideas, and each decision is written down with its tradeoffs
@@ -258,7 +258,7 @@ export default function StreamflowProjectPage() {
                 [ the gauge on usgs ↗ ]
               </a>
             </div>
-            <p className="mt-3 max-w-prose text-term-xs text-term-muted">
+            <p className="mt-3 max-w-[39rem] text-term-xs text-term-muted">
               Readings come from the U.S. Geological Survey and are public domain. Provisional
               readings are subject to revision. This is an engineering demonstration, not a flood
               forecast, and nothing here should be used to make decisions about water.

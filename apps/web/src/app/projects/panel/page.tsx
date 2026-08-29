@@ -73,7 +73,7 @@ export default function PanelProjectPage() {
           <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
             Panel
           </h1>
-          <p className="mt-1 max-w-prose text-term-base text-term-body">
+          <p className="mt-1 max-w-[39rem] text-term-base text-term-body">
             A local-first, multi-agent code review companion.
           </p>
 
@@ -82,7 +82,7 @@ export default function PanelProjectPage() {
               <span aria-hidden="true">$ </span>
               cat what-it-does.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Panel is a standalone Electron app, separate from this portfolio&apos;s codebase.
               Point it at a local git repo and it reviews the current diff — no cloud upload, no
               hosted service in the loop. It&apos;s a personal tool for catching what a human
@@ -96,7 +96,7 @@ export default function PanelProjectPage() {
               <span aria-hidden="true">$ </span>
               cat architecture.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               Four Claude agents run per review: three specialists work the diff concurrently,
               each scoped by its own skill file, and a fourth orchestrator reconciles what they
               find.
@@ -109,7 +109,7 @@ export default function PanelProjectPage() {
                   </span>
                   <div>
                     <p className="text-term-sm font-bold text-term-ink">{agent.name}</p>
-                    <p className="mt-1 text-term-sm leading-relaxed text-term-body">{agent.role}</p>
+                    <p className="mt-1 text-term-base leading-relaxed text-term-body">{agent.role}</p>
                   </div>
                 </li>
               ))}
@@ -148,7 +148,7 @@ export default function PanelProjectPage() {
                 [ download → ]
               </a>
             </div>
-            <p className="mt-3 max-w-prose text-term-xs text-term-muted">
+            <p className="mt-3 max-w-[39rem] text-term-xs text-term-muted">
               macOS (Apple Silicon) only. Ad-hoc signed, not notarized — right-click the app and
               choose &quot;Open&quot; the first time to get past Gatekeeper. If macOS still calls
               it damaged, that&apos;s the quarantine flag, not a corrupt download — clear it in
