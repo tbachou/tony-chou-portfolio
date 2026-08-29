@@ -1,0 +1,85 @@
+# Interview simulator eval suite (spec 0011, AC-8). Report only: no score,
+# however bad, fails this job — the scoreboard lands in the job summary and
+# the results JSON in an artifact. CI never commits or pushes anything; the
+# committed baseline moves only by a deliberate local run (AC-9).
+#
+# Security model (spec 0011): runs on `pull_request` (never
+# `pull_request_target`), token scoped to contents: read, fork PRs excluded
+# by the same-repo guard (they get no secrets anyway; the guard makes the
+# skip explicit instead of a confusing key-missing run). No third-party
+# actions; first-party actions ride the same major tags as ci.yml.
+name: Evals
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/api/src/modules/conversation/**'
+      - 'apps/api/prisma/fixtures.ts'
+      - 'apps/api/scripts/interview-eval/**'
+      - '.github/workflows/evals.yml'
+
+permissions:
+  contents: read
+
+# One eval run per ref at a time: a force-push mid-run cancels the stale run
+# rather than spending API budget twice.
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  interview-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Same-repo guard: fork PRs are excluded by design (AC-8).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      # prisma.config.ts resolves env("DATABASE_URL") at load time; `prisma
+      # generate` (postinstall) never connects, it just needs the var set.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      # The eval suite pins the direct Anthropic API (spec 0011): a Bedrock
+      # comparison is a deliberate local run, never CI.
+      AI_PROVIDER: anthropic
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Run interview eval
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            {
+              echo '### Interview eval: skipped'
+              echo 'The `ANTHROPIC_API_KEY` repository secret is not configured; no eval run happened.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # PR runs are capped (--cases 8); workflow_dispatch runs the full set.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CASE_ARGS="--cases 8"
+          else
+            CASE_ARGS=""
+          fi
+          npm run eval:interview --workspace=apps/api -- --ci-skip-without-key $CASE_ARGS
+          {
+            echo '### Interview eval scoreboard'
+            echo ''
+            cat docs/evals/interview/scoreboard.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: interview-eval-results
+          path: docs/evals/interview/results/
+          if-no-files-found: ignore
