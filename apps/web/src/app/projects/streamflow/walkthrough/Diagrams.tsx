@@ -15,13 +15,24 @@
 
 const ACCENT = 'var(--color-accent)';
 
+/** Height of one job box in the jobs drawing, shared by its box and its arrow. */
+const BOX_H = 40;
+
+/**
+ * `height` is per drawing rather than shared. The three differ by sixty units
+ * of content, and one viewBox tall enough for all of them fixes the aspect
+ * ratio at the tallest, so the shortest would paint a quarter of its box as
+ * empty space inside a visible border.
+ */
 function Figure({
   caption,
   label,
+  height,
   children
 }: {
   caption: string;
   label: string;
+  height: number;
   children: React.ReactNode;
 }) {
   return (
@@ -31,7 +42,7 @@ function Figure({
           role="img"
           aria-label={label}
           className="mx-auto block h-auto w-full text-term-body"
-          viewBox="0 0 720 260"
+          viewBox={`0 0 720 ${height}`}
         >
           {children}
         </svg>
@@ -65,6 +76,7 @@ function Arrow({ id }: { id: string }) {
 export function TwoTimestampsDiagram() {
   return (
     <Figure
+      height={210}
       label="One river moment stored three times. Asking as of March returns 512 cfs; asking as of the end of June returns the reviewed value of 498 cfs."
       caption="Illustrative values. A forecast made in March must be judged against what March could see; the cutoff is the only thing standing between the reader and the correction."
     >
@@ -134,16 +146,26 @@ export function TwoTimestampsDiagram() {
 }
 
 export function JobsDiagram() {
-  const jobs = [
-    { y: 26, name: 'ingest', note: 'pull new readings' },
-    { y: 76, name: 'rescan', note: 're-check old ones' },
-    { y: 126, name: 'predict', note: '6 forecasts / slot' },
-    { y: 176, name: 'score', note: 'grade the past ones' }
-  ];
+  /**
+   * Boxes, arrows and the divider all derive from this list, so adding or
+   * removing a job moves every part of the drawing together. Laying the
+   * arrows out by hand beside a mapped list is how a diagram quietly starts
+   * describing a system that no longer exists.
+   */
+  const jobs = ['ingest', 'rescan', 'predict', 'score'].map((name, index) => ({
+    name,
+    y: 26 + index * 50,
+    note: ['pull new readings', 're-check old ones', '6 forecasts / slot', 'grade the past ones'][
+      index
+    ]
+  }));
+  const lastJobBottom = jobs[jobs.length - 1].y + BOX_H;
+  const storeMidY = 120;
   const tables = ['readings', 'forecasts', 'grades', 'job history'];
 
   return (
     <Figure
+      height={264}
       label="Four scheduled jobs write to one database; the website reads from it. No job calls another; they coordinate only through stored rows."
       caption="Predict reads what ingest wrote; score reads what predict wrote. Nothing is passed between them in memory or over a network."
     >
@@ -153,22 +175,28 @@ export function JobsDiagram() {
         SCHEDULED JOBS
       </text>
 
-      {jobs.map((job) => (
+      {jobs.map((job, index) => (
         <g key={job.name}>
-          <rect x="0" y={job.y} width="150" height="40" fill="none" stroke="currentColor" />
+          <rect x="0" y={job.y} width="150" height={BOX_H} fill="none" stroke="currentColor" />
           <text x="12" y={job.y + 18} fontSize="12" fill="currentColor">
             {job.name}
           </text>
           <text x="12" y={job.y + 33} fontSize="10" fill="currentColor" opacity="0.7">
             {job.note}
           </text>
+          {/* One arrow per job, fanning from that box's own middle into the
+              store. Both ends come from the same entry that drew the box. */}
+          <line
+            x1="156"
+            y1={job.y + BOX_H / 2}
+            x2="286"
+            y2={storeMidY - 15 + index * 10}
+            stroke="currentColor"
+            markerEnd="url(#wt-arrow-jobs)"
+          />
         </g>
       ))}
 
-      <line x1="156" y1="46" x2="286" y2="105" stroke="currentColor" markerEnd="url(#wt-arrow-jobs)" />
-      <line x1="156" y1="96" x2="286" y2="112" stroke="currentColor" markerEnd="url(#wt-arrow-jobs)" />
-      <line x1="156" y1="146" x2="286" y2="126" stroke="currentColor" markerEnd="url(#wt-arrow-jobs)" />
-      <line x1="156" y1="196" x2="286" y2="134" stroke="currentColor" markerEnd="url(#wt-arrow-jobs)" />
       <text x="192" y="72" fontSize="10" fill="currentColor" opacity="0.75">
         only ever add rows
       </text>
@@ -204,11 +232,20 @@ export function JobsDiagram() {
         the public scorecard
       </text>
 
-      <line x1="0" y1="218" x2="720" y2="218" stroke="currentColor" opacity="0.3" />
-      <text x="0" y="238" fontSize="11" fill="currentColor" opacity="0.7">
+      {/* Sits below whichever job box ends last, so the note cannot collide
+          with the stack if the list grows. */}
+      <line
+        x1="0"
+        y1={lastJobBottom + 4}
+        x2="720"
+        y2={lastJobBottom + 4}
+        stroke="currentColor"
+        opacity="0.3"
+      />
+      <text x="0" y={lastJobBottom + 24} fontSize="11" fill="currentColor" opacity="0.7">
         No job ever calls another. They coordinate entirely through rows in the database,
       </text>
-      <text x="0" y="254" fontSize="11" fill="currentColor" opacity="0.7">
+      <text x="0" y={lastJobBottom + 40} fontSize="11" fill="currentColor" opacity="0.7">
         so a job that fails simply leaves less for the next one to find.
       </text>
     </Figure>
@@ -218,6 +255,7 @@ export function JobsDiagram() {
 export function IntervalLadderDiagram() {
   return (
     <Figure
+      height={244}
       label="The interval ladder: try the errors from this river state, then all errors pooled together, then a fixed placeholder band. Each rung requires at least thirty past errors."
       caption="Thirty is the conventional minimum for a sample's edges to mean anything. Every published forecast records which rung it landed on, so a reader can tell an earned range from a placeholder."
     >
