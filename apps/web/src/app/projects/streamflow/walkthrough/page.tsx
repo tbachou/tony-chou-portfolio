@@ -346,14 +346,23 @@ export default function StreamflowWalkthroughPage() {
             means.
           </p>
 
-          <dl className="mt-6 grid gap-x-8 gap-y-2 border-y border-term-border py-4 text-term-xs sm:grid-cols-2">
+          {/* Every text block on this page shares one right edge, the 65
+              character measure the prose is set to. A rule that ran wider
+              than the paragraph above it would make the measure look like an
+              accident. Tables and diagrams are the deliberate exception. */}
+          {/* The text size lives on the rows, not on the list. `max-w-prose`
+              is 65ch, and `ch` scales with the element's own font, so putting
+              a smaller size here too would resolve the cap to a narrower
+              column than the prose above and the rules would stop short of
+              the measure they are meant to share. */}
+          <dl className="mt-6 grid w-full max-w-prose gap-x-8 gap-y-2 border-y border-term-border py-4 sm:grid-cols-2">
             {[
               ['gauge', 'USGS 03230500'],
               ['readings held', '86,945'],
               ['forecasts graded', '17,615'],
               ['figures measured', '2026-08-29']
             ].map(([key, value]) => (
-              <div key={key} className="flex gap-2">
+              <div key={key} className="flex gap-2 text-term-xs">
                 <dt className="text-term-muted">{key}</dt>
                 <dd className="text-term-body tabular-nums">{value}</dd>
               </div>
@@ -366,7 +375,7 @@ export default function StreamflowWalkthroughPage() {
               This project sits where hydrology meets forecasting, and both fields bring their own
               vocabulary. These six carry most of the weight.
             </p>
-            <dl className="mt-4 space-y-4">
+            <dl className="mt-4 max-w-prose space-y-4">
               {VOCABULARY.map((entry) => (
                 <div key={entry.term} className="border-l border-term-border pl-4">
                   <dt className="text-term-sm font-bold text-term-ink">{entry.term}</dt>
@@ -1020,7 +1029,7 @@ export default function StreamflowWalkthroughPage() {
             trusted, no model built on it can be either.
           </p>
 
-          <ol className="mt-6 space-y-0">
+          <ol className="mt-6 max-w-prose space-y-0">
             {STAGES.map((stage) => (
               <li
                 key={stage.n}
@@ -1059,7 +1068,7 @@ export default function StreamflowWalkthroughPage() {
           <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-muted">
             Every term and abbreviation used above, in one place.
           </p>
-          <dl className="mt-4">
+          <dl className="mt-4 max-w-prose">
             {GLOSSARY.map(([term, meaning]) => (
               <div key={term} className="border-b border-term-border py-3 last:border-b-0">
                 <dt className="text-term-sm font-bold text-term-ink">{term}</dt>
@@ -1075,7 +1084,7 @@ export default function StreamflowWalkthroughPage() {
             <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-muted">
               Sources for the data, the services, and the methods named above.
             </p>
-            <ul className="mt-4">
+            <ul className="mt-4 max-w-prose">
               {REFERENCES.map((ref) => (
                 <li key={ref.href} className="border-b border-term-border py-3 last:border-b-0">
                   <a
