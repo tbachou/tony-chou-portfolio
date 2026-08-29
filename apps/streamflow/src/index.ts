@@ -54,7 +54,7 @@ export type {
   GradedInterval,
   IntervalSource,
 } from './forecast/calibration';
-export { HORIZON_HOURS, SKILL_DEFAULT_WINDOW_DAYS } from './config';
+export { HORIZON_HOURS, MIN_BUCKET_ERRORS, SKILL_DEFAULT_WINDOW_DAYS } from './config';
 export { GAUGE, DISPLAY_TIMEZONE } from './config';
 export type {
   KnowabilityAxis,
