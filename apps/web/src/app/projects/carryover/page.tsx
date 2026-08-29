@@ -80,7 +80,7 @@ export default function CarryoverProjectPage() {
           <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
             Carryover
           </h1>
-          <p className="mt-1 max-w-prose text-term-base text-term-body">
+          <p className="mt-1 max-w-[39rem] text-term-base text-term-body">
             A drafting aid for OT/PT clinicians building home exercise program handouts.
           </p>
 
@@ -89,7 +89,7 @@ export default function CarryoverProjectPage() {
               <span aria-hidden="true">$ </span>
               cat what-it-does.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Carryover is a standalone Electron app, separate from this portfolio&apos;s codebase.
               A clinician enters a case profile — functional presentation, precautions, goals, and
               cognitive/mobility level — and the app drafts a home exercise program (HEP) handout
@@ -103,7 +103,7 @@ export default function CarryoverProjectPage() {
               <span aria-hidden="true">$ </span>
               cat architecture.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               Four Claude agents run per draft: three specialists work the case profile
               concurrently, and a fourth orchestrator merges their output into one handout.
             </p>
@@ -115,7 +115,7 @@ export default function CarryoverProjectPage() {
                   </span>
                   <div>
                     <p className="text-term-sm font-bold text-term-ink">{agent.name}</p>
-                    <p className="mt-1 text-term-sm leading-relaxed text-term-body">{agent.role}</p>
+                    <p className="mt-1 text-term-base leading-relaxed text-term-body">{agent.role}</p>
                   </div>
                 </li>
               ))}
@@ -127,13 +127,13 @@ export default function CarryoverProjectPage() {
               <span aria-hidden="true">$ </span>
               cat guardrails.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               This is a drafting aid, not a clinical decision system. A few things are load-bearing
               to that:
             </p>
             <ul className="mt-4 space-y-3">
               {GUARDRAILS.map((item) => (
-                <li key={item} className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+                <li key={item} className="flex gap-2 text-term-base leading-relaxed text-term-body">
                   <span aria-hidden="true" className="text-term-muted">
                     ›
                   </span>
@@ -148,7 +148,7 @@ export default function CarryoverProjectPage() {
               <span aria-hidden="true">$ </span>
               cat why.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Before engineering, Tony spent 6 years as an Occupational Therapist in neuro rehab
               and skilled nursing — M.S. in Occupational Therapy from Ohio State, no longer in
               clinical practice. Carryover comes directly out of that background: home exercise
@@ -188,7 +188,7 @@ export default function CarryoverProjectPage() {
                 [ download → ]
               </a>
             </div>
-            <p className="mt-3 max-w-prose text-term-xs text-term-muted">
+            <p className="mt-3 max-w-[39rem] text-term-xs text-term-muted">
               macOS (Apple Silicon) only. Ad-hoc signed, not notarized — right-click the app and
               choose &quot;Open&quot; the first time to get past Gatekeeper. If macOS still calls
               it damaged, that&apos;s the quarantine flag, not a corrupt download — clear it in

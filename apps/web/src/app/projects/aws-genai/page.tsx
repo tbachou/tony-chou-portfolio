@@ -112,7 +112,7 @@ export default function AwsGenAiProjectPage() {
           <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
             AWS GenAI infrastructure
           </h1>
-          <p className="mt-1 max-w-prose text-term-base text-term-body">
+          <p className="mt-1 max-w-[39rem] text-term-base text-term-body">
             The Terraform-managed AWS layer behind this site&apos;s feedback loop and interview
             simulator.
           </p>
@@ -122,7 +122,7 @@ export default function AwsGenAiProjectPage() {
               <span aria-hidden="true">$ </span>
               cat what-it-does.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Unlike Beta, Panel, and Carryover, this project has no interface of its own — it is
               the infrastructure the rest of the site runs on: eighteen resources in us-east-2,
               every one of them defined in Terraform. It does two jobs. Feedback submitted anywhere
@@ -141,7 +141,7 @@ export default function AwsGenAiProjectPage() {
               <span aria-hidden="true">$ </span>
               cat architecture.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               One feedback submission crosses five hops. Each is listed below with the service that
               carries it and what that hop is responsible for.
             </p>
@@ -172,13 +172,13 @@ export default function AwsGenAiProjectPage() {
                   </span>
                   <div>
                     <p className="text-term-sm font-bold text-term-ink">{stage.name}</p>
-                    <p className="mt-1 text-term-sm leading-relaxed text-term-body">{stage.role}</p>
+                    <p className="mt-1 text-term-base leading-relaxed text-term-body">{stage.role}</p>
                   </div>
                 </li>
               ))}
             </ol>
 
-            <p className="mt-6 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-6 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The second path is much shorter. The api holds one provider seam that both the direct
               Anthropic client and the Bedrock client implement; a factory picks the implementation
               from <code>AI_PROVIDER</code> at boot, fails fast if the Bedrock credentials are
@@ -192,12 +192,12 @@ export default function AwsGenAiProjectPage() {
               <span aria-hidden="true">$ </span>
               cat model-choice.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               Two workloads on Bedrock, two model classes, each with a stated reason. Not one model
               everywhere.
             </p>
             <ul className="mt-4 space-y-3">
-              <li className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+              <li className="flex gap-2 text-term-base leading-relaxed text-term-body">
                 <span aria-hidden="true" className="text-term-muted">
                   ›
                 </span>
@@ -208,7 +208,7 @@ export default function AwsGenAiProjectPage() {
                   larger model would have been paid for, and no human reads the label as prose.
                 </span>
               </li>
-              <li className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+              <li className="flex gap-2 text-term-base leading-relaxed text-term-body">
                 <span aria-hidden="true" className="text-term-muted">
                   ›
                 </span>
@@ -221,7 +221,7 @@ export default function AwsGenAiProjectPage() {
                   abstraction takes a per-call model override, so this is configuration, not a fork.
                 </span>
               </li>
-              <li className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+              <li className="flex gap-2 text-term-base leading-relaxed text-term-body">
                 <span aria-hidden="true" className="text-term-muted">
                   ›
                 </span>
@@ -241,7 +241,7 @@ export default function AwsGenAiProjectPage() {
               <span aria-hidden="true">$ </span>
               cat data-boundary.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               One rule was written into the umbrella spec before a single resource existed. Beta&apos;s
               visitor content — injury details, goals, generated plans — never leaves Render and the
               direct Anthropic API. Feedback text is a separate, consented class: the form asks
@@ -250,7 +250,7 @@ export default function AwsGenAiProjectPage() {
               line containing it — the Lambda logs an id, a label, an outcome, and a duration, into a
               log group whose retention Terraform owns.
             </p>
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The rule was then tested by a feature that wanted to break it. Bedrock Guardrails were
               designed for Beta in depth — two shapes, both costed out. Every variant sent Beta&apos;s
               visitor content to AWS, because a guardrail has to read content in order to judge it.
@@ -260,7 +260,7 @@ export default function AwsGenAiProjectPage() {
               <code>BETA_OUTPUT_GUARD_MODE</code> flag whose default is off — it is written and
               tested, not yet switched on for visitors.
             </p>
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Three other costs were on the same invoice, and they are why the reversal was not
               purely a matter of principle. Bedrock returns 403 for Sonnet 5 on this account, so the
               clinical reasoning core would have dropped a model class. Beta would have gained AWS as
@@ -275,27 +275,27 @@ export default function AwsGenAiProjectPage() {
               <span aria-hidden="true">$ </span>
               cat postmortem.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The classifier&apos;s first version asked the model for strict JSON in a system prompt
               and parsed the reply.
             </p>
-            <p className="mt-4 max-w-prose border-l border-term-accent pl-4 text-term-base font-bold leading-relaxed text-term-ink">
+            <p className="mt-4 max-w-[39rem] border-l border-term-accent pl-4 text-term-base font-bold leading-relaxed text-term-ink">
               Every unit test passed. It had never once worked in production.
             </p>
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The model wrapped its JSON in a markdown fence. <code>JSON.parse</code> threw, the
               catch-all returned &quot;unclassified&quot; — and &quot;unclassified&quot; is exactly
               what a network failure or a throttle also returns. The bug was indistinguishable from
               the failure mode the fallback existed to handle, so every email arrived unclassified
               and nothing looked broken.
             </p>
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The tests are the interesting part. They mocked the Bedrock client and fed it clean
               JSON, which means the mock encoded the implementation&apos;s own assumption about what
               the model returns. A green suite at an integration boundary proves the code agrees with
               itself, and nothing more. A five-minute live smoke test found this in one invocation.
             </p>
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The fix deleted the failure category rather than handling it better. The call is now a
               Bedrock Converse request with a tool choice forcing one named tool and a JSON schema on
               its input; the SDK hands back an already-deserialized object, so no model prose is
@@ -311,13 +311,13 @@ export default function AwsGenAiProjectPage() {
               <span aria-hidden="true">$ </span>
               cat guardrails.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               A public anonymous endpoint that reaches a paid model needs limits that hold without
               supervision. Four are load-bearing:
             </p>
             <ul className="mt-4 space-y-3">
               {GUARDRAILS.map((item) => (
-                <li key={item.name} className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+                <li key={item.name} className="flex gap-2 text-term-base leading-relaxed text-term-body">
                   <span aria-hidden="true" className="text-term-muted">
                     ›
                   </span>
@@ -334,12 +334,12 @@ export default function AwsGenAiProjectPage() {
               <span aria-hidden="true">$ </span>
               cat limitations.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               Each of these is a known, accepted tradeoff rather than an oversight:
             </p>
             <ul className="mt-4 space-y-3">
               {LIMITATIONS.map((item) => (
-                <li key={item} className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+                <li key={item} className="flex gap-2 text-term-base leading-relaxed text-term-body">
                   <span aria-hidden="true" className="text-term-muted">
                     ›
                   </span>
@@ -354,7 +354,7 @@ export default function AwsGenAiProjectPage() {
               <span aria-hidden="true">$ </span>
               cat why.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               This footprint serves two goals at once. The site genuinely lacked a feedback loop, and
               the interview simulator was worth being able to move between providers without a
               rewrite. The same build is also hands-on preparation for the AWS Certified Generative

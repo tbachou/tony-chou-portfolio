@@ -70,7 +70,7 @@ export default function BetaProjectPage() {
           <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
             Beta
           </h1>
-          <p className="mt-1 max-w-prose text-term-base text-term-body">
+          <p className="mt-1 max-w-[39rem] text-term-base text-term-body">
             An AI return-to-climbing rehab planner with hard safety rails.
           </p>
 
@@ -92,7 +92,7 @@ export default function BetaProjectPage() {
               <span aria-hidden="true">$ </span>
               cat what-it-does.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Beta is a public web tool that drafts a staged, conservative return-to-climbing plan
               for the three most common climbing injuries: finger pulley strain, climber&apos;s
               elbow, and shoulder impingement. A visitor fills a structured form — injury, onset,
@@ -109,7 +109,7 @@ export default function BetaProjectPage() {
               <span aria-hidden="true">$ </span>
               cat architecture.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               Three Claude agents run in sequence per request, each scoped by its own prompt kept
               as a markdown skill file on disk — the same pattern as Panel and Carryover.
             </p>
@@ -121,7 +121,7 @@ export default function BetaProjectPage() {
                   </span>
                   <div>
                     <p className="text-term-sm font-bold text-term-ink">{agent.name}</p>
-                    <p className="mt-1 text-term-sm leading-relaxed text-term-body">{agent.role}</p>
+                    <p className="mt-1 text-term-base leading-relaxed text-term-body">{agent.role}</p>
                   </div>
                 </li>
               ))}
@@ -133,13 +133,13 @@ export default function BetaProjectPage() {
               <span aria-hidden="true">$ </span>
               cat guardrails.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-sm text-term-muted">
               A public AI demo about injuries has to be safe and cheap by design, not by hope. A
               few things are load-bearing to that:
             </p>
             <ul className="mt-4 space-y-3">
               {GUARDRAILS.map((item) => (
-                <li key={item} className="flex gap-2 text-term-sm leading-relaxed text-term-body">
+                <li key={item} className="flex gap-2 text-term-base leading-relaxed text-term-body">
                   <span aria-hidden="true" className="text-term-muted">
                     ›
                   </span>
@@ -154,7 +154,7 @@ export default function BetaProjectPage() {
               <span aria-hidden="true">$ </span>
               cat why.txt
             </h2>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Before engineering, Tony spent 6 years as an Occupational Therapist — he no longer
               practices, but staged, criteria-based rehab progressions were his day job.
               He&apos;s also a climber, so this is a domain he rehabs in himself. Beta ties
@@ -174,7 +174,7 @@ export default function BetaProjectPage() {
                 [ launch beta ↗ ]
               </a>
             </div>
-            <p className="mt-3 max-w-prose text-term-xs text-term-muted">
+            <p className="mt-3 max-w-[39rem] text-term-xs text-term-muted">
               An educational starting point, not medical advice — red-flag symptoms are pointed to a
               professional instead of a plan. Rate-limited to keep the demo budget honest; if the
               daily cap is hit, come back tomorrow.
