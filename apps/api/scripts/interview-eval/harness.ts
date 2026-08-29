@@ -10,7 +10,10 @@ import {
   type PreparedTurn,
   type TopicWithStories,
 } from '../../src/modules/conversation/conversation.service';
-import { INTERVIEWER_SYSTEM_PROMPT } from '../../src/modules/conversation/tony-persona';
+import {
+  INTERVIEWER_SYSTEM_PROMPT,
+  TONY_SYSTEM_PROMPT,
+} from '../../src/modules/conversation/tony-persona';
 import type { PrismaService } from '../../src/modules/prisma/prisma.service';
 import type { DailyUsageService } from '../../src/modules/daily-usage/daily-usage.service';
 import type {
@@ -49,7 +52,15 @@ class CapturingProvider implements AiProvider {
   ) {}
 
   async streamMessage(params: StreamMessageParams): Promise<StreamMessageResult> {
+    // Exhaustive on purpose: if the production prompts are ever composed or
+    // a third model call appears in generateTurnPair, fail loudly instead of
+    // silently misclassifying (and mis-scoring) a turn.
     const isInterviewer = params.system === INTERVIEWER_SYSTEM_PROMPT;
+    if (!isInterviewer && params.system !== TONY_SYSTEM_PROMPT) {
+      throw new Error(
+        'CapturingProvider: unrecognized system prompt; production prompt wiring changed and the harness must be updated',
+      );
+    }
     if (isInterviewer && this.injectQuestion) {
       params.onToken(this.injectQuestion);
       this.interviewerText = this.injectQuestion;
@@ -186,6 +197,7 @@ export type GenerationCapture = {
 async function generateOnce(
   provider: AiProvider,
   evalCase: EvalCase,
+  synthesized: { topic: TopicWithStories; prepared: PreparedTurn },
 ): Promise<GenerationCapture> {
   const capture = new CapturingProvider(provider, evalCase.injectQuestion);
   const service = new ConversationService(
@@ -193,7 +205,7 @@ async function generateOnce(
     capture,
     dailyUsageStub,
   );
-  const { topic, prepared } = synthesizeCase(evalCase);
+  const { topic, prepared } = synthesized;
 
   let errorMessage: string | null = null;
   let tonyEmitted = '';
@@ -243,10 +255,14 @@ export async function runCase(
   const generatorUsage: JudgeUsage = { inputTokens: 0, outputTokens: 0 };
   const judgeUsage: JudgeUsage = { inputTokens: 0, outputTokens: 0 };
 
-  let capture = await generateOnce(provider, evalCase);
+  // Synthesized once: the judges score against the exact story object the
+  // generator was given.
+  const synthesized = synthesizeCase(evalCase);
+
+  let capture = await generateOnce(provider, evalCase, synthesized);
   addUsage(generatorUsage, capture.usage);
   if (!capture.ok) {
-    const retry = await generateOnce(provider, evalCase);
+    const retry = await generateOnce(provider, evalCase, synthesized);
     addUsage(generatorUsage, retry.usage);
     capture = retry;
   }
@@ -279,28 +295,24 @@ export async function runCase(
     };
   }
 
-  const { prepared, topic } = synthesizeCase(evalCase);
+  const { prepared, topic } = synthesized;
 
   // Judges score the RAW model output: the suite measures what the prompts
   // and model produce; the guard's deterministic replacement is recorded
-  // separately (tonyEmitted, guardFired) rather than scored.
-  const honesty = await scoreHonesty({
-    tonyRaw: capture.tonyRaw,
-    story: prepared.story,
-  });
+  // separately (tonyEmitted, guardFired) rather than scored. The three
+  // judges are independent, so they run concurrently (at most
+  // 3 × --concurrency small judge calls in flight).
+  const [honesty, grounding, persona] = await Promise.all([
+    scoreHonesty({ tonyRaw: capture.tonyRaw, story: prepared.story }),
+    scoreGrounding({ tonyRaw: capture.tonyRaw, story: prepared.story }),
+    scorePersona({
+      interviewerQuestion: capture.interviewerQuestion,
+      tonyRaw: capture.tonyRaw,
+      topicLabel: topic.label,
+    }),
+  ]);
   addUsage(judgeUsage, honesty.usage);
-
-  const grounding = await scoreGrounding({
-    tonyRaw: capture.tonyRaw,
-    story: prepared.story,
-  });
   addUsage(judgeUsage, grounding.usage);
-
-  const persona = await scorePersona({
-    interviewerQuestion: capture.interviewerQuestion,
-    tonyRaw: capture.tonyRaw,
-    topicLabel: topic.label,
-  });
   addUsage(judgeUsage, persona.usage);
 
   return {
