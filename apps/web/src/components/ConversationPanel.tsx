@@ -148,9 +148,31 @@ export function ConversationPanel() {
           LOADING TOPICS<span className="terminal-cursor" aria-hidden="true" />
         </p>
       ) : panelState.status === 'topics-error' ? (
-        <p className="text-term-sm text-term-error" role="alert">
-          !! {panelState.message}
-        </p>
+        // The section is full height, so a bare error line left a whole screen
+        // of nothing and read as a broken site rather than a sleeping one. The
+        // API sleeps on a free tier and wakes on request, so this state is
+        // routine: say what the feature is, then offer to try again.
+        <div>
+          <p className="text-term-sm text-term-muted">
+            <span aria-hidden="true">$ </span>
+            cat interview.txt
+          </p>
+          <p className="mt-3 max-w-prose text-term-base leading-relaxed text-term-body">
+            An interview simulator: pick a topic and an AI stand-in for Tony answers questions
+            about his work, streaming the reply a token at a time.
+          </p>
+          <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-muted" role="alert">
+            !! {panelState.message} The service it runs on idles when nobody is using it, so the
+            first request after a quiet spell can time out while it wakes.
+          </p>
+          <button
+            type="button"
+            onClick={handleRestart}
+            className="terminal-select mt-5 inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink"
+          >
+            [ try again ]
+          </button>
+        </div>
       ) : panelState.status === 'idle' && !topic ? (
         <TopicPicker topics={panelState.topics} onSelect={handleSelectTopic} />
       ) : (
