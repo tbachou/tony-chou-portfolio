@@ -126,7 +126,7 @@ export type FloorStore = Pick<PrismaClient, '$queryRaw'> & {
  * it, and one NaN then blanks every rolling mean built on top of it. Failing
  * loudly here costs one run; a NaN in the record is permanent.
  */
-function usableFloor(floor: number | null, source: string): number {
+export function usableFloor(floor: number | null, source: string): number {
   if (floor === null || !Number.isFinite(floor) || floor <= 0) {
     throw new Error(
       `unusable flow floor (${String(floor)}) ${source}: it must be a positive number of cubic feet per second`,

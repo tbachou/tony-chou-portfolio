@@ -1,5 +1,6 @@
 import {
   backfillRegimes,
+  DRIFT_LOOKBACK_MS,
   formatReport,
   greatestAtOrBefore,
   TRANSITIONS_ADD_FALLING,
@@ -8,6 +9,7 @@ import {
 import type {
   BackfillReader,
   BackfillWriter,
+  PipelineRunWindow,
   PredictionRow,
   RegimeSnapshot,
   ScoreRow,
@@ -66,8 +68,8 @@ interface Fixture {
   scores: ScoreRow[];
   runStarts: Date[];
   observations: StoredObservation[];
-  /** Ingest or rescan runs since the snapshot, which must refuse a write. */
-  ingestRunsSince?: number;
+  /** Ingest or rescan runs the drift detector is offered, raw. */
+  ingestRuns?: PipelineRunWindow[];
 }
 
 const FLOOR = 18.9;
@@ -79,8 +81,21 @@ function reader(fixture: Fixture): BackfillReader {
     scoreRunStarts: async () => fixture.runStarts,
     observations: async () => fixture.observations,
     flowFloor: async () => FLOOR,
-    ingestRunsSince: async () => fixture.ingestRunsSince ?? 0,
+    ingestRuns: async () => fixture.ingestRuns ?? [],
   };
+}
+
+/** Three weeks of flat 200s that crest at 3,000 and drop to 400 at the slot. */
+function crestThenDrop(): StoredObservation[] {
+  return series({
+    from: '2026-07-01T00:00:00Z',
+    to: '2026-07-21T00:00:00Z',
+    recordedAt: (validTime) => validTime,
+    value: bendMany([
+      ['2026-07-19T12:00:00Z', 3000],
+      ['2026-07-20T00:00:00Z', 400],
+    ]),
+  });
 }
 
 interface RecordedWrite {
@@ -270,6 +285,7 @@ describe('backfillRegimes: predictions', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -295,6 +311,7 @@ describe('backfillRegimes: predictions', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -376,6 +393,7 @@ describe('backfillRegimes: predictions', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -401,6 +419,7 @@ describe('backfillRegimes: predictions', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -428,6 +447,7 @@ describe('backfillRegimes: predictions', () => {
         allowedTransitions: TRANSITIONS_ADD_FALLING,
         rule: FIRST_RULE,
         write: true,
+        allowUnpairedWrite: true,
         now: NOW,
       }),
     ).rejects.toThrow('interrupted');
@@ -439,6 +459,8 @@ describe('backfillRegimes: predictions', () => {
     expect(held.held()?.completedAt).toBeUndefined();
 
     const secondWrite = writer(rows);
+    // No unpaired escape here: the resumed run loads the saved snapshot, so
+    // the pairing guard must wave it through on its own.
     const second = await backfillRegimes({
       reader: reader(rows),
       writer: secondWrite.writer,
@@ -482,15 +504,7 @@ describe('backfillRegimes: the snapshot', () => {
       ],
       scores: [],
       runStarts: [],
-      observations: series({
-        from: '2026-07-01T00:00:00Z',
-        to: '2026-07-21T00:00:00Z',
-        recordedAt: (validTime) => validTime,
-        value: bendMany([
-          ['2026-07-19T12:00:00Z', 3000],
-          ['2026-07-20T00:00:00Z', 400],
-        ]),
-      }),
+      observations: crestThenDrop(),
     };
   }
 
@@ -509,6 +523,7 @@ describe('backfillRegimes: the snapshot', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
         write: true,
+        allowUnpairedWrite: true,
         now: NOW,
       }),
     ).rejects.toThrow('interrupted');
@@ -526,6 +541,8 @@ describe('backfillRegimes: the snapshot', () => {
     });
 
     const resumed = writer(rows);
+    // No unpaired escape: the resumed run loads the snapshot the interrupted
+    // one saved, which is exactly the pairing the guard checks for.
     const report = await backfillRegimes({
       reader: reader(rows),
       writer: resumed.writer,
@@ -575,6 +592,7 @@ describe('backfillRegimes: the snapshot', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -598,6 +616,7 @@ describe('backfillRegimes: the snapshot', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -627,6 +646,7 @@ describe('backfillRegimes: the snapshot', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -652,6 +672,7 @@ describe('backfillRegimes: the snapshot', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -674,15 +695,7 @@ describe('backfillRegimes: a second relabelling', () => {
       ],
       scores: [],
       runStarts: [],
-      observations: series({
-        from: '2026-07-01T00:00:00Z',
-        to: '2026-07-21T00:00:00Z',
-        recordedAt: (validTime) => validTime,
-        value: bendMany([
-          ['2026-07-19T12:00:00Z', 3000],
-          ['2026-07-20T00:00:00Z', 400],
-        ]),
-      }),
+      observations: crestThenDrop(),
     };
   }
 
@@ -707,6 +720,7 @@ describe('backfillRegimes: a second relabelling', () => {
         allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
         rule: 'max-v-floor',
         write: true,
+        allowUnpairedWrite: true,
         now: NOW,
       }),
     ).rejects.toThrow(/taken under rule "max-v-m".*implements "max-v-floor"/s);
@@ -724,6 +738,7 @@ describe('backfillRegimes: a second relabelling', () => {
       allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
       rule: 'max-v-floor',
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -778,6 +793,7 @@ describe('backfillRegimes: a second relabelling', () => {
       allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
       rule: 'max-v-floor',
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -818,6 +834,7 @@ describe('backfillRegimes: a second relabelling', () => {
       allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
       rule: 'max-v-floor',
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -840,6 +857,7 @@ describe('backfillRegimes: a second relabelling', () => {
       allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
       rule: 'max-v-floor',
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -858,7 +876,15 @@ describe('backfillRegimes: a second relabelling', () => {
   it('refuses to write when an ingest or rescan ran since the snapshot', async () => {
     const rows = fixture();
     rows.predictions[0].issueRegime = 'BASEFLOW';
-    rows.ingestRunsSince = 2;
+    // Two runs started after the snapshot instant (NOW, 12:00), one still
+    // unfinished. Both are drift.
+    rows.ingestRuns = [
+      {
+        startedAt: new Date('2026-08-27T12:01:00Z'),
+        finishedAt: new Date('2026-08-27T12:03:00Z'),
+      },
+      { startedAt: new Date('2026-08-27T12:05:00Z'), finishedAt: null },
+    ];
     const write = writer(rows);
 
     const report = await backfillRegimes({
@@ -868,6 +894,7 @@ describe('backfillRegimes: a second relabelling', () => {
       allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
       rule: 'max-v-floor',
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -879,6 +906,62 @@ describe('backfillRegimes: a second relabelling', () => {
     expect(report.wrote).toBe(false);
     expect(write.calls).toEqual([]);
     expect(report.blockers.join(' ')).toContain('the store has moved');
+  });
+
+  it('counts a run that started before the snapshot and finished after it', async () => {
+    const rows = fixture();
+    rows.predictions[0].issueRegime = 'BASEFLOW';
+    // The straddle: a rescan can start, have the snapshot taken over it, and
+    // commit its revisions afterwards. Its startedAt predates the snapshot, so
+    // matching on startedAt alone would wave it through. The run that both
+    // started and finished before the snapshot is the control: not drift.
+    rows.ingestRuns = [
+      {
+        startedAt: new Date('2026-08-27T11:59:00Z'),
+        finishedAt: new Date('2026-08-27T12:01:00Z'),
+      },
+      {
+        startedAt: new Date('2026-08-27T11:10:00Z'),
+        finishedAt: new Date('2026-08-27T11:15:00Z'),
+      },
+    ];
+    const write = writer(rows);
+
+    const report = await backfillRegimes({
+      reader: reader(rows),
+      writer: write.writer,
+      snapshots: snapshots().store,
+      allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+      rule: 'max-v-floor',
+      write: true,
+      allowUnpairedWrite: true,
+      now: NOW,
+    });
+
+    expect(report.driftRuns).toBe(1);
+    expect(report.wrote).toBe(false);
+    expect(write.calls).toEqual([]);
+  });
+
+  it('refuses a write run that has no report snapshot to pair with', async () => {
+    const rows = fixture();
+    rows.predictions[0].issueRegime = 'BASEFLOW';
+    const write = writer(rows);
+
+    // No allowUnpairedWrite: a write against an empty snapshot path would
+    // silently become its own report, so it must refuse instead.
+    await expect(
+      backfillRegimes({
+        reader: reader(rows),
+        writer: write.writer,
+        snapshots: snapshots().store,
+        allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
+        rule: 'max-v-floor',
+        write: true,
+        now: NOW,
+      }),
+    ).rejects.toThrow(/pairs with a report run/);
+    expect(write.calls).toEqual([]);
   });
 
   it('saves its snapshot on a report only run, and the write that follows reuses it', async () => {
@@ -894,9 +977,9 @@ describe('backfillRegimes: a second relabelling', () => {
     const askedSince: Date[] = [];
     const read: BackfillReader = {
       ...reader(rows),
-      ingestRunsSince: async (instant) => {
-        askedSince.push(instant);
-        return 0;
+      ingestRuns: async (since) => {
+        askedSince.push(since);
+        return [];
       },
     };
 
@@ -925,13 +1008,18 @@ describe('backfillRegimes: a second relabelling', () => {
 
     expect(writeRun.snapshotReused).toBe(true);
     expect(writeRun.wrote).toBe(true);
-    // Drift was measured from the report's instant, not the write's own.
-    expect(askedSince).toEqual([new Date('2026-08-28T18:00:00.000Z')]);
+    // Drift was measured from the report's instant (less the lookback that
+    // catches straddling runs), not from the write's own start.
+    expect(askedSince).toEqual([
+      new Date(new Date('2026-08-28T18:00:00.000Z').getTime() - DRIFT_LOOKBACK_MS),
+    ]);
   });
 
   it('does not care about intervening runs in report only mode', async () => {
     const rows = fixture();
-    rows.ingestRunsSince = 5;
+    rows.ingestRuns = [
+      { startedAt: new Date('2026-08-27T12:01:00Z'), finishedAt: null },
+    ];
 
     const report = await backfillRegimes({
       reader: reader(rows),
@@ -958,15 +1046,7 @@ describe('backfillRegimes: the completed stamp', () => {
       ],
       scores: [],
       runStarts: [],
-      observations: series({
-        from: '2026-07-01T00:00:00Z',
-        to: '2026-07-21T00:00:00Z',
-        recordedAt: (validTime) => validTime,
-        value: bendMany([
-          ['2026-07-19T12:00:00Z', 3000],
-          ['2026-07-20T00:00:00Z', 400],
-        ]),
-      }),
+      observations: crestThenDrop(),
     };
   }
 
@@ -981,6 +1061,7 @@ describe('backfillRegimes: the completed stamp', () => {
       allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
       rule: 'max-v-floor',
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -1001,6 +1082,7 @@ describe('backfillRegimes: the completed stamp', () => {
       allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
       rule: 'max-v-floor',
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -1022,6 +1104,7 @@ describe('backfillRegimes: the completed stamp', () => {
         allowedTransitions: TRANSITIONS_DROP_MEDIAN_FLOOR,
         rule: 'max-v-floor',
         write: true,
+        allowUnpairedWrite: true,
         now: NOW,
       }),
     ).rejects.toThrow('interrupted');
@@ -1121,6 +1204,7 @@ describe('backfillRegimes: scores', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -1143,6 +1227,7 @@ describe('backfillRegimes: scores', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -1178,6 +1263,7 @@ describe('backfillRegimes: scores', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -1202,6 +1288,7 @@ describe('backfillRegimes: scores', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -1232,6 +1319,7 @@ describe('backfillRegimes: scores', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
@@ -1253,15 +1341,7 @@ describe('backfillRegimes: the interval columns', () => {
       ],
       scores: [],
       runStarts: [],
-      observations: series({
-        from: '2026-07-01T00:00:00Z',
-        to: '2026-07-21T00:00:00Z',
-        recordedAt: (validTime) => validTime,
-        value: bendMany([
-          ['2026-07-19T12:00:00Z', 3000],
-          ['2026-07-20T00:00:00Z', 400],
-        ]),
-      }),
+      observations: crestThenDrop(),
     };
     const write = writer(rows);
 
@@ -1272,6 +1352,7 @@ describe('backfillRegimes: the interval columns', () => {
       allowedTransitions: TRANSITIONS_ADD_FALLING,
       rule: FIRST_RULE,
       write: true,
+      allowUnpairedWrite: true,
       now: NOW,
     });
 
