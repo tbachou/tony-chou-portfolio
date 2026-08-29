@@ -91,12 +91,15 @@ function readJsonFile<T>(filePath: string, label: string): T {
 function gitInfo(): { commit: string; dirty: boolean } {
   try {
     const commit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-    // Tracked modifications only: the suite's own not-yet-committed results
-    // files would otherwise mark every follow-up run dirty.
-    const dirty =
-      execSync('git status --porcelain --untracked-files=no', {
-        encoding: 'utf8',
-      }).trim().length > 0;
+    // The dirty flag answers "did the code that ran differ from this
+    // commit?" — so it counts tracked modifications only, and ignores the
+    // suite's own outputs under docs/evals (results, scoreboard, baseline),
+    // which every run rewrites but which cannot change behavior.
+    const dirty = execSync('git status --porcelain --untracked-files=no', {
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .some((line) => line.trim().length > 0 && !line.includes('docs/evals/'));
     return { commit, dirty };
   } catch {
     return { commit: 'unknown', dirty: false };
