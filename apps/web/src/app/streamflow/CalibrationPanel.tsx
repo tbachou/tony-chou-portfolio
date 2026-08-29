@@ -1,3 +1,4 @@
+import { MIN_BUCKET_ERRORS } from '@portfolio/streamflow';
 import type { CalibrationReport, CoverageGroup } from '@portfolio/streamflow';
 
 /**
@@ -20,12 +21,12 @@ import type { CalibrationReport, CoverageGroup } from '@portfolio/streamflow';
  */
 
 /** A percentage, or a dash when the group is empty. */
-function pct(value: number | null): string {
+export function pct(value: number | null): string {
   return value === null ? '—' : `${(100 * value).toFixed(1)}%`;
 }
 
 /** The signed distance from what was claimed, in percentage points. */
-function gapLabel(gap: number | null): string {
+export function gapLabel(gap: number | null): string {
   if (gap === null) return '';
   const points = 100 * gap;
   if (Math.abs(points) < 0.05) return 'on target';
@@ -38,7 +39,7 @@ function gapLabel(gap: number | null): string {
  * The point of splitting at all is to surface the group that is wrong, so
  * sorting by anything else would bury the finding under alphabetical order.
  */
-function byWorstGap(a: CoverageGroup, b: CoverageGroup): number {
+export function byWorstGap(a: CoverageGroup, b: CoverageGroup): number {
   return Math.abs(b.gap ?? 0) - Math.abs(a.gap ?? 0);
 }
 
@@ -137,13 +138,18 @@ export function CalibrationPanel({
   backtest: CalibrationReport;
 }) {
   // Worst first, and only groups with enough behind them to mean anything.
-  // Thirty is the same floor the intervals themselves use before they will
-  // draw on a bucket, so a group too thin to set a range is also too thin to
-  // be judged by one.
+  // `MIN_BUCKET_ERRORS` is borrowed rather than matched: the intervals apply
+  // it per model, horizon AND river state, while these rows sum the three
+  // horizons together, so clearing it here does not mean every bucket behind
+  // the row was seeded. It is a floor on how much to read into a row, not a
+  // claim that the row was itself well conditioned.
   const worstBacktest = [...backtest.byRegime]
-    .filter((group) => group.total >= 30)
+    .filter((group) => group.total >= MIN_BUCKET_ERRORS)
     .sort(byWorstGap)
     .slice(0, 6);
+  const hiddenRows = backtest.byRegime.filter(
+    (group) => group.total >= MIN_BUCKET_ERRORS,
+  ).length - worstBacktest.length;
 
   return (
     <>
@@ -170,6 +176,24 @@ export function CalibrationPanel({
           </p>
         )}
 
+      {backtest.bySource.length > 1 && (
+        <div className="mt-8">
+          <h3 className="text-term-sm text-term-muted">
+            <span aria-hidden="true">$ </span>
+            coverage --by how-the-range-was-earned --backtest
+          </h3>
+          <p className="mt-2 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
+            Read this before the numbers above. A range is only meaningful if it was earned from
+            enough past errors in the same river state; where it was not, the forecaster falls back
+            to a pooled sample, and failing that to a fixed band a third of the guess to triple it.
+            That fixed band is so wide it is nearly free to land inside, so a headline resting on
+            those rows would flatter itself. These are the same grades, split by which of the three
+            produced the bounds.
+          </p>
+          <CoverageRows groups={backtest.bySource} />
+        </div>
+      )}
+
       {worstBacktest.length > 0 && (
         <div className="mt-8">
           <h3 className="text-term-sm text-term-muted">
@@ -182,6 +206,12 @@ export function CalibrationPanel({
             another compensates, which is exactly what these rows are for.
           </p>
           <CoverageRows groups={worstBacktest} />
+          {hiddenRows > 0 && (
+            <p className="mt-2 text-term-xs text-term-muted">
+              {hiddenRows} further {hiddenRows === 1 ? 'group is' : 'groups are'} not shown, all
+              closer to the claim than these.
+            </p>
+          )}
         </div>
       )}
     </>
