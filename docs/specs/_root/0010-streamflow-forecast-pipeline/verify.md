@@ -168,3 +168,31 @@ One per row of the spec's Value sourcing table, each exercising the edge that br
 - AC-D10 half done: parent index corrected; `MIN_BUCKET_ERRORS` numbers wait for the report run
 - AC-D11 waits for the flag to come back on
 - AC-D12 covered by the committed sweep script and the findings document
+
+---
+
+# Verify: interval calibration · spec 0010 · written 2026-08-29
+
+_Steps derived from **AC-16** in [index.md](index.md): the dashboard shows interval calibration, the share of actuals that fell inside the stated interval, compared against the nominal level._
+
+## Commands
+
+- [x] `npm test --workspace=apps/streamflow` → 306 green, including 15 in `calibration.spec.ts` → AC-16
+- [x] Deliberate revert check: flipping the sign of `gap` and returning 0 rather than null for an empty group each fail their named tests; the suffix-ranking regression fails the horizon ordering test. All restored → the tests are not vacuous
+- [x] `npx tsc --noEmit` on both workspaces, `eslint` on both → clean
+- [x] Against the live store, read only: `/streamflow` renders both populations separately — live 8.0% of 50, backtest 78.6% of 17,565, each against 80.0% claimed → AC-16
+- [x] The by river state table renders worst gap first over the backtest, filtered to groups with 30 or more grades: rising 53.1% (−26.9 pts), climatology rising 57.8%, falling 64.1%, baseflow 95.1% (+15.1 pts, wider than needed), peak 65.4% and 67.9% → AC-16
+- [ ] After deploy, confirm the section renders on the live site and the live figure has moved as more forecasts are graded
+
+## Value sourcing checks
+
+- [x] Coverage numerator and denominator: `Score.withinInterval` counted against all grades in the group, one score per prediction (the read applies the same newest revision rule the skill query does) → AC-16
+- [x] The nominal level: averaged from each row's stored `Prediction.intervalLevel` rather than assumed to be 0.80, so a later policy change cannot silently reinterpret old rows
+- [x] The two populations never sum: `gradedIntervals` takes the hindcast flag as a required argument and the page calls it twice, holding the reports apart
+- [x] An empty group reports unknown rather than zero coverage, so "no data" and "every range missed" cannot render alike
+- [x] Groups thinner than 30 grades are withheld from the breakdown, the same floor the intervals use before drawing on a bucket
+
+## What this does not yet do
+
+- The panel reports; it does not act. Nothing feeds the measured miscalibration back into how ranges are drawn, and the rising bucket at 53.1% is the strongest argument in the record for revisiting that.
+- Coverage is read over the whole record rather than a window, so the live figure will move slowly once the sample grows. A windowed view is worth adding when there is enough live history for it to mean anything.
