@@ -9,7 +9,7 @@ import {
 import { ConversationRole } from '../../generated/prisma/enums';
 import { Prisma } from '../../generated/prisma/client';
 import type { StoryModel, TopicModel } from '../../generated/prisma/models';
-import { INTERVIEWER_SYSTEM_PROMPT, TONY_SYSTEM_PROMPT } from './tony-persona';
+import { loadConversationSkill } from './skill-loader';
 import {
   evaluateTonyResponse,
   GENERIC_GUARD_FALLBACK,
@@ -149,7 +149,7 @@ export class ConversationService {
     try {
       emit('turn_start', { role: 'interviewer' });
       const interviewerResult = await this.anthropic.streamMessage({
-        system: INTERVIEWER_SYSTEM_PROMPT,
+        system: loadConversationSkill('interviewer'),
         userMessage: buildInterviewerUserMessage(
           topic,
           story,
@@ -165,7 +165,7 @@ export class ConversationService {
       // response before anything reaches the client, so onToken here only
       // accumulates internally (via AnthropicService's return value), never emits.
       const tonyGenerated = await this.anthropic.streamMessage({
-        system: TONY_SYSTEM_PROMPT,
+        system: loadConversationSkill('tony'),
         userMessage: buildTonyUserMessage(
           story,
           interviewerResult.text,

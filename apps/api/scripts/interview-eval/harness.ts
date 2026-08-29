@@ -10,10 +10,7 @@ import {
   type PreparedTurn,
   type TopicWithStories,
 } from '../../src/modules/conversation/conversation.service';
-import {
-  INTERVIEWER_SYSTEM_PROMPT,
-  TONY_SYSTEM_PROMPT,
-} from '../../src/modules/conversation/tony-persona';
+import { loadConversationSkill } from '../../src/modules/conversation/skill-loader';
 import type { PrismaService } from '../../src/modules/prisma/prisma.service';
 import type { DailyUsageService } from '../../src/modules/daily-usage/daily-usage.service';
 import type {
@@ -55,8 +52,9 @@ class CapturingProvider implements AiProvider {
     // Exhaustive on purpose: if the production prompts are ever composed or
     // a third model call appears in generateTurnPair, fail loudly instead of
     // silently misclassifying (and mis-scoring) a turn.
-    const isInterviewer = params.system === INTERVIEWER_SYSTEM_PROMPT;
-    if (!isInterviewer && params.system !== TONY_SYSTEM_PROMPT) {
+    const isInterviewer =
+      params.system === loadConversationSkill('interviewer');
+    if (!isInterviewer && params.system !== loadConversationSkill('tony')) {
       throw new Error(
         'CapturingProvider: unrecognized system prompt; production prompt wiring changed and the harness must be updated',
       );
