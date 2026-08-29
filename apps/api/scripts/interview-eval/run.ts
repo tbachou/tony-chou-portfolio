@@ -215,9 +215,18 @@ async function main(): Promise<void> {
     const noiseFrom = arg('noise-from');
     let noiseBand = baseline?.noiseBand ?? null;
     if (noiseFrom) {
-      const other = JSON.parse(
-        fs.readFileSync(path.resolve(noiseFrom), 'utf8'),
-      ) as RunResults;
+      // The npm script runs with cwd = apps/api; accept a path relative to
+      // either the cwd or the repo root.
+      const candidates = [
+        path.resolve(noiseFrom),
+        path.resolve(__dirname, '..', '..', '..', '..', noiseFrom),
+      ];
+      const noisePath = candidates.find((p) => fs.existsSync(p));
+      if (!noisePath) {
+        console.error(`❌ --noise-from file not found: ${noiseFrom}`);
+        process.exit(1);
+      }
+      const other = JSON.parse(fs.readFileSync(noisePath, 'utf8')) as RunResults;
       if (other.meta.datasetHash !== datasetHash) {
         console.error(
           '❌ --noise-from run has a different dataset hash; the noise band must come from two identical runs.',

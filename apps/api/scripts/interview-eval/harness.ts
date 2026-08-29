@@ -239,6 +239,7 @@ export async function runCase(
   provider: AiProvider,
   evalCase: EvalCase,
 ): Promise<CaseRunOutcome> {
+  const startedAt = Date.now();
   const generatorUsage: JudgeUsage = { inputTokens: 0, outputTokens: 0 };
   const judgeUsage: JudgeUsage = { inputTokens: 0, outputTokens: 0 };
 
@@ -271,6 +272,7 @@ export async function runCase(
         dimensions: {},
         generationError:
           capture.errorMessage ?? 'no Tony turn captured after one retry',
+        durationMs: Date.now() - startedAt,
       },
       generatorUsage,
       judgeUsage,
@@ -315,6 +317,7 @@ export async function runCase(
         persona: persona.dimension,
       },
       honestyLayers: honesty.layers,
+      durationMs: Date.now() - startedAt,
     },
     generatorUsage,
     judgeUsage,
