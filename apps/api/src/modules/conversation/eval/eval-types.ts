@@ -75,6 +75,13 @@ export type RunMeta = {
   estimatedCostUsd: number | null;
   /** True when --max-cost aborted the run; results are partial (AC-7). */
   aborted: boolean;
+  /**
+   * True when the run covered less than the full golden dataset (a --cases
+   * cap or an abort). A partial run's delta against the full-set baseline is
+   * composition biased, so significance is never asserted for it, and a
+   * partial run can never become the baseline.
+   */
+  partial: boolean;
 };
 
 export type RunResults = {
