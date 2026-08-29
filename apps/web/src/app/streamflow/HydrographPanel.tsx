@@ -38,6 +38,25 @@ function formatInstant(iso: string, timeZone: string): string {
 /** The slider works in whole minutes to keep its step count sane. */
 const MINUTE = 60 * 1000;
 
+/**
+ * The slider's own paint.
+ *
+ * `appearance-none` is the price of a usable target: the native thumb is
+ * about 16px across and cannot be resized while the platform is still
+ * drawing it, so the track and thumb are both redeclared here. 24px is the
+ * floor for a pointer target; the block shape is the terminal's, not a
+ * rounded platform control's.
+ */
+const SLIDER_CLASS = [
+  'mt-3 h-6 w-full cursor-pointer appearance-none bg-transparent',
+  '[&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:bg-term-border',
+  '[&::-webkit-slider-thumb]:-mt-[11px] [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6',
+  '[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-none [&::-webkit-slider-thumb]:bg-term-accent',
+  '[&::-moz-range-track]:h-0.5 [&::-moz-range-track]:bg-term-border',
+  '[&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:w-6',
+  '[&::-moz-range-thumb]:rounded-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-term-accent',
+].join(' ');
+
 export function HydrographPanel({
   initial,
   earliestRecordedAt,
@@ -107,6 +126,7 @@ export function HydrographPanel({
   }, [asOf, initial.asOf, load]);
 
   const isRewound = Math.abs(latest - Date.parse(asOf)) > MINUTE;
+  const chosenInstant = formatInstant(asOf, timeZone);
 
   return (
     <div>
@@ -124,19 +144,35 @@ export function HydrographPanel({
             htmlFor="as-of"
             className="text-term-sm text-term-ink terminal-glow"
           >
-            $ known as of
+            {/* Hidden like every other prompt on the page, so this does not
+                announce as "dollar known as of". */}
+            <span aria-hidden="true">$ </span>known as of
           </label>
+          {/*
+            `aria-live="off"` is not redundant: <output> maps to role
+            status, which is a live region by default, and this fired on
+            every drag alongside the status line below it. The slider's own
+            aria-valuetext now carries the instant, so nothing is lost.
+          */}
           <output
             htmlFor="as-of"
             className="text-term-sm text-term-body"
-            aria-live="polite"
+            aria-live="off"
           >
-            {formatInstant(asOf, timeZone)}
+            {chosenInstant}
             {!isRewound && (
               <span className="ml-2 text-term-muted">(now)</span>
             )}
           </output>
         </div>
+
+        {/* Above the control, because it says what moving the control does
+            and below it the visitor has already had to guess. */}
+        <p id="as-of-help" className="mt-2 max-w-2xl text-term-xs text-term-muted">
+          Rewind what the pipeline had learned. Readings recorded after this
+          moment are excluded, so a later correction reverts to the value
+          first published.
+        </p>
 
         <input
           id="as-of"
@@ -148,15 +184,27 @@ export function HydrographPanel({
           onChange={(event) =>
             setAsOf(new Date(Number(event.target.value) * MINUTE).toISOString())
           }
-          className="mt-3 w-full accent-term-accent"
+          className={SLIDER_CLASS}
           aria-describedby="as-of-help"
+          // Without this the announced value is the raw epoch minute the
+          // slider actually counts in, which is a seven figure number that
+          // means nothing and changes on every arrow press.
+          aria-valuetext={
+            isRewound ? chosenInstant : `${chosenInstant}, the present`
+          }
         />
 
         <div className="mt-2 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-          <p id="as-of-help" className="text-term-xs text-term-muted">
-            Rewind what the pipeline had learned. Readings recorded after this
-            moment are excluded, so a later correction reverts to the value
-            first published.
+          <p
+            className="text-term-xs text-term-muted"
+            role="status"
+            aria-live="polite"
+          >
+            {status === 'loading' && 'reading the store...'}
+            {status === 'error' &&
+              'could not read the store at that moment. The slider still works; try again.'}
+            {status === 'idle' &&
+              `${data.points.length.toLocaleString()} readings were known at this moment`}
           </p>
 
           {isRewound && (
@@ -182,18 +230,6 @@ export function HydrographPanel({
             </button>
           )}
         </div>
-
-        <p
-          className="mt-3 text-term-xs text-term-muted"
-          role="status"
-          aria-live="polite"
-        >
-          {status === 'loading' && 'reading the store...'}
-          {status === 'error' &&
-            'could not read the store at that moment. The slider still works; try again.'}
-          {status === 'idle' &&
-            `${data.points.length.toLocaleString()} readings were known at this moment`}
-        </p>
       </div>
     </div>
   );

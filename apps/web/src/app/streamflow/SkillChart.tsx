@@ -42,6 +42,10 @@ const PADDING = { top: 16, right: 16, bottom: 34, left: 56 };
 const PLOT_WIDTH = WIDTH - PADDING.left - PADDING.right;
 const PLOT_HEIGHT = HEIGHT - PADDING.top - PADDING.bottom;
 
+/** Both sized for the same reasons as the hydrograph's; see `Hydrograph.tsx`. */
+const LABEL_SIZE = 'text-[16px]';
+const CHART_MIN_WIDTH = 'min-w-[50rem]';
+
 /**
  * Stroke styles in the order series are assigned them. Three, so the learned
  * model arriving later gets one without a redesign.
@@ -173,79 +177,88 @@ export function SkillChart({
         ))}
       </div>
 
+      {/* The chart scrolls rather than squeezing, for the reasons the
+          hydrograph's own wrapper spells out. */}
       {chart ? (
-        <svg
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          className="mt-5 h-auto w-full"
-          role="img"
-          aria-label={summary}
-          preserveAspectRatio="xMidYMid meet"
+        <div
+          role="region"
+          tabIndex={0}
+          aria-label="Forecast error chart, scrolls sideways on narrow screens"
+          className="terminal-scrollable mt-5 overflow-x-auto"
         >
-          {chart.valueTicks.map((tick) => (
-            <g key={`v-${tick}`}>
-              <line
-                x1={PADDING.left}
-                x2={WIDTH - PADDING.right}
-                y1={chart.y(tick)}
-                y2={chart.y(tick)}
-                className="stroke-term-border"
-                strokeWidth={1}
-                strokeDasharray="2 4"
-              />
+          <svg
+            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            className={`h-auto w-full ${CHART_MIN_WIDTH}`}
+            role="img"
+            aria-label={summary}
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {chart.valueTicks.map((tick) => (
+              <g key={`v-${tick}`}>
+                <line
+                  x1={PADDING.left}
+                  x2={WIDTH - PADDING.right}
+                  y1={chart.y(tick)}
+                  y2={chart.y(tick)}
+                  className="stroke-term-border"
+                  strokeWidth={1}
+                  strokeDasharray="2 4"
+                />
+                <text
+                  x={PADDING.left - 8}
+                  y={chart.y(tick)}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  className={`fill-term-muted ${LABEL_SIZE}`}
+                >
+                  {formatPct(tick)}
+                </text>
+              </g>
+            ))}
+
+            {chart.timeTicks.map((tick) => (
               <text
-                x={PADDING.left - 8}
-                y={chart.y(tick)}
-                textAnchor="end"
-                dominantBaseline="middle"
-                className="fill-term-muted text-[11px]"
+                key={`t-${tick.at}`}
+                x={tick.x}
+                y={HEIGHT - PADDING.bottom + 20}
+                textAnchor={tick.anchor}
+                className={`fill-term-muted ${LABEL_SIZE}`}
               >
-                {formatPct(tick)}
+                {formatDay(tick.at, timeZone)}
               </text>
-            </g>
-          ))}
+            ))}
 
-          {chart.timeTicks.map((tick) => (
-            <text
-              key={`t-${tick.at}`}
-              x={tick.x}
-              y={HEIGHT - PADDING.bottom + 20}
-              textAnchor={tick.anchor}
-              className="fill-term-muted text-[11px]"
-            >
-              {formatDay(tick.at, timeZone)}
-            </text>
-          ))}
-
-          <line
-            x1={PADDING.left}
-            x2={PADDING.left}
-            y1={PADDING.top}
-            y2={HEIGHT - PADDING.bottom}
-            className="stroke-term-border"
-            strokeWidth={1}
-          />
-          <line
-            x1={PADDING.left}
-            x2={WIDTH - PADDING.right}
-            y1={HEIGHT - PADDING.bottom}
-            y2={HEIGHT - PADDING.bottom}
-            className="stroke-term-border"
-            strokeWidth={1}
-          />
-
-          {chart.lines.map((line) => (
-            <polyline
-              key={line.modelName}
-              points={line.d}
-              fill="none"
-              strokeWidth={line.stroke.width}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              strokeDasharray={line.stroke.dash}
-              className={line.stroke.className}
+            <line
+              x1={PADDING.left}
+              x2={PADDING.left}
+              y1={PADDING.top}
+              y2={HEIGHT - PADDING.bottom}
+              className="stroke-term-border"
+              strokeWidth={1}
             />
-          ))}
-        </svg>
+            <line
+              x1={PADDING.left}
+              x2={WIDTH - PADDING.right}
+              y1={HEIGHT - PADDING.bottom}
+              y2={HEIGHT - PADDING.bottom}
+              className="stroke-term-border"
+              strokeWidth={1}
+            />
+
+            {chart.lines.map((line) => (
+              <polyline
+                key={line.modelName}
+                points={line.d}
+                fill="none"
+                strokeWidth={line.stroke.width}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                strokeDasharray={line.stroke.dash}
+                className={line.stroke.className}
+              />
+            ))}
+          </svg>
+        </div>
       ) : (
         <p className="mt-5 border border-term-border px-4 py-10 text-center text-term-sm text-term-muted">
           Nothing scored at {horizon} hours yet. This chart shows only

@@ -72,6 +72,11 @@ const TWO_CLOCKS = [
   },
 ];
 
+/** The value if the read succeeded, the fallback if it did not. */
+function settled<T>(result: PromiseSettledResult<T>, fallback: T): T {
+  return result.status === 'fulfilled' ? result.value : fallback;
+}
+
 function formatInstant(at: Date): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: DISPLAY_TIMEZONE,
@@ -107,15 +112,19 @@ export default async function StreamflowPage() {
   // show six rows.
   const forecastsFrom = new Date(now.getTime() - 2 * DAY_MS);
 
+  // allSettled rather than all: one panel's query failing should cost that
+  // panel and say so, not take the whole page down with it. The hydrograph
+  // is the exception — it is what the page is — so its rejection is handed
+  // straight to the error boundary.
   const [
-    rows,
-    total,
-    oldestRecord,
-    newestReading,
-    lastRun,
-    recentForecasts,
-    scoredErrors,
-  ] = await Promise.all([
+    rowsResult,
+    totalResult,
+    oldestRecordResult,
+    newestReadingResult,
+    lastRunResult,
+    recentForecastsResult,
+    scoredErrorsResult,
+  ] = await Promise.allSettled([
     observationsAsOf(prisma, gauge.id, from, now, now),
     prisma.observation.count({ where: { gaugeId: gauge.id } }),
     prisma.observation.findFirst({
@@ -139,6 +148,18 @@ export default async function StreamflowPage() {
     publicPredictions(prisma, { gaugeId: gauge.id, issuedFrom: forecastsFrom }),
     publicScoredErrors(prisma, gauge.id, skillFrom, now),
   ]);
+
+  if (rowsResult.status === 'rejected') throw rowsResult.reason;
+
+  const rows = rowsResult.value;
+  // Null rather than zero: a count that could not be read is not a count of
+  // none, and this one is printed as a fact about the store.
+  const total = settled<number | null>(totalResult, null);
+  const oldestRecord = settled(oldestRecordResult, null);
+  const newestReading = settled(newestReadingResult, null);
+  const lastRun = settled(lastRunResult, null);
+  const recentForecasts = settled(recentForecastsResult, []);
+  const scoredErrors = settled(scoredErrorsResult, []);
 
   // The newest claim per forecaster and horizon. publicPredictions returns
   // newest first, so the first of each pair seen is the current one.
@@ -199,7 +220,14 @@ export default async function StreamflowPage() {
           <h1 className="mt-4 text-term-xl font-bold text-term-ink terminal-glow">
             {gauge.name}
           </h1>
-          <p className="mt-3 max-w-2xl text-term-sm text-term-body">
+          {/* The same sentence the <meta> description carries, on the page
+              this time: it is what makes the page worth reading, and it was
+              legible only to a crawler. One string, so the two cannot
+              drift apart. */}
+          <p className="mt-4 max-w-2xl text-term-base text-term-ink">
+            {description}
+          </p>
+          <p className="mt-4 max-w-2xl text-term-sm text-term-body">
             A National Scenic River in central Ohio, unregulated: no dam sets its
             flow, so the water you see is rain and groundwater finding its way
             downhill. This page reads a store that records not only what the
@@ -211,7 +239,7 @@ export default async function StreamflowPage() {
               ['usgs site', gauge.usgsSiteId],
               ['latitude', gauge.lat.toFixed(4)],
               ['longitude', gauge.lon.toFixed(4)],
-              ['readings held', total.toLocaleString()],
+              ['readings held', total === null ? '—' : total.toLocaleString()],
             ].map(([label, value]) => (
               <div key={label}>
                 <dt className="text-term-xs text-term-muted">{label}</dt>
@@ -251,6 +279,19 @@ export default async function StreamflowPage() {
           <h2 className="mt-4 text-term-lg font-bold text-term-ink">
             The last {OBSERVATIONS_DEFAULT_WINDOW_DAYS} days
           </h2>
+          {/* The two clocks are defined in full further down the page, which
+              is long after the control that turns one of them. This is the
+              one line version, where the interaction is. */}
+          <p className="mt-3 max-w-2xl text-term-sm text-term-body">
+            Discharge at the gauge, one point per reading, on a logarithmic
+            axis: this creek runs from about 11 to 13,200 cubic feet per
+            second, and a linear one would flatten every ordinary day onto
+            the floor. Two clocks are in play.{' '}
+            <span className="text-term-ink">validTime</span>, when the reading
+            was true at the gauge, runs along the bottom.{' '}
+            <span className="text-term-ink">recordedAt</span>, when this
+            pipeline learned it, is what the control underneath rewinds.
+          </p>
 
           <div className="mt-6">
             <HydrographPanel
@@ -282,11 +323,20 @@ export default async function StreamflowPage() {
 
           {currentForecasts.length === 0 ? (
             <p className="mt-6 border border-term-border px-4 py-10 text-center text-term-sm text-term-muted">
-              No forecast has been issued yet. The pipeline issues one per
-              forecaster per horizon every six hours.
+              {recentForecastsResult.status === 'rejected'
+                ? 'The forecast table could not be read just now. Nothing else on this page depends on it, so the rest is still current.'
+                : 'No forecast has been issued yet. The pipeline issues one per forecaster per horizon every six hours.'}
             </p>
           ) : (
-            <div className="mt-6 overflow-x-auto">
+            /* A scroll container a keyboard can reach and a screen reader
+               can name (WCAG 2.1.1), carrying the shared shadow that says
+               it scrolls. */
+            <div
+              role="region"
+              tabIndex={0}
+              aria-label="Current forecasts, scrolls sideways on narrow screens"
+              className="terminal-scrollable mt-6 overflow-x-auto"
+            >
               <table className="w-full min-w-[34rem] border-collapse text-term-sm">
                 <caption className="sr-only">
                   The most recent forecast from each baseline at each horizon
@@ -419,12 +469,19 @@ export default async function StreamflowPage() {
           </p>
 
           <div className="mt-6">
-            <SkillChart
-              series={skill}
-              horizons={[...HORIZON_HOURS]}
-              windowDays={SKILL_WINDOW_DAYS}
-              timeZone={gauge.timezone}
-            />
+            {scoredErrorsResult.status === 'rejected' ? (
+              <p className="border border-term-border px-4 py-10 text-center text-term-sm text-term-muted">
+                The scoring record could not be read just now. Nothing was
+                lost: scores are written by the pipeline, not by this page.
+              </p>
+            ) : (
+              <SkillChart
+                series={skill}
+                horizons={[...HORIZON_HOURS]}
+                windowDays={SKILL_WINDOW_DAYS}
+                timeZone={gauge.timezone}
+              />
+            )}
           </div>
         </TerminalWindow>
 
