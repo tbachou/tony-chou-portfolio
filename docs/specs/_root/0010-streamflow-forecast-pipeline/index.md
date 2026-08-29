@@ -76,7 +76,7 @@ Reasoning, tradeoffs, and the concepts behind each choice: see [rationale.md](ra
 
 Relationships: `Gauge` 1:N `Observation`, `WeatherForecast`, `Prediction`. `ModelVersion` 1:N `Prediction`. `Prediction` 1:N `Score` (more than one when a revision changes the truth). `PipelineRun` 1:N `Observation` and `WeatherForecast`.
 
-Enums: `Qualifier` (PROVISIONAL, APPROVED) · `ModelKind` (BASELINE, MODEL) · `Regime` (BASEFLOW, RISING, PEAK) · `PipelineJob` (USGS_INGEST, USGS_RESCAN, OPEN_METEO_INGEST, PREDICT, SCORE, RETRAIN) · `RunStatus` (OK, PARTIAL, FAILED). `PARTIAL` means the source responded but returned fewer intervals than the requested window implies, which is how a sensor outage shows up. A gap is never stored as a row; it is derived at read time from missing `validTime` slots.
+Enums: `Qualifier` (PROVISIONAL, APPROVED) · `ModelKind` (BASELINE, MODEL) · `Regime` (BASEFLOW, RISING, PEAK, FALLING, the fourth added by [0010-falling-regime.md](0010-falling-regime.md)) · `PipelineJob` (USGS_INGEST, USGS_RESCAN, OPEN_METEO_INGEST, PREDICT, SCORE, RETRAIN) · `RunStatus` (OK, PARTIAL, FAILED). `PARTIAL` means the source responded but returned fewer intervals than the requested window implies, which is how a sensor outage shows up. A gap is never stored as a row; it is derived at read time from missing `validTime` slots.
 
 **State transitions**
 
