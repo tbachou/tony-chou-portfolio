@@ -52,11 +52,6 @@ function getClient(): Anthropic {
   return client;
 }
 
-/** Test seam: lets unit tests inject a fake client without network access. */
-export function setJudgeClientForTesting(fake: Anthropic | null): void {
-  client = fake;
-}
-
 export async function judge(params: {
   system: string;
   userMessage: string;
@@ -94,8 +89,14 @@ export async function judge(params: {
       }
       lastReason = 'unparseable verdict (no valid record_verdict tool call)';
     } catch (error) {
+      // Name + status only, never the raw message (apps/api convention):
+      // these reasons land in committed public results files.
       lastReason =
-        error instanceof Error ? `${error.name}: ${error.message}` : 'unknown';
+        error instanceof Anthropic.APIError
+          ? `${error.name} (status ${error.status ?? 'n/a'})`
+          : error instanceof Error
+            ? error.name
+            : 'unknown';
     }
   }
 
