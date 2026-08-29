@@ -47,7 +47,7 @@ function Figure({
           {children}
         </svg>
       </div>
-      <figcaption className="mt-2 max-w-prose text-term-xs leading-relaxed text-term-muted">
+      <figcaption className="mt-2 max-w-[39rem] text-term-xs leading-relaxed text-term-muted">
         {caption}
       </figcaption>
     </figure>
@@ -76,15 +76,11 @@ function Arrow({ id }: { id: string }) {
 export function TwoTimestampsDiagram() {
   return (
     <Figure
-      height={210}
+      height={182}
       label="One river moment stored three times. Asking as of March returns 512 cfs; asking as of the end of June returns the reviewed value of 498 cfs."
-      caption="Illustrative values. A forecast made in March must be judged against what March could see; the cutoff is the only thing standing between the reader and the correction."
+      caption="Three stored rows, all describing the same river moment of Jan 15, 14:00, with illustrative values. The June row exists the whole time; the cutoff is the only thing standing between the reader and the correction, which is why a forecast made in March must be judged against what March could see."
     >
       <Arrow id="wt-arrow-clocks" />
-
-      <text x="0" y="14" fontSize="12" fill="currentColor" opacity="0.65">
-        three stored rows, all describing the same river moment (Jan 15, 14:00)
-      </text>
 
       <rect x="0" y="30" width="330" height="34" fill="none" stroke="currentColor" />
       <text x="12" y="51" fontSize="12" fill="currentColor">
@@ -101,11 +97,15 @@ export function TwoTimestampsDiagram() {
         learned Jun 09 · 498 cfs · approved
       </text>
 
-      <line x1="400" y1="24" x2="400" y2="192" stroke="currentColor" strokeDasharray="4 4" />
+      {/* The two cutoffs own the top row now. The descriptive lines that used
+          to sit here and along the bottom moved into the figcaption: at this
+          type size they were 511 and 561 units wide, so they ran straight
+          through these labels and through both rules. */}
+      <line x1="400" y1="24" x2="400" y2="172" stroke="currentColor" strokeDasharray="4 4" />
       <text x="400" y="16" fontSize="11" fill="currentColor" textAnchor="middle" opacity="0.75">
         ask as of Mar
       </text>
-      <line x1="560" y1="24" x2="560" y2="192" stroke="currentColor" strokeDasharray="4 4" />
+      <line x1="560" y1="24" x2="560" y2="172" stroke="currentColor" strokeDasharray="4 4" />
       <text x="560" y="16" fontSize="11" fill="currentColor" textAnchor="middle" opacity="0.75">
         ask as of Jun 30
       </text>
@@ -115,8 +115,9 @@ export function TwoTimestampsDiagram() {
       <text x="410" y="74" fontSize="13" fill="currentColor">
         answer: 512
       </text>
+      {/* Shortened so it stops clear of the second rule at x=560. */}
       <text x="410" y="92" fontSize="11" fill="currentColor" opacity="0.7">
-        newest row at or before
+        newest at or before
       </text>
 
       <line
@@ -136,10 +137,6 @@ export function TwoTimestampsDiagram() {
       </text>
       <text x="570" y="163" fontSize="11" fill="currentColor" opacity="0.7">
         now visible
-      </text>
-
-      <text x="0" y="196" fontSize="12" fill="currentColor" opacity="0.65">
-        the June row exists the whole time — the cutoff decides whether you may see it
       </text>
     </Figure>
   );

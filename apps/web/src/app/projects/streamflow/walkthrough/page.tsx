@@ -338,7 +338,7 @@ export default function StreamflowWalkthroughPage() {
           <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
             Inside Streamflow
           </h1>
-          <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             A river forecasting pipeline that predicts water flow on Big Darby Creek 24, 48 and 72
             hours ahead, then publicly grades every prediction it has ever made. This is a walk
             through how it works, written for someone who has never seen it: what each part does,
@@ -350,12 +350,12 @@ export default function StreamflowWalkthroughPage() {
               character measure the prose is set to. A rule that ran wider
               than the paragraph above it would make the measure look like an
               accident. Tables and diagrams are the deliberate exception. */}
-          {/* The text size lives on the rows, not on the list. `max-w-prose`
+          {/* The text size lives on the rows, not on the list. `max-w-[39rem]`
               is 65ch, and `ch` scales with the element's own font, so putting
               a smaller size here too would resolve the cap to a narrower
               column than the prose above and the rules would stop short of
               the measure they are meant to share. */}
-          <dl className="mt-6 grid w-full max-w-prose gap-x-8 gap-y-2 border-y border-term-border py-4 sm:grid-cols-2">
+          <dl className="mt-6 grid w-full max-w-[39rem] gap-x-8 gap-y-2 border-y border-term-border py-4 sm:grid-cols-2">
             {[
               ['gauge', 'USGS 03230500'],
               ['readings held', '86,945'],
@@ -371,15 +371,15 @@ export default function StreamflowWalkthroughPage() {
 
           <section className="mt-10">
             <SectionHeading file="cat vocabulary.txt" />
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
               This project sits where hydrology meets forecasting, and both fields bring their own
               vocabulary. These six carry most of the weight.
             </p>
-            <dl className="mt-4 max-w-prose space-y-4">
+            <dl className="mt-4 max-w-[39rem] space-y-4">
               {VOCABULARY.map((entry) => (
                 <div key={entry.term} className="border-l border-term-border pl-4">
                   <dt className="text-term-sm font-bold text-term-ink">{entry.term}</dt>
-                  <dd className="mt-1 max-w-prose text-term-sm leading-relaxed text-term-body">
+                  <dd className="mt-1 max-w-[39rem] text-term-base leading-relaxed text-term-body">
                     {entry.body}
                   </dd>
                 </div>
@@ -391,13 +391,13 @@ export default function StreamflowWalkthroughPage() {
         {/* ---------- the central idea ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/two-timestamps$">
           <SectionHeading file="cat why-two-timestamps.txt" />
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             USGS publishes a reading within minutes of taking it, marked provisional. Months later
             a hydrologist reviews it, and the number can change. If you store one timestamp per
             reading, that correction overwrites history, and your record quietly becomes something
             that was never true at the time.
           </p>
-          <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             So every reading here carries two timestamps.{' '}
             <span className="font-bold text-term-ink">validTime</span> is when it was true at the
             river. <span className="font-bold text-term-ink">recordedAt</span> is when this
@@ -406,7 +406,7 @@ export default function StreamflowWalkthroughPage() {
             way is called bitemporal — two time axes, one for when things happened and one for when
             you found out.
           </p>
-          <p className="mt-3 max-w-prose border-l-2 border-term-accent pl-4 text-term-sm leading-relaxed text-term-body">
+          <p className="mt-3 max-w-[39rem] border-l-2 border-term-accent pl-4 text-term-base leading-relaxed text-term-body">
             This is what lets the system grade itself honestly. You can ask what was knowable at any
             past instant and get a truthful answer, rather than one flattered by numbers that did
             not exist yet.
@@ -418,7 +418,7 @@ export default function StreamflowWalkthroughPage() {
         {/* ---------- architecture + schema ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/architecture$">
           <SectionHeading file="ls jobs/" />
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             The pipeline has no web server at all. It is four programs that run top to bottom and
             exit, started on a schedule — traditionally called cron jobs, after the old Unix program
             that ran things at fixed times. The public website is separate, and reads the same
@@ -429,7 +429,7 @@ export default function StreamflowWalkthroughPage() {
 
           <section className="mt-10">
             <SectionHeading file="cat schema" />
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Seven tables, and the interesting part of each is its unique constraint — a rule the
               database itself enforces, naming the combination of columns that may not repeat. Those
               rules are what make revision expressible without ever editing a row.
@@ -468,7 +468,7 @@ export default function StreamflowWalkthroughPage() {
               </table>
             </div>
 
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               <span className="font-bold text-term-ink">The grade table’s rule is the one worth
               pausing on.</span>{' '}
               It says a forecast may not be graded twice against the same version of the truth — but
@@ -476,7 +476,7 @@ export default function StreamflowWalkthroughPage() {
               graded against, the old grade is not corrected; a second grade is written. Every grade
               can therefore say which version of reality it was judged against.
             </p>
-            <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The river’s state is likewise stored twice, meaning two different things. On the
               forecast it is what the river was doing when the forecast was made, which is all a
               forecaster can see. On the grade it is what the river was doing when the forecast came
@@ -490,7 +490,7 @@ export default function StreamflowWalkthroughPage() {
         {/* ---------- ingest + as-of ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/pipeline$">
           <SectionHeading file="run ingest" />
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             Pulling new readings in, without ever overwriting an old one.
           </p>
 
@@ -535,7 +535,7 @@ export default function StreamflowWalkthroughPage() {
             </p>
           </Calc>
 
-          <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             Ingest only looks at the recent edge of the record, so it is structurally blind to a two
             year old reading being approved today. That is what the second job, rescan, is for. It
             re-checks a rolling 90 day window plus every reading anywhere in the record still marked
@@ -545,7 +545,7 @@ export default function StreamflowWalkthroughPage() {
 
           <section className="mt-10">
             <SectionHeading file="cat as-of-rebuild" />
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The mechanism the whole project rests on is one database query.
             </p>
 
@@ -572,13 +572,13 @@ export default function StreamflowWalkthroughPage() {
               </p>
             </Calc>
 
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The same rule exists a second time in plain TypeScript, so tests can prove the two
               agree, and a third time as a forward only walk that answers the question thousands of
               times efficiently — which is what makes the historical replay finish in minutes rather
               than hours.
             </p>
-            <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               There are two ways to ask it. The strict version asks what this pipeline had learned
               by a given instant, and that is the rule for everything live. The loose version asks
               what was true at the river by then, and exists for exactly one caller: the historical
@@ -590,7 +590,7 @@ export default function StreamflowWalkthroughPage() {
 
           <section className="mt-10">
             <SectionHeading file="run predict" />
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Every six hours the job loads the river’s history as known at that instant, works out
               what state the river is in once, and shares that single judgement across all six
               forecasts the slot produces: two forecasters, three horizons.
@@ -656,7 +656,7 @@ export default function StreamflowWalkthroughPage() {
         {/* ---------- intervals ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/intervals$">
           <SectionHeading file="cat interval-rules" />
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             A forecast of “262 cfs” alone is close to useless, because it says nothing about how
             sure it is. So every forecast carries a prediction interval: a low and a high bound with
             a stated confidence. Here that confidence is 80 percent, meaning we expect the truth to
@@ -731,7 +731,7 @@ export default function StreamflowWalkthroughPage() {
             </p>
           </Calc>
 
-          <p className="mt-6 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-6 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             Not all past mistakes count. Errors are grouped into buckets — one forecaster, one
             horizon, one river state. Storm errors should not set a calm day’s range, because they
             are vastly larger. Mixing them makes storm ranges far too narrow and calm ranges
@@ -740,7 +740,7 @@ export default function StreamflowWalkthroughPage() {
 
           <IntervalLadderDiagram />
 
-          <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             Each forecast permanently stores the two percentiles it used and how many past errors
             they came from. That is necessary rather than tidy: the bucket keeps growing, so a range
             published today could not be reproduced from the same query tomorrow.
@@ -750,7 +750,7 @@ export default function StreamflowWalkthroughPage() {
         {/* ---------- scoring + river states ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/scoring$">
           <SectionHeading file="run score" />
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             Every hour, the job finds forecasts whose target time has passed and for which a real
             reading now exists, skipping any already graded against that same version of the truth.
             Then it computes three numbers.
@@ -815,7 +815,7 @@ export default function StreamflowWalkthroughPage() {
 
           <section className="mt-10">
             <SectionHeading file="cat river-states" />
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Everything above depends on knowing what the river was doing at a given moment. That
               is its regime, and one small function decides it. It matters far out of proportion to
               its size, because it picks which bucket of past errors a forecast’s range comes from.
@@ -853,7 +853,7 @@ export default function StreamflowWalkthroughPage() {
               </table>
             </div>
 
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The four states are tested strictly in this order, and the first match wins.
             </p>
 
@@ -907,7 +907,7 @@ export default function StreamflowWalkthroughPage() {
               </p>
             </Calc>
 
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The function returns “unknown” rather than guessing in three cases: fewer than 224
               readings in the seven day window (a third of the 672 a complete week would hold, which
               tolerates real gauge outages without letting a handful of readings decide), a median
@@ -919,17 +919,17 @@ export default function StreamflowWalkthroughPage() {
             <h3 className="mt-8 text-term-base font-bold text-term-ink">
               Why the falling rule was rewritten
             </h3>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               It originally measured the drop against the larger of the current value and the seven
               day median. Measured against the whole record that was wrong, and the reason
               generalises.
             </p>
-            <p className="mt-3 max-w-prose border-l-2 border-term-accent pl-4 text-term-sm leading-relaxed text-term-body">
+            <p className="mt-3 max-w-[39rem] border-l-2 border-term-accent pl-4 text-term-base leading-relaxed text-term-body">
               A seven day median is not a baseline in the week after a flood. It is mostly made of
               the flood. So a threshold anchored to it grows exactly as the river shrinks, and the
               rule goes quiet precisely where a recession gets long.
             </p>
-            <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The measured cost: 742 forecasts whose errors behaved exactly like a draining river
               were filed as calm days. Their ratios had a median of 0.816 with 80 percent of
               forecasts too high — against 0.970, near enough unbiased, for genuinely calm days.
@@ -945,12 +945,12 @@ export default function StreamflowWalkthroughPage() {
         {/* ---------- bootstrap + limitations ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/limitations$">
           <SectionHeading file="run hindcast" />
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             Ranges come from past errors, and a brand new pipeline has none. Every early forecast
             would have shipped the placeholder band — and because a published range is never
             recomputed, those useless bounds would sit in the public record permanently.
           </p>
-          <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             The fix is a hindcast: replaying history as though the system had been running through
             it. It walks 3,870 six hourly moments from January 2024 forward and, at each one, makes
             forecasts using only what was knowable then, grades the ones whose target has passed,
@@ -963,7 +963,7 @@ export default function StreamflowWalkthroughPage() {
 
           <section className="mt-10">
             <SectionHeading file="cat limitations.txt" />
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
               What the numbers currently say, including where they are uncomfortable.
             </p>
 
@@ -1005,13 +1005,13 @@ export default function StreamflowWalkthroughPage() {
             <h3 className="mt-8 text-term-base font-bold text-term-ink">
               Two river states are harder than the ranges admit
             </h3>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Even in the backtest, coverage is not evenly spread. A calm day comes out at 95
               percent for persistence, comfortably wider than it needs to be, while a rising river
               manages 53 percent and a peak 68. Rain arriving is the hardest thing here to forecast
               and the hardest to put bounds on, and the ranges have not yet caught up with that.
             </p>
-            <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Separately, forecasts issued at a peak measure 0.831 with 74 percent of them too high.
               A genuine plateau should be close to unbiased, so that number suggests “peak” still
               mixes the crest with the first hours of the drop, and may want splitting again. It is
@@ -1021,7 +1021,7 @@ export default function StreamflowWalkthroughPage() {
             <h3 className="mt-8 text-term-base font-bold text-term-ink">
               No correction has actually arrived yet
             </h3>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               The store holds 86,945 readings, and every one of them appears exactly once. The
               entire two timestamp design exists for revisions, and in the record so far there have
               been none — because the pipeline has only been ingesting since August 2026, and USGS
@@ -1031,7 +1031,7 @@ export default function StreamflowWalkthroughPage() {
             </p>
 
             <h3 className="mt-8 text-term-base font-bold text-term-ink">One gauge, one creek</h3>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
               Every number here comes from a single unregulated stream in central Ohio, over about
               twenty months. Nothing proves the approach generalises to a river whose flow is set by
               a dam operator rather than by rainfall.
@@ -1042,14 +1042,14 @@ export default function StreamflowWalkthroughPage() {
         {/* ---------- build order ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/build-order$">
           <SectionHeading file="cat build-order.txt" />
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             The order is not the fastest route to a model. It is arranged so that each stage teaches
             the thing the next one depends on — which is why a complete, live, publicly graded
             forecasting system exists before any machine learning does. If the plumbing cannot be
             trusted, no model built on it can be either.
           </p>
 
-          <ol className="mt-6 max-w-prose space-y-0">
+          <ol className="mt-6 max-w-[39rem] space-y-0">
             {STAGES.map((stage) => (
               <li
                 key={stage.n}
@@ -1073,7 +1073,7 @@ export default function StreamflowWalkthroughPage() {
                       {stage.tag}
                     </span>
                   </h3>
-                  <p className="mt-1 max-w-prose text-term-sm leading-relaxed text-term-body">
+                  <p className="mt-1 max-w-[39rem] text-term-base leading-relaxed text-term-body">
                     {stage.body}
                   </p>
                 </div>
@@ -1085,14 +1085,14 @@ export default function StreamflowWalkthroughPage() {
         {/* ---------- glossary + references ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/walkthrough/reference$">
           <SectionHeading file="cat glossary.txt" />
-          <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-muted">
+          <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
             Every term and abbreviation used above, in one place.
           </p>
-          <dl className="mt-4 max-w-prose">
+          <dl className="mt-4 max-w-[39rem]">
             {GLOSSARY.map(([term, meaning]) => (
               <div key={term} className="border-b border-term-border py-3 last:border-b-0">
                 <dt className="text-term-sm font-bold text-term-ink">{term}</dt>
-                <dd className="mt-1 max-w-prose text-term-sm leading-relaxed text-term-body">
+                <dd className="mt-1 max-w-[39rem] text-term-base leading-relaxed text-term-body">
                   {meaning}
                 </dd>
               </div>
@@ -1101,10 +1101,10 @@ export default function StreamflowWalkthroughPage() {
 
           <section className="mt-10">
             <SectionHeading file="cat references.txt" />
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-muted">
+            <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
               Sources for the data, the services, and the methods named above.
             </p>
-            <ul className="mt-4 max-w-prose">
+            <ul className="mt-4 max-w-[39rem]">
               {REFERENCES.map((ref) => (
                 <li key={ref.href} className="border-b border-term-border py-3 last:border-b-0">
                   <a
@@ -1115,7 +1115,7 @@ export default function StreamflowWalkthroughPage() {
                   >
                     {ref.name} ↗
                   </a>
-                  <p className="mt-1 max-w-prose text-term-sm leading-relaxed text-term-muted">
+                  <p className="mt-1 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
                     {ref.what}
                   </p>
                 </li>
@@ -1138,7 +1138,7 @@ export default function StreamflowWalkthroughPage() {
                 [ back to the case study ]
               </a>
             </div>
-            <p className="mt-3 max-w-prose text-term-xs leading-relaxed text-term-muted">
+            <p className="mt-3 max-w-[39rem] text-term-xs leading-relaxed text-term-muted">
               Every figure above was measured against the live database on 2026-08-29 and will drift
               as the record grows. Where this page and the running system disagree, the system is
               right. Discharge data courtesy of the U.S. Geological Survey, National Water
