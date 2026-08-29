@@ -111,7 +111,7 @@ export default function StreamflowProjectPage() {
               The central engineering idea, and the reason the rest of it can be trusted. Every
               fact is stored with two timestamps rather than one:
             </p>
-            <ol className="mt-4 space-y-4">
+            <ol className="mt-4 max-w-prose space-y-4">
               {CLOCKS.map((clock, index) => (
                 <li key={clock.name} className="flex gap-3 border-l border-term-border pl-4">
                   <span aria-hidden="true" className="text-term-muted tabular-nums">
@@ -142,7 +142,7 @@ export default function StreamflowProjectPage() {
               Two baselines run today, and neither is a placeholder. They are the bar a real model
               has to clear before it has earned a place on the chart.
             </p>
-            <ul className="mt-4 space-y-3">
+            <ul className="mt-4 max-w-prose space-y-3">
               <li className="flex gap-2 text-term-sm leading-relaxed text-term-body">
                 <span aria-hidden="true" className="text-term-muted">
                   ›
@@ -206,7 +206,7 @@ export default function StreamflowProjectPage() {
               A scorecard is only worth reading if it can lose. Most of the engineering here is
               spent making it hard to cheat by accident:
             </p>
-            <ul className="mt-4 space-y-3">
+            <ul className="mt-4 max-w-prose space-y-3">
               {HONESTY.map((item) => (
                 <li key={item} className="flex gap-2 text-term-sm leading-relaxed text-term-body">
                   <span aria-hidden="true" className="text-term-muted">
