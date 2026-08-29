@@ -39,6 +39,21 @@ export {
 export type { PublicPredictionFilter } from './forecast/predictions.repository';
 export { rollingSkill, SKILL_WINDOW_DAYS } from './forecast/skill';
 export type { ScoredError, SkillPoint, SkillSeries } from './forecast/skill';
+// Coverage, and the read that feeds it. `gradedIntervals` takes the hindcast
+// flag as an argument rather than filtering it away, because here the two
+// populations are the point: the backtest says whether the method calibrates
+// at all, the live rows say whether it is calibrating now, and the whole
+// value of the panel is showing them apart. Summing them is what would be
+// dishonest, and that is the caller's job to avoid — it is why this takes a
+// flag instead of a boolean the caller can forget.
+export { gradedIntervals } from './forecast/predictions.repository';
+export { calibration } from './forecast/calibration';
+export type {
+  CalibrationReport,
+  CoverageGroup,
+  GradedInterval,
+  IntervalSource,
+} from './forecast/calibration';
 export { HORIZON_HOURS, SKILL_DEFAULT_WINDOW_DAYS } from './config';
 export { GAUGE, DISPLAY_TIMEZONE } from './config';
 export type {
