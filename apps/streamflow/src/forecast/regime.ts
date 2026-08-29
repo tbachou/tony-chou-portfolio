@@ -31,8 +31,15 @@ export const REGIME_CLASSES: readonly Regime[] = [
   'FALLING',
 ];
 
-/** Spec 0010: rising when the 12 hour change is at least this share of the median. */
-const RISING_FRACTION_OF_MEDIAN = 0.1;
+/**
+ * Spec 0010: rising when the 12 hour change is at least this share of the
+ * median.
+ *
+ * Exported, with the other two fractions, for the threshold sweep script,
+ * which states its candidate ladders in terms of the production constants so
+ * a re measured sweep cannot quietly use stale numbers.
+ */
+export const RISING_FRACTION_OF_MEDIAN = 0.1;
 
 /**
  * Spec 0010 falling denominator child: falling when the 12 hour change is at
@@ -42,7 +49,7 @@ const RISING_FRACTION_OF_MEDIAN = 0.1;
  * rather than the same one shared. The two multiply different things, so a
  * shared constant would read as a symmetry the rule does not have.
  */
-const FALLING_FRACTION_OF_VALUE = 0.1;
+export const FALLING_FRACTION_OF_VALUE = 0.1;
 
 /**
  * A short stable name for the rule this file currently implements.
@@ -59,7 +66,7 @@ const FALLING_FRACTION_OF_VALUE = 0.1;
 export const REGIME_RULE_TAG = 'max-v-floor';
 
 /** Spec 0010: a peak is at least this multiple of the median. */
-const PEAK_MULTIPLE_OF_MEDIAN = 1.5;
+export const PEAK_MULTIPLE_OF_MEDIAN = 1.5;
 
 const HOUR_MS = 60 * 60 * 1000;
 const LOOKBACK_DAYS = 7;
@@ -154,6 +161,42 @@ export function classifyRegime(
     );
   }
 
+  const inputs = regimeInputs(history, at, valueAt);
+  if (inputs === null) return null;
+  const { m, d } = inputs;
+
+  if (d >= RISING_FRACTION_OF_MEDIAN * m) return 'RISING';
+  if (d <= -FALLING_FRACTION_OF_VALUE * Math.max(valueAt, flowFloorCfs)) {
+    return 'FALLING';
+  }
+  if (valueAt >= PEAK_MULTIPLE_OF_MEDIAN * m) return 'PEAK';
+  return 'BASEFLOW';
+}
+
+/** The derived quantities every regime test reads. */
+export interface RegimeInputs {
+  /** The median of the prior seven days, as known at the instant. */
+  m: number;
+  /** The change over the prior twelve hours. */
+  d: number;
+}
+
+/**
+ * Derives `m` and `d` for a moment, or null when the history cannot support a
+ * judgement: too little history, a non positive median, or nothing near the
+ * twelve hour mark. These are the same three refusals `classifyRegime` makes,
+ * because they are this function.
+ *
+ * Split out and exported for the threshold sweep script, so a re measured
+ * sweep reads candidate rules over exactly the population production
+ * classifies instead of re deriving these numbers from copied constants that
+ * can drift.
+ */
+export function regimeInputs(
+  history: readonly StoredObservation[],
+  at: Date,
+  valueAt: number,
+): RegimeInputs | null {
   const instant = at.getTime();
   const windowStart = instant - LOOKBACK_DAYS * 24 * HOUR_MS;
 
@@ -187,12 +230,5 @@ export function classifyRegime(
   // More than two hours off the mark is not a twelve hour change any more.
   if (!earlier || bestDistance > 2 * HOUR_MS) return null;
 
-  const change = valueAt - earlier.valueCfs;
-
-  if (change >= RISING_FRACTION_OF_MEDIAN * m) return 'RISING';
-  if (change <= -FALLING_FRACTION_OF_VALUE * Math.max(valueAt, flowFloorCfs)) {
-    return 'FALLING';
-  }
-  if (valueAt >= PEAK_MULTIPLE_OF_MEDIAN * m) return 'PEAK';
-  return 'BASEFLOW';
+  return { m, d: valueAt - earlier.valueCfs };
 }

@@ -4,6 +4,13 @@ import { asOfWalk } from '../src/asof/as-of';
 import { createPrismaClient } from '../src/db';
 import { sanitizeError } from '../src/errors';
 import { persistenceForecast } from '../src/forecast/baselines';
+import { quantile } from '../src/forecast/interval';
+import {
+  FALLING_FRACTION_OF_VALUE,
+  PEAK_MULTIPLE_OF_MEDIAN,
+  regimeInputs,
+  RISING_FRACTION_OF_MEDIAN,
+} from '../src/forecast/regime';
 import type { PrismaClient } from '../src/generated/prisma/client';
 
 /**
@@ -38,13 +45,6 @@ import type { PrismaClient } from '../src/generated/prisma/client';
  * by design, so its errors are dominated by that and would swamp the signal.
  */
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
-const LOOKBACK_DAYS = 7;
-const MIN_LOOKBACK_READINGS = 224;
-const RISING_FRACTION_OF_MEDIAN = 0.1;
-const PEAK_MULTIPLE_OF_MEDIAN = 1.5;
-
 /** One classifiable issue slot, reduced to the three numbers the rule reads. */
 interface Slot {
   predictionIds: string[];
@@ -60,24 +60,29 @@ interface Candidate {
 }
 
 const CANDIDATES: Candidate[] = [
+  // The shipped candidate is stated in terms of the production constant, so a
+  // tuned classifier moves this row with it; the alternatives are literals on
+  // purpose, because each IS a different number being tried.
   { label: '-0.10 * max(v, m)  (superseded)', threshold: (s) => -0.1 * Math.max(s.v, s.m) },
-  { label: '-0.10 * max(v, floor)  (shipped)', threshold: (s, f) => -0.1 * Math.max(s.v, f) },
+  {
+    label: '-0.10 * max(v, floor)  (shipped)',
+    threshold: (s, f) => -FALLING_FRACTION_OF_VALUE * Math.max(s.v, f),
+  },
   { label: '-0.10 * v', threshold: (s) => -0.1 * s.v },
   { label: '-0.15 * v', threshold: (s) => -0.15 * s.v },
   { label: '-0.20 * v', threshold: (s) => -0.2 * s.v },
   { label: '-0.25 * v', threshold: (s) => -0.25 * s.v },
 ];
 
+/**
+ * The production ladder with only the falling threshold swappable. The rising
+ * and peak tests read the same exported constants `classifyRegime` does.
+ */
 function classify(slot: Slot, threshold: number): string {
   if (slot.d >= RISING_FRACTION_OF_MEDIAN * slot.m) return 'RISING';
   if (slot.d <= threshold) return 'FALLING';
   if (slot.v >= PEAK_MULTIPLE_OF_MEDIAN * slot.m) return 'PEAK';
   return 'BASEFLOW';
-}
-
-function median(sorted: readonly number[]): number {
-  const n = sorted.length;
-  return n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
 }
 
 /**
@@ -89,22 +94,24 @@ function median(sorted: readonly number[]): number {
  * denominator here is the population the rule can actually judge.
  */
 async function readSlots(prisma: PrismaClient, gaugeId: string): Promise<Slot[]> {
-  const predictions = await prisma.prediction.findMany({
-    where: { gaugeId },
-    select: { id: true, issuedAt: true, hindcast: true },
-    orderBy: { issuedAt: 'asc' },
-  });
-
-  const observations = await prisma.observation.findMany({
-    where: { gaugeId },
-    select: {
-      gaugeId: true,
-      validTime: true,
-      recordedAt: true,
-      valueCfs: true,
-      qualifier: true,
-    },
-  });
+  // Independent reads, overlapped.
+  const [predictions, observations] = await Promise.all([
+    prisma.prediction.findMany({
+      where: { gaugeId },
+      select: { id: true, issuedAt: true, hindcast: true },
+      orderBy: { issuedAt: 'asc' },
+    }),
+    prisma.observation.findMany({
+      where: { gaugeId },
+      select: {
+        gaugeId: true,
+        validTime: true,
+        recordedAt: true,
+        valueCfs: true,
+        qualifier: true,
+      },
+    }),
+  ]);
 
   const byKey = new Map<string, string[]>();
   for (const row of predictions) {
@@ -129,37 +136,17 @@ async function readSlots(prisma: PrismaClient, gaugeId: string): Promise<Slot[]>
 
     for (const entry of wanted) {
       const history = historyAt(entry.at);
-      const instant = entry.at.getTime();
 
       const v = persistenceForecast(history, entry.at);
       if (v === null) continue;
 
-      const prior = history
-        .filter((row) => {
-          const t = row.validTime.getTime();
-          return t >= instant - LOOKBACK_DAYS * DAY_MS && t < instant;
-        })
-        .map((row) => row.valueCfs)
-        .sort((a, b) => a - b);
-      if (prior.length < MIN_LOOKBACK_READINGS) continue;
+      // The same derivation and the same three refusals production makes,
+      // imported rather than copied, so the population measured here is the
+      // population `classifyRegime` judges.
+      const inputs = regimeInputs(history, entry.at, v);
+      if (inputs === null) continue;
 
-      const m = median(prior);
-      if (m <= 0) continue;
-
-      let earlier: number | null = null;
-      let best = Infinity;
-      for (const row of history) {
-        const t = row.validTime.getTime();
-        if (t >= instant) continue;
-        const distance = Math.abs(t - (instant - 12 * HOUR_MS));
-        if (distance < best) {
-          best = distance;
-          earlier = row.valueCfs;
-        }
-      }
-      if (earlier === null || best > 2 * HOUR_MS) continue;
-
-      slots.push({ predictionIds: entry.ids, v, m, d: v - earlier });
+      slots.push({ predictionIds: entry.ids, v, m: inputs.m, d: inputs.d });
     }
   }
 
@@ -181,7 +168,31 @@ async function main(): Promise<void> {
     }
     const floor = gauge.flowFloorCfs;
 
-    const slots = await readSlots(prisma, gauge.id);
+    // The slot reconstruction and the score fetch are independent; overlap
+    // them. The scores only meet the slots at the grouping below.
+    const [slots, scores] = await Promise.all([
+      readSlots(prisma, gauge.id),
+      prisma.score.findMany({
+        select: {
+          actualCfs: true,
+          predictionId: true,
+          prediction: {
+            select: { centralCfs: true, modelVersion: { select: { name: true } } },
+          },
+        },
+      }),
+    ]);
+
+    // Zero slots would make every percentage below NaN. A store this thin has
+    // nothing to sweep, and printing garbage tables invites copying garbage
+    // into a spec.
+    if (slots.length === 0) {
+      throw new Error(
+        'no classifiable slot in the store: every prediction failed a null condition. ' +
+          'The gauge needs at least a week of readings before a sweep can measure anything.',
+      );
+    }
+
     console.log(`classifiable slots: ${slots.length}   flowFloorCfs: ${floor}\n`);
 
     console.log('rule                                RISING    FALLING       PEAK   BASEFLOW');
@@ -207,16 +218,6 @@ async function main(): Promise<void> {
       for (const id of slot.predictionIds) label.set(id, key);
     }
 
-    const scores = await prisma.score.findMany({
-      select: {
-        actualCfs: true,
-        predictionId: true,
-        prediction: {
-          select: { centralCfs: true, modelVersion: { select: { name: true } } },
-        },
-      },
-    });
-
     const groups = new Map<string, number[]>();
     for (const score of scores) {
       if (score.prediction.modelVersion.name !== 'persistence') continue;
@@ -231,11 +232,10 @@ async function main(): Promise<void> {
     console.log('\npersistence bias by group (1.00 is unbiased, below 1.00 means forecasts too high)\n');
     for (const [key, ratios] of [...groups.entries()].sort((a, b) => b[1].length - a[1].length)) {
       if (ratios.length < 25) continue;
-      const sorted = [...ratios].sort((a, b) => a - b);
       const high = ratios.filter((r) => r < 1).length;
       console.log(
         `${key.padEnd(26)} n=${String(ratios.length).padStart(5)}   ` +
-          `median ratio ${median(sorted).toFixed(3)}   ` +
+          `median ratio ${quantile(ratios, 0.5).toFixed(3)}   ` +
           `too high ${String(Math.round((100 * high) / ratios.length)).padStart(3)}%`,
       );
     }
