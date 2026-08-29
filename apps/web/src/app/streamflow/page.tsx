@@ -3,6 +3,8 @@ import {
   type ObservationsResponse,
 } from '@portfolio/shared';
 import {
+  calibration,
+  gradedIntervals,
   observationsAsOf,
   publicPredictions,
   publicScoredErrors,
@@ -21,6 +23,7 @@ import { TerminalWindow } from '@/components/TerminalWindow';
 import { streamflowDb } from '@/lib/streamflow-db';
 
 import { HydrographPanel } from './HydrographPanel';
+import { CalibrationPanel } from './CalibrationPanel';
 import { rangeSource } from './range-source';
 import { SkillChart } from './SkillChart';
 
@@ -48,6 +51,13 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Where the record begins. Coverage is asked over the whole of it rather than
+ * the dashboard's 90 day skill window, because the question is whether the
+ * ranges have ever held, and the live sample is small enough already.
+ */
+const BACKFILL_FROM = new Date('2024-01-01T00:00:00.000Z');
 
 const TWO_CLOCKS = [
   {
@@ -141,6 +151,8 @@ export default async function StreamflowPage() {
     lastRunResult,
     recentForecastsResult,
     scoredErrorsResult,
+    liveIntervalsResult,
+    backtestIntervalsResult,
   ] = await Promise.allSettled([
     observationsAsOf(prisma, gauge.id, from, now, now),
     prisma.observation.count({ where: { gaugeId: gauge.id } }),
@@ -164,6 +176,12 @@ export default async function StreamflowPage() {
     }),
     publicPredictions(prisma, { gaugeId: gauge.id, issuedFrom: forecastsFrom }),
     publicScoredErrors(prisma, gauge.id, skillFrom, now),
+    // Coverage over the whole record rather than the skill window: the
+    // question is whether the ranges have ever meant what they claim, and
+    // narrowing it to 90 days would throw away most of the only sample big
+    // enough to answer. The two populations are read separately on purpose.
+    gradedIntervals(prisma, gauge.id, BACKFILL_FROM, now, { hindcast: false }),
+    gradedIntervals(prisma, gauge.id, BACKFILL_FROM, now, { hindcast: true }),
   ]);
 
   if (rowsResult.status === 'rejected') throw rowsResult.reason;
@@ -177,6 +195,11 @@ export default async function StreamflowPage() {
   const lastRun = settled('last pipeline run', lastRunResult, null);
   const recentForecasts = settled('recent forecasts', recentForecastsResult, []);
   const scoredErrors = settled('scored errors', scoredErrorsResult, []);
+  const liveCoverage = calibration(settled('live coverage', liveIntervalsResult, []));
+  const backtestCoverage = calibration(
+    settled('backtest coverage', backtestIntervalsResult, []),
+  );
+  const coverageFailed = failed(liveIntervalsResult) || failed(backtestIntervalsResult);
 
   // A read that failed and a store with nothing in it are opposite findings,
   // and a bare `{value && …}` renders them identically: the block vanishes and
@@ -516,6 +539,34 @@ export default async function StreamflowPage() {
               />
             )}
           </div>
+        </TerminalWindow>
+
+        <TerminalWindow
+          path="tonychou@portfolio:~/streamflow/calibration$"
+          className="mt-8"
+        >
+          <p className="text-term-sm text-term-muted">
+            <span aria-hidden="true">$ </span>
+            coverage --nominal 0.80
+          </p>
+          <h2 className="mt-4 text-term-lg font-bold text-term-ink">
+            Whether the ranges mean what they say
+          </h2>
+          <p className="mt-3 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
+            Every forecast above publishes a range and claims the truth will land inside it about
+            four times in five. The chart before this one says how far off the middle guess was,
+            which is a different question: a forecaster can be respectable there and still be
+            publishing ranges that are wrong. This is the check on that claim.
+          </p>
+
+          {coverageFailed ? (
+            <p className="mt-6 text-term-sm text-term-body">
+              Coverage could not be read just now. The grades themselves are unaffected; this is
+              the page failing to ask.
+            </p>
+          ) : (
+            <CalibrationPanel live={liveCoverage} backtest={backtestCoverage} />
+          )}
         </TerminalWindow>
 
         <TerminalWindow
