@@ -25,10 +25,29 @@ interface HydrographProps {
 
 const WIDTH = 960;
 const HEIGHT = 340;
-const PADDING = { top: 16, right: 16, bottom: 34, left: 56 };
+// The top padding holds the axis unit line above the plot, not empty space.
+const PADDING = { top: 40, right: 16, bottom: 34, left: 64 };
 
 const PLOT_WIDTH = WIDTH - PADDING.left - PADDING.right;
 const PLOT_HEIGHT = HEIGHT - PADDING.top - PADDING.bottom;
+
+/**
+ * Type inside the drawing is sized in viewBox units, so what a reader
+ * actually gets depends on how wide the SVG is drawn. The chart is never
+ * narrower than `CHART_MIN_WIDTH` below (800px against a 960 unit box), so
+ * 16 here is the smallest value that still lands at the 13px floor the
+ * design system sets for anything carrying information.
+ */
+const LABEL_SIZE = 'text-[16px]';
+
+/**
+ * A floor, not a width: the chart scrolls inside its wrapper rather than
+ * squeezing, the same answer the tables on this page give. 800px keeps the
+ * full-width desktop rendering exactly as it was (the column is 832px) and
+ * gives every narrower viewport a scrollable chart at a legible size
+ * instead of a 300px one nobody can read.
+ */
+const CHART_MIN_WIDTH = 'min-w-[50rem]';
 
 /** Nice round cfs values to label a log axis with. */
 const CANDIDATE_TICKS = [
@@ -112,7 +131,12 @@ export function Hydrograph({ points, timeZone }: HydrographProps) {
     const dayTickCount = 5;
     const timeTicks = Array.from({ length: dayTickCount }, (_, index) => {
       const at = minTime + ((maxTime - minTime) * index) / (dayTickCount - 1);
-      return { at, x: x(at) };
+      // The end labels sit on the plot edges, so centring them pushes half
+      // of each outside the viewBox, where it is clipped. Same answer as
+      // the skill chart beside this one.
+      const anchor: 'start' | 'middle' | 'end' =
+        index === 0 ? 'start' : index === dayTickCount - 1 ? 'end' : 'middle';
+      return { at, x: x(at), anchor };
     });
 
     return { runs, valueTicks, timeTicks, x, y, minValue, maxValue };
@@ -134,82 +158,109 @@ export function Hydrograph({ points, timeZone }: HydrographProps) {
 
   return (
     <figure className="m-0">
-      <svg
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="h-auto w-full"
-        role="img"
-        aria-label={summary}
-        preserveAspectRatio="xMidYMid meet"
+      {/* Focusable and named because it genuinely scrolls at most widths
+          (WCAG 2.1.1): Safari does not make scroll containers focusable
+          on its own, and a bare div maps to `generic`, which cannot carry
+          an accessible name. `terminal-scrollable` is the shared shadow
+          that says it scrolls, and only while it can. */}
+      <div
+        role="region"
+        tabIndex={0}
+        aria-label="Hydrograph, scrolls sideways on narrow screens"
+        className="terminal-scrollable overflow-x-auto"
       >
-        {valueTicks.map((tick) => (
-          <g key={`v-${tick}`}>
-            <line
-              x1={PADDING.left}
-              x2={WIDTH - PADDING.right}
-              y1={y(tick)}
-              y2={y(tick)}
-              className="stroke-term-border"
-              strokeWidth={1}
-              strokeDasharray="2 4"
-            />
-            <text
-              x={PADDING.left - 8}
-              y={y(tick)}
-              textAnchor="end"
-              dominantBaseline="middle"
-              className="fill-term-muted text-[11px]"
-            >
-              {formatCfs(tick)}
-            </text>
-          </g>
-        ))}
-
-        {timeTicks.map((tick) => (
+        <svg
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          className={`h-auto w-full ${CHART_MIN_WIDTH}`}
+          role="img"
+          aria-label={summary}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {/* The axis is logarithmic, which changes what the shape means,
+              so it is said on the axis rather than only in the caption
+              below — by the caption a reader has already misread the
+              picture. */}
           <text
-            key={`t-${tick.at}`}
-            x={tick.x}
-            y={HEIGHT - PADDING.bottom + 20}
-            textAnchor="middle"
-            className="fill-term-muted text-[11px]"
+            x={0}
+            y={PADDING.top - 16}
+            textAnchor="start"
+            className={`fill-term-muted ${LABEL_SIZE}`}
           >
-            {formatDay(new Date(tick.at), timeZone)}
+            log scale · cubic feet per second
           </text>
-        ))}
 
-        <line
-          x1={PADDING.left}
-          x2={PADDING.left}
-          y1={PADDING.top}
-          y2={HEIGHT - PADDING.bottom}
-          className="stroke-term-border"
-          strokeWidth={1}
-        />
-        <line
-          x1={PADDING.left}
-          x2={WIDTH - PADDING.right}
-          y1={HEIGHT - PADDING.bottom}
-          y2={HEIGHT - PADDING.bottom}
-          className="stroke-term-border"
-          strokeWidth={1}
-        />
+          {valueTicks.map((tick) => (
+            <g key={`v-${tick}`}>
+              <line
+                x1={PADDING.left}
+                x2={WIDTH - PADDING.right}
+                y1={y(tick)}
+                y2={y(tick)}
+                className="stroke-term-border"
+                strokeWidth={1}
+                strokeDasharray="2 4"
+              />
+              <text
+                x={PADDING.left - 8}
+                y={y(tick)}
+                textAnchor="end"
+                dominantBaseline="middle"
+                className={`fill-term-muted ${LABEL_SIZE}`}
+              >
+                {formatCfs(tick)}
+              </text>
+            </g>
+          ))}
 
-        {runs.map((run, index) => (
-          <polyline
-            key={`${run.qualifier}-${index}`}
-            points={run.d}
-            fill="none"
-            strokeWidth={run.qualifier === 'APPROVED' ? 1.75 : 1.25}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            strokeDasharray={run.qualifier === 'APPROVED' ? undefined : '4 3'}
-            className={
-              run.qualifier === 'APPROVED'
-                ? 'stroke-term-accent'
-                : 'stroke-term-muted'
-            }
+          {timeTicks.map((tick) => (
+            <text
+              key={`t-${tick.at}`}
+              x={tick.x}
+              y={HEIGHT - PADDING.bottom + 20}
+              textAnchor={tick.anchor}
+              className={`fill-term-muted ${LABEL_SIZE}`}
+            >
+              {formatDay(new Date(tick.at), timeZone)}
+            </text>
+          ))}
+
+          <line
+            x1={PADDING.left}
+            x2={PADDING.left}
+            y1={PADDING.top}
+            y2={HEIGHT - PADDING.bottom}
+            className="stroke-term-border"
+            strokeWidth={1}
           />
-        ))}
-      </svg>
+          <line
+            x1={PADDING.left}
+            x2={WIDTH - PADDING.right}
+            y1={HEIGHT - PADDING.bottom}
+            y2={HEIGHT - PADDING.bottom}
+            className="stroke-term-border"
+            strokeWidth={1}
+          />
+
+          {runs.map((run, index) => (
+            <polyline
+              key={`${run.qualifier}-${index}`}
+              points={run.d}
+              fill="none"
+              strokeWidth={run.qualifier === 'APPROVED' ? 1.75 : 1.25}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              strokeDasharray={
+                run.qualifier === 'APPROVED' ? undefined : '4 3'
+              }
+              className={
+                run.qualifier === 'APPROVED'
+                  ? 'stroke-term-accent'
+                  : 'stroke-term-muted'
+              }
+            />
+          ))}
+        </svg>
+      </div>
 
       <figcaption className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-term-xs text-term-muted">
         <span className="flex items-center gap-2">
@@ -239,7 +290,6 @@ export function Hydrograph({ points, timeZone }: HydrographProps) {
           </svg>
           provisional, still subject to revision
         </span>
-        <span>vertical axis is logarithmic, cubic feet per second</span>
       </figcaption>
     </figure>
   );
