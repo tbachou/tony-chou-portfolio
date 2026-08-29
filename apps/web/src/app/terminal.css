@@ -428,11 +428,71 @@
   --select-current-fg: var(--color-ink);
 }
 
+/* A container that scrolls sideways, and says so.
+   ------------------------------------------------------------------
+   A wide table clipped at a border reads as a truncated table, not a
+   scrollable one, and nothing on screen corrects that impression. This is
+   the standard four-layer scroll shadow: two cover layers painted in the
+   card's own colour that scroll WITH the content (`local`), and two shadow
+   layers pinned to the container (`scroll`). At either end the cover sits
+   over the shadow and hides it, so a shadow appears only on a side that has
+   content out of view, and disappears when you reach that end. No
+   JavaScript and no scroll listener.
+   The colour is `--card-bg`, which is transparent on the CRT — so the cover
+   layers need the canvas underneath instead, or they would hide nothing. */
+.terminal-scrollable {
+  background-image:
+    linear-gradient(to right, var(--color-canvas) 40%, transparent),
+    linear-gradient(to left, var(--color-canvas) 40%, transparent),
+    linear-gradient(to right, rgba(var(--texture-rgb), 0.28), transparent),
+    linear-gradient(to left, rgba(var(--texture-rgb), 0.28), transparent);
+  background-position:
+    0 0,
+    100% 0,
+    0 0,
+    100% 0;
+  background-repeat: no-repeat;
+  background-size:
+    28px 100%,
+    28px 100%,
+    12px 100%,
+    12px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+
 .terminal-select {
   display: inline-block;
+  /* The painted block must stay exactly the item's character cells, which is
+     what makes the hover inversion read as a shell completion list and what
+     keeps it inside the "do not paint large surfaces with the accent" rule.
+     So the touch target cannot be grown with padding. It is grown with an
+     overlay instead: the cells stay put, the tappable area does not.
+     WCAG 2.5.8 asks for 24x24 CSS pixels, and monospace links here render
+     around 20px tall and sit as little as 3px apart when the nav wraps on a
+     phone, which is a mis-tap waiting to happen. */
+  position: relative;
   transition:
     background-color var(--duration-instant) var(--ease-standard),
     color var(--duration-instant) var(--ease-standard);
+}
+
+.terminal-select::after {
+  content: '';
+  position: absolute;
+  /* Vertical only, and exactly enough. These items render about 20px tall, so
+     3px each way clears the 24px WCAG 2.5.8 asks for. Deliberately not more:
+     wrapped nav rows sit 4px apart, and a taller overlay would make adjacent
+     rows' targets overlap, trading a small target for an ambiguous one. The
+     row gaps below carry the rest of the requirement. */
+  inset: -3px 0;
+  /* Purely a hit area: it must never intercept the text selection or paint. */
+  pointer-events: auto;
+}
+
+/* A control that already reserves its own height needs no overlay, and one
+   inside a bordered button would push the target outside the border. */
+.terminal-select:where(.inline-flex, [class*='min-h-'])::after {
+  content: none;
 }
 
 /* The CURRENT item — a permanent block on PAPER, brighter type on the  */

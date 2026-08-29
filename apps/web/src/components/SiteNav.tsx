@@ -104,7 +104,12 @@ export function SiteNav() {
               items that is seven gaps — dropping each by 4px buys back 28px
               of the headroom the control spent. Measured: the row needs
               857px at gap-x-5 and 829px here, against the 896px cap. */}
-          <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-term-sm">
+          {/* gap-y-2 rather than gap-y-1: when this row wraps on a phone the
+              two rows sat 4px apart, so the 24px touch targets of adjacent
+              rows met with nothing between them. The extra 4px separates
+              them without changing the single row desktop layout, which does
+              not wrap and so never sees this gap. */}
+          <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-term-sm">
             {NAV_LINKS.map((link) => {
               const isActive = activeId === link.href.slice(1);
               return (
