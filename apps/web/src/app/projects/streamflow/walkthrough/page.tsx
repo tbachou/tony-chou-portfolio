@@ -968,31 +968,51 @@ export default function StreamflowWalkthroughPage() {
             </p>
 
             <h3 className="mt-6 text-term-base font-bold text-term-ink">
-              The ranges are slightly too narrow
+              The backtest calibrates. The live record so far does not.
             </h3>
             <Calc
-              label="measured coverage, all 17,615 grades"
+              label="coverage: replayed history vs forecasts issued for real"
               formula={
-                '13,807 landed inside the published range\n÷ 17,615 grades\n\n= 78.4%   against the 80% claimed'
+                'backtest   78.6%  of 17,565   against the 80% claimed\nlive        8.0%  of     50   against the 80% claimed'
               }
             >
               <p>
                 <CalcLead>what it means</CalcLead>
-                Slightly overconfident. When this system publishes an 80 percent range, the truth
-                lands inside it 78.4 percent of the time.
+                Over two and a half years of replayed history the ranges are almost exactly as
+                honest as they claim to be. Over the fifty forecasts issued for real since the
+                pipeline went live, the truth has landed inside the published range four times.
               </p>
               <p>
-                Close, and honest, but not yet broken down. A single overall figure can hide a state
-                that is badly wrong while another compensates, which is exactly what the next piece
-                of work is for.
+                Fifty is a small sample and it covers one unusual week, so the gap will narrow. But
+                a 72 point miss is far too large to be sampling noise, and the split is worth
+                stating plainly: <strong>a backtest that calibrates well is not evidence that the
+                live system does.</strong>
+              </p>
+              <p>
+                Most of it is climatology, which is currently wrong by a factor of ten. Late August
+                is normally the driest stretch of the year here, so it predicts about 27 cfs while
+                recent rain has held the creek near 262 — well outside any range built from what
+                this week usually looks like. Persistence fares better but still misses, because the
+                river has spent the period draining fast.
+              </p>
+              <p>
+                Both of those are real forecasting failures rather than defects, which is the
+                distinction this page exists to keep visible. The ranges are behaving exactly as
+                designed and the forecasts inside them are simply wrong.
               </p>
             </Calc>
 
             <h3 className="mt-8 text-term-base font-bold text-term-ink">
-              One river state is still mislabelled
+              Two river states are harder than the ranges admit
             </h3>
             <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
-              Forecasts issued at a peak measure 0.831 with 74 percent too high, across 408 grades.
+              Even in the backtest, coverage is not evenly spread. A calm day comes out at 95
+              percent for persistence, comfortably wider than it needs to be, while a rising river
+              manages 53 percent and a peak 68. Rain arriving is the hardest thing here to forecast
+              and the hardest to put bounds on, and the ranges have not yet caught up with that.
+            </p>
+            <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+              Separately, forecasts issued at a peak measure 0.831 with 74 percent of them too high.
               A genuine plateau should be close to unbiased, so that number suggests “peak” still
               mixes the crest with the first hours of the drop, and may want splitting again. It is
               measured, recorded, and deliberately unresolved.
