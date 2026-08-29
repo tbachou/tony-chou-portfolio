@@ -12,6 +12,12 @@ jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
+// Agent prompts live as markdown skill files on disk; tests never read the
+// filesystem (the beta.service.spec convention).
+jest.mock('./skill-loader', () => ({
+  loadConversationSkill: jest.fn(() => 'stub skill prompt'),
+}));
+
 // conversation.service.ts uses `Prisma.PrismaClientKnownRequestError` at
 // runtime (an `instanceof` check, not just a type), which otherwise pulls in
 // generated/prisma/client.ts's full module graph — unrelated to this spec
