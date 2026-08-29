@@ -171,7 +171,11 @@ export class ConversationService {
           interviewerResult.text,
           isFinal,
         ),
-        maxTokens: 400,
+        // A backstop, not an editor: the prompt asks for 2-4 sentences, and
+        // 600 leaves room for a slightly long answer to finish. At 400 the
+        // model's longer answers truncated mid-sentence (spec 0011's eval
+        // caught it: persona judge scored the cut-off answers 0).
+        maxTokens: 600,
         onToken: () => undefined,
       });
 
@@ -274,8 +278,8 @@ function buildTonyUserMessage(
       ? `\n\nYou must frame your ownership of this story using language consistent with: "${story.requiredFraming}"`
       : '';
   const instruction = isFinal
-    ? 'Give a warm, concluding closing answer that wraps up the conversation and invites the visitor to explore more of the portfolio, rather than a normal deep-dive answer.'
-    : 'Answer as Tony now.';
+    ? 'Give a warm, concluding closing answer, in 2-4 sentences, that wraps up the conversation and invites the visitor to explore more of the portfolio, rather than a normal deep-dive answer.'
+    : 'Answer as Tony now, in 2-4 sentences. Finish your final sentence.';
   return [
     `Interviewer just asked: "${interviewerQuestion}"`,
     `Story facts to answer from — title: ${story.title}; engagement: ${story.engagement}; ownership: ${story.ownership}; details: ${story.summary}${framingNote}`,
