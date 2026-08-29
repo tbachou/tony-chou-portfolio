@@ -128,8 +128,55 @@ describe('calibration', () => {
     // render as a forecaster whose every range missed.
     expect(report.overall.observed).toBeNull();
     expect(report.overall.gap).toBeNull();
+    // And the claimed level is absent too, not zero: a window with no
+    // forecasts in it never claimed anything.
+    expect(report.overall.nominal).toBeNull();
     expect(report.overall.total).toBe(0);
     expect(report.byRegime).toEqual([]);
+  });
+
+  it('sorts an unfamiliar horizon after the known ones rather than inside them', () => {
+    // "persistence 172 h" ends with the text "72 h". Ranking on the label by
+    // suffix would file it as though it were the 72 hour horizon, which is
+    // wrong twice: it sorts before 24, and it does so silently.
+    const report = calibration([
+      ...rows(1, 1, { horizonHours: 172 }),
+      ...rows(1, 1, { horizonHours: 24 }),
+      ...rows(1, 1, { horizonHours: 72 }),
+    ]);
+
+    expect(report.byHorizon.map((g) => g.label)).toEqual([
+      'persistence 24 h',
+      'persistence 72 h',
+      'persistence 172 h',
+    ]);
+  });
+
+  it('sorts a horizon between the known ones by number, not as text', () => {
+    // Text ordering would put "120" before "24".
+    const report = calibration([
+      ...rows(1, 1, { horizonHours: 120 }),
+      ...rows(1, 1, { horizonHours: 48 }),
+    ]);
+
+    expect(report.byHorizon.map((g) => g.label)).toEqual([
+      'persistence 48 h',
+      'persistence 120 h',
+    ]);
+  });
+
+  it('keeps a forecaster whose name contains a river state in its own group', () => {
+    // A model called "rising-tide" must not be ranked as though it were the
+    // rising regime, which suffix matching on the label would have done.
+    const report = calibration([
+      ...rows(1, 1, { modelName: 'rising-tide', regime: 'BASEFLOW' }),
+      ...rows(1, 1, { modelName: 'persistence', regime: 'RISING' }),
+    ]);
+
+    expect(report.byRegime.map((g) => g.label)).toEqual([
+      'rising-tide baseflow',
+      'persistence rising',
+    ]);
   });
 
   it('averages the claimed level rather than assuming it', () => {
