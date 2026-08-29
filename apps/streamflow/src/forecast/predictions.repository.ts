@@ -1,5 +1,7 @@
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaClient } from '../generated/prisma/client';
+import { intervalSource } from './calibration';
+import type { GradedInterval } from './calibration';
 import type { ScoredError } from './skill';
 
 /**
@@ -137,4 +139,79 @@ export async function publicScoredErrors(
     JOIN "model_versions" m ON m."id" = latest."modelVersionId"
     ORDER BY latest."targetTime"
   `);
+}
+
+/** The shape the coverage query returns, before the ladder rung is derived. */
+interface CoverageRow {
+  modelName: string;
+  horizonHours: number;
+  regime: GradedInterval['regime'];
+  withinInterval: boolean;
+  intervalLevel: number;
+  intervalSeeded: boolean;
+  bucketSize: number;
+}
+
+/**
+ * Every graded interval over a window, for the calibration figures.
+ *
+ * The same one score per prediction rule the skill query applies, and for the
+ * same reason: a prediction re-scored after a revision would otherwise be
+ * counted twice, and the storm predictions most likely to be re-polled are
+ * exactly the ones whose coverage is worst, so the double weight would push
+ * the answer in the flattering direction.
+ *
+ * `hindcast` is a parameter rather than a fixed filter, which is the one place
+ * this file deliberately departs from `publicPredictions`. Coverage is the
+ * question the backtest exists to answer as well as the live record, and the
+ * two populations are worth reading side by side: the seeded rows say whether
+ * the method calibrates at all over two and a half years, the live rows say
+ * whether it is calibrating now. What must never happen is the two being
+ * summed, so they are separate calls returning separate reports, never a
+ * single query with the flag dropped.
+ */
+export async function gradedIntervals(
+  prisma: ScoredErrorReader,
+  gaugeId: string,
+  from: Date,
+  to: Date,
+  options: { hindcast: boolean },
+): Promise<GradedInterval[]> {
+  const rows = await prisma.$queryRaw<CoverageRow[]>(Prisma.sql`
+    SELECT
+      m."name"             AS "modelName",
+      latest."horizonHours",
+      latest."regime",
+      latest."withinInterval",
+      latest."intervalLevel",
+      latest."intervalSeeded",
+      latest."bucketSize"
+    FROM (
+      SELECT DISTINCT ON (s."predictionId")
+        s."withinInterval",
+        s."regime",
+        p."horizonHours",
+        p."intervalLevel",
+        p."intervalSeeded",
+        p."bucketSize",
+        p."modelVersionId"
+      FROM "scores" s
+      JOIN "predictions" p ON p."id" = s."predictionId"
+      WHERE p."gaugeId" = ${gaugeId}
+        AND p."hindcast" = ${options.hindcast}
+        AND p."targetTime" >= ${from}
+        AND p."targetTime" <= ${to}
+      ORDER BY s."predictionId", s."actualRecordedAt" DESC, s."id" DESC
+    ) latest
+    JOIN "model_versions" m ON m."id" = latest."modelVersionId"
+  `);
+
+  return rows.map((row) => ({
+    modelName: row.modelName,
+    horizonHours: row.horizonHours,
+    regime: row.regime,
+    withinInterval: row.withinInterval,
+    intervalLevel: row.intervalLevel,
+    source: intervalSource(row),
+  }));
 }
