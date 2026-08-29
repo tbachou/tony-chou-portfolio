@@ -71,12 +71,18 @@ export default function StreamflowProjectPage() {
             A river forecasting pipeline that grades its own homework in public.
           </p>
 
-          <div className="mt-6">
+          <div className="mt-6 flex flex-wrap gap-3">
             <a
               href="/streamflow"
               className="terminal-select inline-flex min-h-[44px] items-center border border-term-accent px-4 py-2 text-term-base font-bold text-term-accent"
             >
               [ open the dashboard ]
+            </a>
+            <a
+              href="/projects/streamflow/walkthrough"
+              className="terminal-select inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink"
+            >
+              [ read the walkthrough ]
             </a>
           </div>
 
@@ -236,6 +242,12 @@ export default function StreamflowProjectPage() {
                 className="terminal-select inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink"
               >
                 [ open the dashboard ]
+              </a>
+              <a
+                href="/projects/streamflow/walkthrough"
+                className="terminal-select inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink"
+              >
+                [ how it works, in detail ]
               </a>
               <a
                 href="https://waterdata.usgs.gov/monitoring-location/03230500/"
