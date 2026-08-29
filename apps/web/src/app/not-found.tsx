@@ -22,7 +22,7 @@ export default function NotFound() {
         <h1 className="mt-6 text-term-2xl font-bold text-term-ink terminal-glow sm:text-term-3xl">
           No such file or directory
         </h1>
-        <p className="mt-3 max-w-prose text-term-base leading-relaxed text-term-body">
+        <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
           That path is not on this machine. It may have moved, or it may never have been here.
           Everything that does exist is one directory up.
         </p>
