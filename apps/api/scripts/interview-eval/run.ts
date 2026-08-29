@@ -52,9 +52,12 @@ function arg(name: string): string | undefined {
 function gitInfo(): { commit: string; dirty: boolean } {
   try {
     const commit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+    // Tracked modifications only: the suite's own not-yet-committed results
+    // files would otherwise mark every follow-up run dirty.
     const dirty =
-      execSync('git status --porcelain', { encoding: 'utf8' }).trim().length >
-      0;
+      execSync('git status --porcelain --untracked-files=no', {
+        encoding: 'utf8',
+      }).trim().length > 0;
     return { commit, dirty };
   } catch {
     return { commit: 'unknown', dirty: false };
