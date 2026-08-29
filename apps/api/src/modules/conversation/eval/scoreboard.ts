@@ -47,6 +47,11 @@ export function renderScoreboard(
   if (current.meta.aborted) {
     lines.push('- **Run aborted by --max-cost; results are partial.**');
   }
+  if (current.meta.partial) {
+    lines.push(
+      '- **Partial run (a subset of the golden dataset): deltas are composition biased and significance is not asserted.**',
+    );
+  }
   lines.push('');
 
   lines.push('## Scores by dimension');

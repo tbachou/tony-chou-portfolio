@@ -64,13 +64,14 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          # PR runs are capped (--cases 8); workflow_dispatch runs the full set.
+          # PR runs are capped (--cases 8, sampled across all difficulty
+          # tiers, so edge bait cases always run); dispatch runs the full set.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             CASE_ARGS="--cases 8"
           else
             CASE_ARGS=""
           fi
-          npm run eval:interview --workspace=apps/api -- --ci-skip-without-key $CASE_ARGS
+          npm run eval:interview --workspace=apps/api -- $CASE_ARGS
           {
             echo '### Interview eval scoreboard'
             echo ''

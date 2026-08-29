@@ -30,7 +30,10 @@ import {
   type AiProvider,
 } from '../../src/modules/anthropic/ai-provider.interface';
 import { hashDataset } from '../../src/modules/conversation/eval/dataset-hash';
-import { estimateCostUsd } from '../../src/modules/conversation/eval/pricing';
+import {
+  estimateCostUsd,
+  PRICE_TABLE,
+} from '../../src/modules/conversation/eval/pricing';
 import { aggregate } from '../../src/modules/conversation/eval/aggregate';
 import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
@@ -40,6 +43,7 @@ import type {
   RunResults,
   TokenTotals,
 } from '../../src/modules/conversation/eval/eval-types';
+import { selectCases } from '../../src/modules/conversation/eval/select-cases';
 import { GOLDEN_CASES, type EvalCase } from './golden';
 import { datasetHashPayload, runCase } from './harness';
 import { JUDGE_MODEL } from './scorers/judge-client';
@@ -47,6 +51,41 @@ import { JUDGE_MODEL } from './scorers/judge-client';
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index === -1 ? undefined : process.argv[index + 1];
+}
+
+/**
+ * Numeric flag with validation: a malformed value must fail loudly, never
+ * silently disable a bound (NaN compares false against everything, which
+ * would turn off --max-cost, and NaN workers would run zero cases "green").
+ */
+function numFlag(name: string, fallback: number): number {
+  const raw = arg(name);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    console.error(`❌ --${name} needs a number, got "${raw}"`);
+    process.exit(1);
+  }
+  return value;
+}
+
+/** Parses a results/baseline JSON with a loud, named failure (never a raw stack). */
+function readJsonFile<T>(filePath: string, label: string): T {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    console.error(`❌ cannot read ${label}: ${filePath}`);
+    process.exit(1);
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    console.error(
+      `❌ ${label} is not valid JSON (hand edit or merge conflict?): ${filePath}`,
+    );
+    process.exit(1);
+  }
 }
 
 function gitInfo(): { commit: string; dirty: boolean } {
@@ -84,29 +123,34 @@ async function main(): Promise<void> {
   }
   process.env.AI_PROVIDER = providerFlag ?? 'anthropic';
 
-  const ciSkip = process.argv.includes('--ci-skip-without-key');
+  // The no-key CI skip lives in the workflow's bash guard (one owner); here a
+  // missing key is always a hard failure before any model call (AC-1).
   if (!process.env.ANTHROPIC_API_KEY) {
-    if (ciSkip) {
-      console.log('◐ ANTHROPIC_API_KEY not set; skipping the eval run (CI skip mode).');
-      process.exit(0);
-    }
     console.error('❌ ANTHROPIC_API_KEY is not set (looked in apps/api/.env)');
     process.exit(1);
   }
 
-  const caseCap = Number(arg('cases') ?? Number.NaN);
-  const concurrency = Math.max(1, Number(arg('concurrency') ?? 2));
-  const maxCostUsd = Number(arg('max-cost') ?? 2);
+  const caseCap = numFlag('cases', GOLDEN_CASES.length);
+  const concurrency = Math.max(1, numFlag('concurrency', 2));
+  const maxCostUsd = numFlag('max-cost', 2);
   const outDir = path.resolve(
     arg('out') ?? path.resolve(__dirname, '..', '..', '..', '..', 'docs', 'evals', 'interview'),
   );
 
-  const cases: EvalCase[] = Number.isFinite(caseCap)
-    ? GOLDEN_CASES.slice(0, caseCap)
-    : GOLDEN_CASES;
+  const cases: EvalCase[] = selectCases(GOLDEN_CASES, caseCap);
 
   const { provider: providerName, model: generatorModel } =
     resolveConfiguredProvider();
+
+  // --max-cost can only bind when every model in play is priced; say so
+  // up front rather than letting the cap be silently inert (a Bedrock
+  // comparison run is exactly the case with invisible spend).
+  const unpriced = [generatorModel, JUDGE_MODEL].filter((m) => !PRICE_TABLE[m]);
+  if (unpriced.length > 0) {
+    console.warn(
+      `⚠ not in the price table: ${unpriced.join(', ')} — cost cannot be estimated and --max-cost will NOT abort this run.`,
+    );
+  }
   const provider: AiProvider =
     providerName === 'bedrock'
       ? new BedrockAnthropicService()
@@ -160,9 +204,13 @@ async function main(): Promise<void> {
           tonyEmitted: null,
           guardFired: false,
           dimensions: {},
-          generationError: `harness threw: ${String(error)}`,
+          // Error name only, never the raw message: this lands in a
+          // committed public results file (apps/api convention).
+          generationError: `harness threw: ${error instanceof Error ? error.name : 'unknown error'}`,
         });
-        console.log(`💥 ${evalCase.id} threw: ${String(error)}`);
+        console.log(
+          `💥 ${evalCase.id} threw: ${error instanceof Error ? error.name : 'unknown error'}`,
+        );
       }
     }
   });
@@ -196,6 +244,7 @@ async function main(): Promise<void> {
       tokenTotals,
       estimatedCostUsd: estimateCostUsd(tokensByModel),
       aborted,
+      partial: aborted || results.length < GOLDEN_CASES.length,
     },
     cases: results,
   };
@@ -210,11 +259,23 @@ async function main(): Promise<void> {
   const baselinePath = path.join(outDir, 'baseline.json');
   let baseline: BaselineFile | null = null;
   if (fs.existsSync(baselinePath)) {
-    baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8')) as BaselineFile;
+    baseline = readJsonFile<BaselineFile>(baselinePath, 'baseline.json');
+    if (!baseline.run?.meta || !Array.isArray(baseline.run.cases)) {
+      console.error(
+        `❌ baseline.json has no run.meta/run.cases; restore it from git before comparing: ${baselinePath}`,
+      );
+      process.exit(1);
+    }
   }
 
   // --save-baseline: a deliberate local step (AC-9); CI never passes it.
   if (process.argv.includes('--save-baseline')) {
+    if (run.meta.partial) {
+      console.error(
+        '❌ refusing --save-baseline on a partial run (capped or aborted): the baseline must be a full-set run.',
+      );
+      process.exit(1);
+    }
     const noiseFrom = arg('noise-from');
     let noiseBand = baseline?.noiseBand ?? null;
     if (noiseFrom) {
@@ -229,10 +290,20 @@ async function main(): Promise<void> {
         console.error(`❌ --noise-from file not found: ${noiseFrom}`);
         process.exit(1);
       }
-      const other = JSON.parse(fs.readFileSync(noisePath, 'utf8')) as RunResults;
+      const other = readJsonFile<RunResults>(noisePath, '--noise-from run');
+      if (!other.meta || !Array.isArray(other.cases)) {
+        console.error(`❌ --noise-from file has no meta/cases: ${noisePath}`);
+        process.exit(1);
+      }
       if (other.meta.datasetHash !== datasetHash) {
         console.error(
           '❌ --noise-from run has a different dataset hash; the noise band must come from two identical runs.',
+        );
+        process.exit(1);
+      }
+      if (other.meta.partial) {
+        console.error(
+          '❌ --noise-from run is partial; the noise band must come from two full runs.',
         );
         process.exit(1);
       }
