@@ -25,7 +25,15 @@ export function Calc({
       <p className="border-b border-term-border px-3 py-2 text-term-xs uppercase tracking-wide text-term-muted">
         {label}
       </p>
-      <pre className="overflow-x-auto border-b border-term-border px-3 py-3 text-term-sm text-term-ink">
+      {/* The multi line formulas run past a phone's width, so this scrolls
+          like the tables and figures do — and, like them, has to be reachable
+          from a keyboard and show that there is more to the right. */}
+      <pre
+        tabIndex={0}
+        role="region"
+        aria-label={`${label}. Scrolls sideways.`}
+        className="terminal-scrollable overflow-x-auto border-b border-term-border px-3 py-3 text-term-sm text-term-ink focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-term-accent"
+      >
         {formula}
       </pre>
       <div className="space-y-2 px-3 py-3 text-term-base leading-relaxed text-term-body">

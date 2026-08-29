@@ -154,7 +154,7 @@ export function Hydrograph({ points, timeZone }: HydrographProps) {
   const first = points[0];
   const last = points[points.length - 1];
 
-  const summary = `Discharge at the gauge from ${formatDay(new Date(first.validTime), timeZone)} to ${formatDay(new Date(last.validTime), timeZone)}, ranging ${Math.round(chart.minValue)} to ${Math.round(chart.maxValue)} cubic feet per second, ending at ${Math.round(last.valueCfs)}.`;
+  const summary = `Discharge at the gauge from ${formatDay(new Date(first.validTime), timeZone)} to ${formatDay(new Date(last.validTime), timeZone)}, ranging ${Math.round(chart.minValue)} to ${Math.round(chart.maxValue)} cubic feet per second on a logarithmic vertical axis, ending at ${Math.round(last.valueCfs)}.`;
 
   return (
     <figure className="m-0">

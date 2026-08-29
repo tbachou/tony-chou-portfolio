@@ -310,24 +310,25 @@ const REFERENCES = [
 ];
 
 /**
- * The nine parts of the document, in reading order.
+ * The nine parts of the document, in reading order, as the contents list
+ * renders them.
  *
- * One list drives three things that must agree: the contents at the top, the
- * `id` each section anchors on, and the label the return link shows. A
- * document this tall is unusable without deep links — a reader who wants to
+ * A document this tall is unusable without deep links: a reader who wants to
  * send a colleague the limitations section has nothing to send them
- * otherwise.
+ * otherwise. Each `id` here must match the one on the corresponding heading
+ * below, which is checked by nothing — an entry pointing at a heading that
+ * was renamed scrolls nowhere, silently.
  */
 const SECTIONS = [
-  { id: 'vocabulary', file: 'cat vocabulary.txt', title: 'Words you will need' },
-  { id: 'two-timestamps', file: 'cat why-two-timestamps.txt', title: 'The central idea' },
-  { id: 'architecture', file: 'ls jobs/', title: 'How it is put together' },
-  { id: 'pipeline', file: 'run ingest', title: 'A reading becomes a forecast' },
-  { id: 'intervals', file: 'cat interval-rules', title: 'Where the range comes from' },
-  { id: 'scoring', file: 'run score', title: 'A forecast is graded' },
-  { id: 'limitations', file: 'cat limitations.txt', title: 'What it does not do' },
-  { id: 'build-order', file: 'cat build-order.txt', title: 'The build order' },
-  { id: 'reference', file: 'cat glossary.txt', title: 'Glossary and references' }
+  { id: 'vocabulary', title: 'Words you will need' },
+  { id: 'two-timestamps', title: 'The central idea' },
+  { id: 'architecture', title: 'How it is put together' },
+  { id: 'pipeline', title: 'A reading becomes a forecast' },
+  { id: 'intervals', title: 'Where the range comes from' },
+  { id: 'scoring', title: 'A forecast is graded' },
+  { id: 'limitations', title: 'What it does not do' },
+  { id: 'build-order', title: 'The build order' },
+  { id: 'reference', title: 'Glossary and references' }
 ] as const;
 
 function SectionHeading({ file, id }: { file: string; id?: string }) {

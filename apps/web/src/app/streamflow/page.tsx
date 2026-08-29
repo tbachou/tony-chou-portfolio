@@ -72,9 +72,26 @@ const TWO_CLOCKS = [
   },
 ];
 
-/** The value if the read succeeded, the fallback if it did not. */
-function settled<T>(result: PromiseSettledResult<T>, fallback: T): T {
-  return result.status === 'fulfilled' ? result.value : fallback;
+/**
+ * Unwraps one optional read, and says so when it failed.
+ *
+ * The whole point of settling rather than failing the page is that a panel
+ * can go missing without taking the rest down. The cost is that a rejection
+ * is otherwise swallowed: before this was `Promise.all`, any failure reached
+ * the boundary, Next logged it and stamped a digest. Now only the required
+ * read does, so every other reason gets logged here on the way past. A panel
+ * that quietly serves a dash forever, with nothing in the logs, is the
+ * failure mode this trade introduces.
+ */
+function settled<T>(label: string, result: PromiseSettledResult<T>, fallback: T): T {
+  if (result.status === 'fulfilled') return result.value;
+  console.error(`[streamflow] ${label} read failed:`, result.reason);
+  return fallback;
+}
+
+/** Whether an optional read came back at all, for panels that must say so. */
+function failed(result: PromiseSettledResult<unknown>): boolean {
+  return result.status === 'rejected';
 }
 
 function formatInstant(at: Date): string {
@@ -154,12 +171,18 @@ export default async function StreamflowPage() {
   const rows = rowsResult.value;
   // Null rather than zero: a count that could not be read is not a count of
   // none, and this one is printed as a fact about the store.
-  const total = settled<number | null>(totalResult, null);
-  const oldestRecord = settled(oldestRecordResult, null);
-  const newestReading = settled(newestReadingResult, null);
-  const lastRun = settled(lastRunResult, null);
-  const recentForecasts = settled(recentForecastsResult, []);
-  const scoredErrors = settled(scoredErrorsResult, []);
+  const total = settled<number | null>('reading count', totalResult, null);
+  const oldestRecord = settled('oldest record', oldestRecordResult, null);
+  const newestReading = settled('newest reading', newestReadingResult, null);
+  const lastRun = settled('last pipeline run', lastRunResult, null);
+  const recentForecasts = settled('recent forecasts', recentForecastsResult, []);
+  const scoredErrors = settled('scored errors', scoredErrorsResult, []);
+
+  // A read that failed and a store with nothing in it are opposite findings,
+  // and a bare `{value && …}` renders them identically: the block vanishes and
+  // the page reads as "this gauge has no data". These say which it was.
+  const newestReadingFailed = failed(newestReadingResult);
+  const lastRunFailed = failed(lastRunResult);
 
   // The newest claim per forecaster and horizon. publicPredictions returns
   // newest first, so the first of each pair seen is the current one.
@@ -247,6 +270,16 @@ export default async function StreamflowPage() {
               </div>
             ))}
           </dl>
+
+          {newestReadingFailed && (
+            <div className="mt-6 border-t border-term-border pt-5">
+              <p className="text-term-xs text-term-muted">latest reading</p>
+              <p className="mt-2 text-term-sm text-term-body">
+                The latest reading could not be read just now. The gauge and the ingest job are
+                unaffected; this is the page failing to ask.
+              </p>
+            </div>
+          )}
 
           {newestReading && (
             <div className="mt-6 border-t border-term-border pt-5">
@@ -526,6 +559,13 @@ export default async function StreamflowPage() {
             a later <span className="text-term-ink">recordedAt</span>, which is
             what makes the control above possible at all.
           </p>
+
+          {lastRunFailed && (
+            <p className="mt-6 text-term-sm text-term-body">
+              The run history could not be read just now, so the job below is not shown. The
+              schedule itself is unaffected.
+            </p>
+          )}
 
           {lastRun && (
             <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 text-term-sm sm:grid-cols-4">
