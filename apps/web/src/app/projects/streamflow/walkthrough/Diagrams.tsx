@@ -9,8 +9,9 @@
  * directly, for the same reason: `var(--color-accent)` resolves per palette,
  * where a literal hex would be legible in exactly one of them.
  *
- * Each is wrapped in a scrolling container by the caller, so a narrow phone
- * pans the drawing rather than squashing its labels below legibility.
+ * The drawings floor at 688px and pan on a narrow phone rather than
+ * squashing their labels below legibility. That floor is also what the
+ * document column can hold without the figure scrolling on desktop.
  */
 
 const ACCENT = 'var(--color-accent)';
@@ -52,7 +53,7 @@ function Figure({
         <svg
           role="img"
           aria-label={label}
-          className="mx-auto block h-auto w-full min-w-[45rem] text-term-body"
+          className="mx-auto block h-auto w-full min-w-[43rem] text-term-body"
           viewBox={`0 0 720 ${height}`}
         >
           {children}
@@ -113,11 +114,11 @@ export function TwoTimestampsDiagram() {
           type size they were 511 and 561 units wide, so they ran straight
           through these labels and through both rules. */}
       <line x1="400" y1="24" x2="400" y2="172" stroke="currentColor" strokeDasharray="4 4" />
-      <text x="400" y="16" fontSize="11" fill="currentColor" textAnchor="middle" opacity="0.75">
+      <text x="400" y="16" fontSize="12" fill="currentColor" textAnchor="middle" opacity="0.75">
         ask as of Mar
       </text>
       <line x1="560" y1="24" x2="560" y2="172" stroke="currentColor" strokeDasharray="4 4" />
-      <text x="560" y="16" fontSize="11" fill="currentColor" textAnchor="middle" opacity="0.75">
+      <text x="560" y="16" fontSize="12" fill="currentColor" textAnchor="middle" opacity="0.75">
         ask as of Jun 30
       </text>
 
@@ -127,7 +128,7 @@ export function TwoTimestampsDiagram() {
         answer: 512
       </text>
       {/* Shortened so it stops clear of the second rule at x=560. */}
-      <text x="410" y="92" fontSize="11" fill="currentColor" opacity="0.7">
+      <text x="410" y="92" fontSize="12" fill="currentColor" opacity="0.7">
         newest at or before
       </text>
 
@@ -143,10 +144,10 @@ export function TwoTimestampsDiagram() {
       <text x="570" y="131" fontSize="13" fill="currentColor">
         answer: 498
       </text>
-      <text x="570" y="149" fontSize="11" fill="currentColor" opacity="0.7">
+      <text x="570" y="150" fontSize="12" fill="currentColor" opacity="0.7">
         the correction is
       </text>
-      <text x="570" y="163" fontSize="11" fill="currentColor" opacity="0.7">
+      <text x="570" y="168" fontSize="12" fill="currentColor" opacity="0.7">
         now visible
       </text>
     </Figure>
@@ -179,7 +180,7 @@ export function JobsDiagram() {
     >
       <Arrow id="wt-arrow-jobs" />
 
-      <text x="0" y="14" fontSize="11" fill="currentColor" opacity="0.6">
+      <text x="0" y="14" fontSize="12" fill="currentColor" opacity="0.6">
         SCHEDULED JOBS
       </text>
 
@@ -189,7 +190,7 @@ export function JobsDiagram() {
           <text x="12" y={job.y + 18} fontSize="12" fill="currentColor">
             {job.name}
           </text>
-          <text x="12" y={job.y + 33} fontSize="10" fill="currentColor" opacity="0.7">
+          <text x="12" y={job.y + 33} fontSize="12" fill="currentColor" opacity="0.7">
             {job.note}
           </text>
           {/* One arrow per job, fanning from that box's own middle into the
@@ -205,7 +206,7 @@ export function JobsDiagram() {
         </g>
       ))}
 
-      <text x="192" y="72" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="192" y="72" fontSize="12" fill="currentColor" opacity="0.75">
         only ever add rows
       </text>
 
@@ -219,7 +220,7 @@ export function JobsDiagram() {
           key={table}
           x="304"
           y={112 + index * 18}
-          fontSize="11"
+          fontSize="12"
           fill="currentColor"
           opacity="0.85"
         >
@@ -228,7 +229,7 @@ export function JobsDiagram() {
       ))}
 
       <line x1="474" y1="120" x2="560" y2="120" stroke="currentColor" markerEnd="url(#wt-arrow-jobs)" />
-      <text x="482" y="112" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="482" y="112" fontSize="12" fill="currentColor" opacity="0.75">
         reads
       </text>
 
@@ -236,8 +237,8 @@ export function JobsDiagram() {
       <text x="578" y="106" fontSize="12" fill="currentColor">
         the website
       </text>
-      <text x="578" y="126" fontSize="10" fill="currentColor" opacity="0.75">
-        the public scorecard
+      <text x="578" y="126" fontSize="12" fill="currentColor" opacity="0.75">
+        public scorecard
       </text>
 
       {/* Sits below whichever job box ends last, so the note cannot collide
@@ -250,10 +251,10 @@ export function JobsDiagram() {
         stroke="currentColor"
         opacity="0.3"
       />
-      <text x="0" y={lastJobBottom + 24} fontSize="11" fill="currentColor" opacity="0.7">
+      <text x="0" y={lastJobBottom + 24} fontSize="12" fill="currentColor" opacity="0.7">
         No job ever calls another. They coordinate entirely through rows in the database,
       </text>
-      <text x="0" y={lastJobBottom + 40} fontSize="11" fill="currentColor" opacity="0.7">
+      <text x="0" y={lastJobBottom + 40} fontSize="12" fill="currentColor" opacity="0.7">
         so a job that fails simply leaves less for the next one to find.
       </text>
     </Figure>
@@ -273,18 +274,18 @@ export function IntervalLadderDiagram() {
       <text x="14" y="32" fontSize="12" fill="currentColor">
         errors in THIS river state
       </text>
-      <text x="14" y="50" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="14" y="50" fontSize="12" fill="currentColor" opacity="0.75">
         same forecaster, same horizon
       </text>
 
-      <text x="316" y="32" fontSize="11" fill="currentColor">
+      <text x="316" y="32" fontSize="12" fill="currentColor">
         30 or more?
       </text>
       <line x1="392" y1="28" x2="440" y2="28" stroke="currentColor" markerEnd="url(#wt-arrow-ladder)" />
       <text x="450" y="26" fontSize="12" fill="currentColor">
         use them
       </text>
-      <text x="450" y="44" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="450" y="44" fontSize="12" fill="currentColor" opacity="0.75">
         the earned range
       </text>
 
@@ -297,7 +298,7 @@ export function IntervalLadderDiagram() {
         strokeDasharray="3 3"
         markerEnd="url(#wt-arrow-ladder)"
       />
-      <text x="160" y="82" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="160" y="82" fontSize="12" fill="currentColor" opacity="0.75">
         too few
       </text>
 
@@ -305,11 +306,11 @@ export function IntervalLadderDiagram() {
       <text x="14" y="118" fontSize="12" fill="currentColor">
         errors in ALL river states
       </text>
-      <text x="14" y="136" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="14" y="136" fontSize="12" fill="currentColor" opacity="0.75">
         pooled together
       </text>
 
-      <text x="316" y="118" fontSize="11" fill="currentColor">
+      <text x="316" y="118" fontSize="12" fill="currentColor">
         30 or more?
       </text>
       <line
@@ -323,7 +324,7 @@ export function IntervalLadderDiagram() {
       <text x="450" y="112" fontSize="12" fill="currentColor">
         use them
       </text>
-      <text x="450" y="130" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="450" y="130" fontSize="12" fill="currentColor" opacity="0.75">
         real, but not tailored
       </text>
 
@@ -336,7 +337,7 @@ export function IntervalLadderDiagram() {
         strokeDasharray="3 3"
         markerEnd="url(#wt-arrow-ladder)"
       />
-      <text x="160" y="168" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="160" y="168" fontSize="12" fill="currentColor" opacity="0.75">
         still too few
       </text>
 
@@ -352,7 +353,7 @@ export function IntervalLadderDiagram() {
       <text x="14" y="204" fontSize="12" fill="currentColor">
         a fixed wide band
       </text>
-      <text x="14" y="222" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="14" y="222" fontSize="12" fill="currentColor" opacity="0.75">
         a third of the guess, to triple it
       </text>
 
@@ -367,7 +368,7 @@ export function IntervalLadderDiagram() {
       <text x="450" y="206" fontSize="12" fill="currentColor">
         admit we do not know
       </text>
-      <text x="450" y="224" fontSize="10" fill="currentColor" opacity="0.75">
+      <text x="450" y="224" fontSize="12" fill="currentColor" opacity="0.75">
         marked as unearned
       </text>
     </Figure>
