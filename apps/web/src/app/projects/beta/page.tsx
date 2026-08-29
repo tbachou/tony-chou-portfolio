@@ -56,7 +56,7 @@ export default function BetaProjectPage() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="mx-auto max-w-4xl px-4 py-10 focus:outline-none sm:px-0 sm:py-14"
+        className="mx-auto max-w-[46rem] px-4 py-10 focus:outline-none sm:px-0 sm:py-14"
       >
         <TerminalWindow path="tonychou@portfolio:~/projects/beta$">
           <p className="text-term-sm text-term-muted">

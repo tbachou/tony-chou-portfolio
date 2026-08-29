@@ -368,8 +368,36 @@ export default function StreamflowWalkthroughPage() {
       <main
         id="main-content"
         tabIndex={-1}
-        className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-10 focus:outline-none sm:px-0 sm:py-14"
+        className="mx-auto grid max-w-[50rem] gap-6 px-4 py-10 focus:outline-none sm:px-0 sm:py-14 xl:max-w-[66rem] xl:grid-cols-[14rem_minmax(0,1fr)] xl:items-start xl:gap-8"
       >
+        {/* The contents. Above the document on a narrow screen, and beside it
+            in the column the 65 character measure leaves empty once there is
+            room — which is the point: a 19,000px document needs navigation
+            that stays reachable, and that space was doing nothing. */}
+        <nav
+          id="contents"
+          aria-label="Contents"
+          className="scroll-mt-24 border border-term-border bg-[color:var(--card-bg)] p-4 xl:sticky xl:top-24"
+        >
+          <h2 className="text-term-xs uppercase tracking-wide text-term-muted">
+            <span aria-hidden="true">$ </span>
+            ls sections/
+          </h2>
+          <ol className="mt-3 space-y-2">
+            {SECTIONS.map((section, index) => (
+              <li key={section.id} className="flex gap-3 text-term-sm">
+                <span aria-hidden="true" className="text-term-border tabular-nums">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <a href={`#${section.id}`} className="terminal-select text-term-body">
+                  {section.title}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        <div className="flex min-w-0 flex-col gap-6">
         {/* ---------- intro + vocabulary ---------- */}
         <TerminalWindow path="tonychou@portfolio:~/projects/streamflow/walkthrough$">
           <p className="text-term-sm text-term-muted">
@@ -410,25 +438,6 @@ export default function StreamflowWalkthroughPage() {
               </div>
             ))}
           </dl>
-
-          <nav id="contents" className="mt-10 scroll-mt-24" aria-label="Contents">
-            <h2 className="text-term-sm text-term-muted">
-              <span aria-hidden="true">$ </span>
-              ls sections/
-            </h2>
-            <ol className="mt-3 max-w-[39rem] space-y-2">
-              {SECTIONS.map((section, index) => (
-                <li key={section.id} className="flex gap-3 text-term-sm">
-                  <span aria-hidden="true" className="text-term-border tabular-nums">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <a href={`#${section.id}`} className="terminal-select text-term-body">
-                    {section.title}
-                  </a>
-                </li>
-              ))}
-            </ol>
-          </nav>
 
           <section className="mt-10">
             <SectionHeading file="cat vocabulary.txt" id="vocabulary" />
@@ -1232,6 +1241,7 @@ export default function StreamflowWalkthroughPage() {
             <BackToProjects />
           </div>
         </TerminalWindow>
+        </div>
       </main>
     </div>
   );
