@@ -133,7 +133,7 @@ _Steps derived from the acceptance criteria in [0010-falling-denominator.md](001
 - [x] Against production, forecasting off: report only run at 23:41:55 UTC, `npx tsx scripts/backfill-regime.ts --snapshot=.regime-backfill/max-v-floor.json` from `apps/streamflow` → checks held and the counts and full transition matrix are recorded in the child spec under `## Measured` → AC-D7, AC-D11
 - [x] Rerun with `--write` at the same snapshot path, same sitting (23:44:31 UTC) → reused the report's snapshot, zero drift runs, no forbidden cell, null sets unchanged on both columns, PEAK (447) and RISING (2,642) untouched, the FALLING → BASEFLOW cell exactly one slot (3 prediction and 3 score rows), 1,323 predictions and 1,294 scores written → AC-D4, AC-D4b, AC-D8a, AC-D9
 - [x] After the write: the snapshot carries `completedAt: 2026-08-28T23:44:31.859Z`, and a rerun against it refused, naming that instant and exiting non zero → AC-D5a
-- [ ] Spot check a moved row: `lowerCfs`, `upperCfs`, `q10Used`, `q90Used`, `intervalSeeded`, `bucketSize` unchanged where the label moved → AC-D6 (structural via the writer interface; a direct row check is still worth one query)
+- [x] Checked every moved row, not a sample (2026-08-29, read only, via the write snapshot's pre write labels): all 1,323 relabelled predictions keep ordered bounds and intact interval provenance (`q10Used`/`q90Used` present wherever `intervalSeeded` is true, `bucketSize` present everywhere). The three FALLING to BASEFLOW rows are the 2024-08-31 12:00 slot with a central of 15.8 against the 18.9 floor, the exact stricter region AC-D4a names → AC-D6
 - [x] Pushed to main at `09cb13f` on 2026-08-29 after the predeploy gate cleared (security review clean, code review 10 findings all Medium and below, clinical auditor not applicable); flag back to `true`; the dispatched pipeline run issued the 2026-08-29T00:00 slot at all three horizons for both models, every row `intervalSeeded` true against the relabelled buckets, and the paused window's scheduled run ingested 12 rows while issuing nothing, so ingest never stopped. The score job's first post resume run lands at the next hourly cron and is gated by the same variable the predict step just proved → AC-D8, AC-D11
 - [x] `MIN_BUCKET_ERRORS` doc comment in `apps/streamflow/src/config.ts` updated with the post relabelling per model and horizon bucket counts → AC-D10 (the parent index's AC-12 and its Value sourcing regime row were already corrected on this branch)
 
@@ -160,7 +160,7 @@ One per row of the spec's Value sourcing table, each exercising the edge that br
 - AC-D5 covered by the rule tag refusal, the required snapshot path, and the archived first snapshot
 - AC-D5a covered by the stamp on success, no stamp on refusal or interruption, and the refusal on reload
 - AC-D5b covered by the report caveat test; the blind spot is printed beside every clean check
-- AC-D6 structural via the writer interface, to be observed on the production write
+- AC-D6 structural via the writer interface, and observed on the production store after the write: all 1,323 moved rows hold intact interval columns
 - AC-D7 covered by the report only tests; the production report run is still owed
 - AC-D8 is the repository variable; the window is the operator's
 - AC-D8a covered by the drift refusal and report anchoring tests; exercised for real at the production write
