@@ -1,3 +1,17 @@
+/**
+ * Tests for the ownership guard, the deterministic half of the interview
+ * persona's honesty guarantee.
+ *
+ * **The first-person sentences in this file are test fixtures, not statements
+ * by Tony Chou.** Most of them are deliberately FALSE — they exist to be
+ * rejected, and each sits in a `blocks:` list for that reason. The `allows:`
+ * lists hold true or harmless sentences the guard must not suppress. Read the
+ * list a string belongs to before reading the string.
+ *
+ * Nearly every case here was produced by an adversarial review that ran the
+ * real guard and captured a wrong verdict, across seven rounds. They are the
+ * specification: each one is a failure this guard actually had.
+ */
 import { StoryOwnership } from '../../generated/prisma/enums';
 import type { StoryModel } from '../../generated/prisma/models';
 import {
