@@ -8,6 +8,8 @@ Three forces shaped the answer. First, the audience that actually exists: engine
 
 Not deciding meant either building the steering feature for an absent audience or abandoning finished design work.
 
+One premise of this umbrella is not yet true. The reframe assumes the measured record is readable by the people it is meant to convince, and the repo is private as of 2026-08-29 (spec 0011's rationale asserts the opposite and was corrected). Going public was recommended and the blocking risk was audited clean: no key or real `.env` has ever been committed on any branch. The decision itself is Tony's, is not made here, and is tracked on phase two. Until it is made, this umbrella improves the product on the merits and banks the evidence; it does not yet deliver the audience.
+
 ## Options considered
 
 ### Option 1: One surface, improved up the course ladder with measured deltas
