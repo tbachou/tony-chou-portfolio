@@ -53,7 +53,7 @@ export default function HomePage() {
                   <span aria-hidden="true">$ </span>
                   cat mission.txt
                 </p>
-                <p className="mt-2 max-w-prose text-term-base leading-relaxed text-term-body">
+                <p className="mt-2 max-w-[39rem] text-term-base leading-relaxed text-term-body">
                   I ship production AI features and real-time systems for growth-stage teams — AI
                   content generation at Mailchimp, collaborative editing at Product Forge, trading
                   analytics at Topstep. Six years in, still happiest when I own a problem end to

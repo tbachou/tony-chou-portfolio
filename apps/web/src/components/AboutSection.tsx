@@ -12,7 +12,7 @@ export function AboutSection() {
           <span aria-hidden="true">$ </span>
           cat about.txt
         </h2>
-        <p className="mt-3 max-w-prose text-term-base leading-relaxed text-term-body">{aboutSummary}</p>
+        <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">{aboutSummary}</p>
 
         <p className="mt-8 text-term-sm text-term-muted">
           <span aria-hidden="true">$ </span>

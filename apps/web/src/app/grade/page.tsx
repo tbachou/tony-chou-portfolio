@@ -109,7 +109,7 @@ export default function GradePage() {
                 </span>
                 <div>
                   <p className="text-term-sm font-bold text-term-ink">{item.step}</p>
-                  <p className="mt-1 max-w-prose text-term-sm leading-relaxed text-term-body">
+                  <p className="mt-1 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
                     {item.detail}
                   </p>
                 </div>
@@ -123,7 +123,7 @@ export default function GradePage() {
               cat what-is-stored.txt
             </p>
             <h2 className="mt-4 text-term-xl font-bold text-term-ink">What gets stored</h2>
-            <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-2 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
               Per problem, the server keeps one row: Claude&apos;s analysis of that photo, a count
               of how many people guessed each grade, and how many played. That is the whole
               record. There is no account, no cookie for the game, no identifier of any kind, and
@@ -138,7 +138,7 @@ export default function GradePage() {
               <span aria-hidden="true">$ </span>
               cat also-here.txt
             </p>
-            <p className="mt-4 max-w-prose text-term-sm leading-relaxed text-term-body">
+            <p className="mt-4 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
               If the climbing angle is what brought you here, Beta is the serious version:{' '}
               <Link
                 href="/projects/beta"
