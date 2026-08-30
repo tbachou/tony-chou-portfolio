@@ -13,6 +13,7 @@ import { loadConversationSkill } from './skill-loader';
 import {
   evaluateTonyResponse,
   GENERIC_GUARD_FALLBACK,
+  isBlankResponse,
   splitIntoChunks,
 } from './ownership-guard';
 import { DailyUsageService } from '../daily-usage/daily-usage.service';
@@ -242,7 +243,7 @@ export class ConversationService {
       // persisted as-is and then dropped from later transcripts, leaving an
       // answer with no question above it. Treat it as a failed generation:
       // the catch below releases the reserved slot, so a retry can re-claim it.
-      if (interviewerResult.text.trim().length === 0) {
+      if (isBlankResponse(interviewerResult.text)) {
         throw new Error('The interviewer produced an empty question');
       }
 
