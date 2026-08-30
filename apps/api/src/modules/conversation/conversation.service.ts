@@ -34,11 +34,16 @@ export type LoadedConversation = {
   nextTurnIndex: number;
 };
 
-const EMPTY_CONVERSATION: LoadedConversation = {
-  turns: [],
-  topicId: null,
-  nextTurnIndex: 0,
-};
+/**
+ * A fresh object per call, never a shared constant. The server is long lived
+ * and this value is handed to request code that owns it; one shared instance
+ * would mean one shared `turns` array, so any caller that ever mutated it
+ * (appending a synthetic opening turn, sorting in place) would leak that edit
+ * into every later conversation in the process.
+ */
+function emptyConversation(): LoadedConversation {
+  return { turns: [], topicId: null, nextTurnIndex: 0 };
+}
 
 export type EmitFn = (event: string, data: unknown) => void;
 
@@ -85,13 +90,13 @@ export class ConversationService {
   async loadConversation(
     conversationId?: string,
   ): Promise<LoadedConversation> {
-    if (!conversationId) return EMPTY_CONVERSATION;
+    if (!conversationId) return emptyConversation();
     const rows = await this.prisma.conversationTurn.findMany({
       where: { conversationId },
       orderBy: { turnIndex: 'asc' },
       select: { turnIndex: true, role: true, text: true, topicId: true },
     });
-    if (rows.length === 0) return EMPTY_CONVERSATION;
+    if (rows.length === 0) return emptyConversation();
 
     return {
       // Counts EVERY row, including a reserved one whose text is still empty,
