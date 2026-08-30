@@ -71,6 +71,17 @@ export function evaluateTonyResponse(
   text: string,
   story: StoryModel,
 ): GuardResult {
+  // An empty answer is a failed answer, not a safe one. Without this the guard
+  // returns ok for '', the blank text persists as Tony's turn, and
+  // loadConversation later drops it from the transcript — leaving the next
+  // prompt holding a question with no answer under it. Failing here routes it
+  // to the same fallback every other guard failure uses, so a persisted Tony
+  // row is always non-empty and a blank row means one thing only: a slot
+  // reserved but never generated.
+  if (text.trim().length === 0) {
+    return { ok: false, reason: 'empty response' };
+  }
+
   const lower = text.toLowerCase();
 
   for (const phrase of NEVER_CLAIM_PHRASES) {

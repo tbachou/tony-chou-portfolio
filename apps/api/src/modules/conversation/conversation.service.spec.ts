@@ -155,6 +155,36 @@ describe('ConversationService.generateTurnPair', () => {
     expect(h.prisma.conversationTurn.delete).not.toHaveBeenCalled();
   });
 
+  it('a blank interviewer question fails the turn rather than persisting an empty row', async () => {
+    const h = makeHarness();
+    // A blank question would be stored as-is and then dropped from later
+    // transcripts, leaving an answer with no question above it.
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: '   ',
+      inputTokens: 5,
+      outputTokens: 0,
+    });
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    expect(h.events).toEqual([
+      ['turn_start', { role: 'interviewer' }],
+      ['turn_error', { message: 'The interviewer produced an empty question' }],
+    ]);
+    // Tony is never asked, and the reserved slot is released for a retry.
+    expect(h.anthropic.streamMessage).toHaveBeenCalledTimes(1);
+    expect(h.prisma.conversationTurn.delete).toHaveBeenCalledWith({
+      where: { id: 'turn-1' },
+    });
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('error path: releases the reserved slot and emits turn_error instead of turn_end', async () => {
     const h = makeHarness();
     h.anthropic.streamMessage.mockRejectedValue(new Error('upstream down'));
