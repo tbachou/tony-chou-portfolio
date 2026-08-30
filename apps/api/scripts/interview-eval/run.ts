@@ -37,11 +37,12 @@ import {
 import { aggregate } from '../../src/modules/conversation/eval/aggregate';
 import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
-import type {
-  BaselineFile,
-  CaseResult,
-  RunResults,
-  TokenTotals,
+import {
+  RESULTS_PROVENANCE,
+  type BaselineFile,
+  type CaseResult,
+  type RunResults,
+  type TokenTotals,
 } from '../../src/modules/conversation/eval/eval-types';
 import { selectCases } from '../../src/modules/conversation/eval/select-cases';
 import { GOLDEN_CASES, type EvalCase } from './golden';
@@ -234,6 +235,7 @@ async function main(): Promise<void> {
   );
 
   const run: RunResults = {
+    _readMeFirst: RESULTS_PROVENANCE,
     meta: {
       date: new Date().toISOString(),
       gitCommit: commit,
