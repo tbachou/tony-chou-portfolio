@@ -295,6 +295,10 @@ function buildInterviewerUserMessage(
     : 'Ask your next interview question now.';
   return [
     `Topic: ${topic.label} — ${topic.description}`,
+    // The catalog is the topic's full material, one line per story (spec 0012
+    // phase one, AC-2): a question may reference any of it, but only the
+    // grounding story below carries details to ask into.
+    `Other material in this topic (titles only — you may reference these, but never invent details about them):\n${formatStoryCatalog(topic, story)}`,
     `Story to ask about: ${story.title} (${story.engagement})`,
     `Story details: ${story.summary}`,
     historyBlock ? `Prior conversation:\n${historyBlock}` : null,
@@ -302,6 +306,20 @@ function buildInterviewerUserMessage(
   ]
     .filter(Boolean)
     .join('\n\n');
+}
+
+/**
+ * Title plus engagement, one line per story in the active topic. The grounding
+ * story is excluded: it is already listed in full just below, and repeating it
+ * would read as two different stories.
+ */
+function formatStoryCatalog(
+  topic: TopicWithStories,
+  groundingStory: StoryModel,
+): string {
+  const others = topic.stories.filter((s) => s.id !== groundingStory.id);
+  if (others.length === 0) return '(none — this topic has one story)';
+  return others.map((s) => `- ${s.title} (${s.engagement})`).join('\n');
 }
 
 function rolePosition(role: ConversationRole): number {

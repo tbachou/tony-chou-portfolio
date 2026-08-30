@@ -287,7 +287,7 @@ describe('ConversationService.loadHistory (spec 0012 AC-3)', () => {
   });
 });
 
-describe('interviewer user message (spec 0012 AC-3)', () => {
+describe('interviewer user message (spec 0012 AC-1, AC-2)', () => {
   beforeAll(() => {
     Logger.overrideLogger(false);
   });
@@ -310,6 +310,38 @@ describe('interviewer user message (spec 0012 AC-3)', () => {
       h.anthropic.streamMessage.mock.calls[0][0] as { userMessage: string }
     ).userMessage;
   }
+
+  it('catalogs the rest of the topic by title and engagement, excluding the grounding story', async () => {
+    const message = await interviewerMessage();
+
+    expect(message).toContain('- Realtime collaboration (Product Forge)');
+    // The grounding story is listed in full below the catalog; repeating it
+    // there would read as two different stories.
+    expect(message).not.toContain('- Portfolio rebuild (Personal project)');
+    expect(message).toContain('Story to ask about: Portfolio rebuild');
+    // Titles only: the catalog must not hand over details to invent from.
+    expect(message).not.toContain('Built the collaborative editing layer.');
+  });
+
+  it('says so plainly when the topic has no other story', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage
+      .mockResolvedValueOnce({ text: 'q', inputTokens: 1, outputTokens: 1 })
+      .mockResolvedValueOnce({ text: 'a', inputTokens: 1, outputTokens: 1 });
+
+    await h.service.generateTurnPair({
+      topic: { ...topic, stories: [story] } as TopicWithStories,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    const message = (
+      h.anthropic.streamMessage.mock.calls[0][0] as { userMessage: string }
+    ).userMessage;
+    expect(message).toContain('(none — this topic has one story)');
+  });
 
   it('renders the rebuilt history as the prior conversation block', async () => {
     const message = await interviewerMessage([
