@@ -37,6 +37,17 @@ jobs:
       - name: Typecheck API
         run: npx tsc --noEmit -p apps/api/tsconfig.json
 
+      # Typechecking is not building. `nest build --builder swc` resolves and
+      # loads @swc/cli and @swc/core, and @swc/core ships platform specific
+      # native binaries, so a build that works on a developer's macOS says
+      # nothing about Render's linux x64. A dev dependency bump broke exactly
+      # this on 2026-08-30: every check here passed, main merged, and the
+      # deploy failed on `Failed to load "@swc/cli" and/or "@swc/core"`. This
+      # runner is ubuntu, the same as Render's builder, so running the real
+      # build is what closes that gap.
+      - name: Build API (same builder Render runs)
+        run: npm run build --workspace=apps/api
+
       - name: Typecheck web
         run: npx tsc --noEmit -p apps/web/tsconfig.json
 
