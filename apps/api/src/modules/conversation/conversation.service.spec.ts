@@ -4,7 +4,10 @@ import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AiProvider } from '../anthropic/ai-provider.interface';
 import type { DailyUsageService } from '../daily-usage/daily-usage.service';
-import type { TopicWithStories } from './conversation.service';
+import type {
+  HistoryTurn,
+  TopicWithStories,
+} from './conversation.service';
 
 // PrismaService is only referenced through constructor injection; the real
 // module drags in the generated Prisma client, which no test may touch.
@@ -36,18 +39,28 @@ const story = {
   requiredFraming: null,
 } as TopicWithStories['stories'][number];
 
+const otherStory = {
+  id: 'story-2',
+  title: 'Realtime collaboration',
+  engagement: 'Product Forge',
+  summary: 'Built the collaborative editing layer.',
+  ownership: StoryOwnership.CONTRIBUTED,
+  requiredFraming: 'contributed to',
+} as TopicWithStories['stories'][number];
+
 const topic: TopicWithStories = {
   id: 'topic-1',
   slug: 'engineering',
   label: 'Engineering',
   description: 'How Tony builds things.',
-  stories: [story],
+  stories: [story, otherStory],
 } as unknown as TopicWithStories;
 
 function makeHarness() {
   const prisma = {
     $transaction: jest.fn().mockResolvedValue([]),
     conversationTurn: {
+      findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn((args: unknown) => ({ __op: 'update', args })),
       create: jest.fn((args: unknown) => ({ __op: 'create', args })),
       delete: jest.fn().mockResolvedValue(undefined),
@@ -222,5 +235,88 @@ describe('ConversationService.generateTurnPair', () => {
       });
       logSpy.mockRestore();
     });
+  });
+});
+
+describe('ConversationService.loadHistory (spec 0012 AC-3)', () => {
+  beforeAll(() => {
+    Logger.overrideLogger(false);
+  });
+
+  it('returns nothing when no conversationId is given, without querying', async () => {
+    const h = makeHarness();
+    await expect(h.service.loadHistory(undefined)).resolves.toEqual([]);
+    expect(h.prisma.conversationTurn.findMany).not.toHaveBeenCalled();
+  });
+
+  it('a known conversationId with no persisted rows behaves like a new conversation', async () => {
+    const h = makeHarness();
+    h.prisma.conversationTurn.findMany.mockResolvedValue([]);
+    await expect(h.service.loadHistory('conv-unknown')).resolves.toEqual([]);
+  });
+
+  it('orders by turnIndex, interviewer before Tony within a pair, whatever order the rows arrive in', async () => {
+    const h = makeHarness();
+    h.prisma.conversationTurn.findMany.mockResolvedValue([
+      { turnIndex: 1, role: ConversationRole.TONY, text: 'A2' },
+      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1' },
+      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: 'Q2' },
+      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1' },
+    ]);
+
+    await expect(h.service.loadHistory('conv-1')).resolves.toEqual([
+      { role: 'interviewer', text: 'Q1' },
+      { role: 'tony', text: 'A1' },
+      { role: 'interviewer', text: 'Q2' },
+      { role: 'tony', text: 'A2' },
+    ]);
+  });
+
+  it('skips the empty placeholder row prepareTurn reserves before generation', async () => {
+    const h = makeHarness();
+    h.prisma.conversationTurn.findMany.mockResolvedValue([
+      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1' },
+      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1' },
+      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: '' },
+    ]);
+
+    await expect(h.service.loadHistory('conv-1')).resolves.toEqual([
+      { role: 'interviewer', text: 'Q1' },
+      { role: 'tony', text: 'A1' },
+    ]);
+  });
+});
+
+describe('interviewer user message (spec 0012 AC-3)', () => {
+  beforeAll(() => {
+    Logger.overrideLogger(false);
+  });
+
+  async function interviewerMessage(history: HistoryTurn[] = []) {
+    const h = makeHarness();
+    h.anthropic.streamMessage
+      .mockResolvedValueOnce({ text: 'q', inputTokens: 1, outputTokens: 1 })
+      .mockResolvedValueOnce({ text: 'a', inputTokens: 1, outputTokens: 1 });
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history,
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    return (
+      h.anthropic.streamMessage.mock.calls[0][0] as { userMessage: string }
+    ).userMessage;
+  }
+
+  it('renders the rebuilt history as the prior conversation block', async () => {
+    const message = await interviewerMessage([
+      { role: 'interviewer', text: 'Q1' },
+      { role: 'tony', text: 'A1' },
+    ]);
+
+    expect(message).toContain('Prior conversation:\nInterviewer: Q1\nTony: A1');
   });
 });

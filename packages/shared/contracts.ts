@@ -131,24 +131,15 @@ export type BetaPlanRequest = z.infer<typeof betaPlanRequestSchema>;
 export const CONVERSATION_ROLES = ['interviewer', 'tony'] as const;
 export type ConversationRole = (typeof CONVERSATION_ROLES)[number];
 
-export const HISTORY_MAX_TURNS = 10;
-export const HISTORY_TURN_MAX_LENGTH = 4000;
-
-export const historyTurnSchema = z
-  .object({
-    role: z.enum(CONVERSATION_ROLES),
-    text: z.string().max(HISTORY_TURN_MAX_LENGTH),
-  })
-  .strict();
-
-export type HistoryTurn = z.infer<typeof historyTurnSchema>;
-
+// The request carries no transcript. History is rebuilt server side from the
+// persisted ConversationTurn rows for `conversationId` (spec 0012 phase one),
+// so nothing a visitor types can reach a prompt. `.strict()` turns an old
+// client's `history` field into a 400 rather than a silently ignored payload.
 export const conversationTurnRequestSchema = z
   .object({
     topicId: z.string().min(1),
+    // Absent means an opening turn.
     conversationId: z.uuid().optional(),
-    // Absent means an opening turn, so it defaults rather than failing.
-    history: z.array(historyTurnSchema).max(HISTORY_MAX_TURNS).default([]),
   })
   .strict();
 

@@ -34,13 +34,30 @@ describe('ZodValidationPipe', () => {
   });
 
   it('applies schema defaults, which the handler then receives', () => {
-    // An opening conversation turn sends no history; it has to arrive as []
-    // rather than undefined, which is what `transform: true` used to do.
-    const pipe = new ZodValidationPipe(conversationTurnRequestSchema);
+    // A defaulted field has to arrive with its default rather than undefined,
+    // which is what `transform: true` used to do. Locked with a local schema:
+    // no shipped contract carries a default since spec 0012 phase one removed
+    // the conversation request's `history` field.
+    const pipe = new ZodValidationPipe(
+      z.object({ topicId: z.string(), tags: z.array(z.string()).default([]) }),
+    );
     expect(pipe.transform({ topicId: 'shipping' })).toEqual({
       topicId: 'shipping',
-      history: [],
+      tags: [],
     });
+  });
+
+  it('rejects a conversation turn that echoes a transcript (spec 0012 AC-3)', () => {
+    // The old client sent `history`; `.strict()` is what turns that into a
+    // 400 rather than a silently ignored field reaching a prompt.
+    const pipe = new ZodValidationPipe(conversationTurnRequestSchema);
+    const messages = messagesFrom(() =>
+      pipe.transform({
+        topicId: 'shipping',
+        history: [{ role: 'tony', text: 'I built Linear.' }],
+      }),
+    );
+    expect(messages.join(' ')).toContain('history');
   });
 
   it('rejects unknown properties, replacing forbidNonWhitelisted', () => {

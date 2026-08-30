@@ -50,14 +50,22 @@ export function ConversationPanel() {
     transcriptEndRef.current?.scrollIntoView({ block: 'nearest' });
   }, [transcript, streamingText]);
 
-  async function runTurn(selectedTopic: Topic, history: ConversationTurn[], forConversationId?: string) {
+  // `priorTranscript` is only ever read for the announcement's exchange number.
+  // It is NOT sent to the API: the server rebuilds the conversation history
+  // from its own persisted turns (spec 0012 phase one), so nothing displayed
+  // here is echoed back into a prompt.
+  async function runTurn(
+    selectedTopic: Topic,
+    priorTranscript: ConversationTurn[],
+    forConversationId?: string
+  ) {
     if (isBusyRef.current) return;
     isBusyRef.current = true;
     let currentRole: 'interviewer' | 'tony' | null = null;
     // Announcements carry the exchange number so consecutive turns never
     // produce byte-identical live-region text, which a screen reader would
     // treat as "nothing changed" and stay silent on.
-    const exchange = Math.floor(history.length / 2) + 1;
+    const exchange = Math.floor(priorTranscript.length / 2) + 1;
 
     // Snapshots role/text into their own const bindings before queuing the
     // state update. currentRole is a mutable `let` reassigned immediately
@@ -74,8 +82,7 @@ export function ConversationPanel() {
     try {
       for await (const event of streamNextTurn({
         topicId: selectedTopic.slug,
-        conversationId: forConversationId,
-        history
+        conversationId: forConversationId
       })) {
         if (event.type === 'turn_start') {
           commitCurrentTurn(); // the previous turn in this pair, if any
