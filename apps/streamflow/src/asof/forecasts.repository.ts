@@ -58,3 +58,44 @@ export async function forecastsAsOf(
     ORDER BY "gaugeId", "validTime", "leadHours", "model", "recordedAt" DESC
   `);
 }
+
+/**
+ * The earliest `validTime` the store holds for each lead, at one gauge and
+ * model. The archive's real boundary, measured rather than assumed (AC-R6).
+ *
+ * The boundary is staggered per lead and it is not the date `BACKFILL_START`
+ * names. A lead of N days needs N days of prior runs behind it before Open-Meteo
+ * can serve one, so the 72 hour lead begins later than the 24 hour lead, and
+ * both begin later than the first hour the service returns anything at all.
+ * Pinning any of those as a constant was already wrong once, in a comment this
+ * child corrects, and it would go wrong again the moment the service extends or
+ * trims its archive.
+ *
+ * Grouped rather than asked once per lead, so the whole answer costs one
+ * statement in the spirit of AC-R16, and the leads are the ones the store
+ * actually holds rather than the ones a constant expected. A lead with no rows
+ * has no boundary and is absent from the map, which is the honest answer: it
+ * says nothing is usable yet, not that everything is.
+ *
+ * `MIN` is safe over this append only table without a reduction first. The
+ * reduction in AC-R7 exists because summing revisions double counts, and a
+ * minimum is indifferent to how many rows share the hour it picks.
+ */
+export async function firstForecastValidTimes(
+  prisma: ForecastReader,
+  gaugeId: string,
+  model: string,
+): Promise<ReadonlyMap<number, Date>> {
+  const rows = await prisma.$queryRaw<{ leadHours: number; firstValidTime: Date }[]>(
+    Prisma.sql`
+      SELECT "leadHours", MIN("validTime") AS "firstValidTime"
+      FROM "weather_forecasts"
+      WHERE "gaugeId" = ${gaugeId}
+        AND "model" = ${model}
+      GROUP BY "leadHours"
+      ORDER BY "leadHours"
+    `,
+  );
+
+  return new Map(rows.map((row) => [row.leadHours, row.firstValidTime]));
+}
