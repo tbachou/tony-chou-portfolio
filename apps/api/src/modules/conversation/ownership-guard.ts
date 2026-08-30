@@ -45,24 +45,36 @@ const UNVERIFIED_USER_FIGURE = /\b(?:over |about |around )?500\+? users\b/;
 const PRODUCT_FORGE_NUMERIC_CLAIM = /\d+%|\$[\d,]+/;
 
 /**
- * Whether a figure at `index` is being REJECTED rather than claimed.
+ * Whether the figure at `index` is being REJECTED rather than claimed.
  *
  * A substring blocklist cannot tell "we shipped to 500 users" from "the reach
- * was much bigger than 500 users" — and the second is the answer we want. The
- * bait cases exist to provoke the figure, so the correct answer names it in
- * order to deny it, and firing there scores a right answer as a lie and
- * replaces it with the fallback.
+ * was much bigger than 500 users", and the second is the answer we want: the
+ * bait cases provoke the figure, so a correct answer names it in order to deny
+ * it. Firing there scores a right answer as a lie and hands the visitor a
+ * canned deflection instead.
  *
- * Deliberately narrow: only a contrast or negation marker in the short run of
- * text immediately before the figure counts. Anything further away is not
- * reliably about this figure, and a wider window would start excusing real
- * claims that merely sit in a sentence containing the word "not".
+ * A WHITELIST of denial forms, not a negation detector. Enumerating negation
+ * is a losing game: an earlier attempt allowed bare `than`, which let "more
+ * than 500 users" and "no fewer than 500 users" through — the most idiomatic
+ * phrasings of the exact claim this guard exists to stop. Comparatives are
+ * ambiguous by nature ("bigger than" corrects upward, "more than" asserts), so
+ * only the correcting forms are listed and `more`/`fewer`/`beyond` are not.
+ *
+ * Every marker must sit IMMEDIATELY before the figure (`\s*$`). That adjacency
+ * is what stops a negation belonging to another clause from excusing a claim:
+ * "not only 500 users", "I can't overstate it: 500 users" and "it never dipped
+ * below 500 users" all still block, because the marker is not adjacent.
+ *
+ * Deliberately asymmetric. A denial phrased with the marker AFTER the figure
+ * ("500 users is not the number") still blocks. That is the safe direction to
+ * fail: the visitor gets the fallback instead of a good answer, rather than a
+ * false claim reaching them.
  */
 function isRejectedFigure(lower: string, index: number): boolean {
   const preceding = lower.slice(Math.max(0, index - 30), index);
-  // `n't` carries no leading word boundary on purpose: in "wasn't" the `s` and
-  // `n` are both word characters, so `\bn't` never matches a contraction.
-  return /(?:\b(?:than|not|never|beyond|nowhere near|rather than)\b|n't)[^.]{0,15}$/.test(
+  // `n't` carries no leading word boundary: in "wasn't" the `s` and `n` are
+  // both word characters, so `\bn't` never matches a contraction.
+  return /(?:nowhere near|rather than|(?:much |far |way )?(?:bigger|larger) than|n't|\bnot\b(?! only)|\bnever\b)\s*$/.test(
     preceding,
   );
 }
@@ -95,6 +107,17 @@ const CURRENT_CLINICAL_CREDENTIAL = new RegExp(
 
 export type GuardResult = { ok: true } | { ok: false; reason: string };
 
+/**
+ * Whether a response is visually blank. Not `trim()`: that strips the Unicode
+ * White_Space set but leaves format and combining characters, so a reply of a
+ * single zero-width space renders as nothing while passing every length check.
+ * `\p{Cf}` covers the zero-width and directional-format characters, `\p{Mn}` a
+ * bare combining mark with nothing to combine with.
+ */
+export function isBlankResponse(text: string): boolean {
+  return text.replace(/[\s\p{Cf}\p{Mn}]/gu, '').length === 0;
+}
+
 export function evaluateTonyResponse(
   text: string,
   story: StoryModel,
@@ -106,7 +129,7 @@ export function evaluateTonyResponse(
   // to the same fallback every other guard failure uses, so a persisted Tony
   // row is always non-empty and a blank row means one thing only: a slot
   // reserved but never generated.
-  if (text.trim().length === 0) {
+  if (isBlankResponse(text)) {
     return { ok: false, reason: 'empty response' };
   }
 
@@ -133,10 +156,16 @@ export function evaluateTonyResponse(
     };
   }
 
-  const forgeNumber = story.engagement.includes('Product Forge')
-    ? PRODUCT_FORGE_NUMERIC_CLAIM.exec(text)
-    : null;
-  if (forgeNumber && !isRejectedFigure(lower, forgeNumber.index)) {
+  // No rejection suppression here, deliberately. The rule tony.md states is
+  // "never state a fabricated number or percentage" — a genuine denial
+  // satisfies that by omitting the number, so there is no correct answer that
+  // needs one. Suppressing here would make ANY number excusable, since the
+  // pattern matches every digit, and fabricating a Product Forge figure is the
+  // named hard rule.
+  if (
+    story.engagement.includes('Product Forge') &&
+    PRODUCT_FORGE_NUMERIC_CLAIM.test(text)
+  ) {
     return {
       ok: false,
       reason: 'unverified numeric business outcome for Product Forge',
