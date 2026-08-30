@@ -102,19 +102,44 @@ function isRejectedFigure(lower: string, index: number): boolean {
  * "license" and "OT" appear constantly in honest answers — so proximity alone
  * means nothing. Every branch requires BOTH a present-tense self-attribution
  * and CLINICAL, and none may span NEG.
+ *
+ * KNOWN CEILING, read before extending this. Eight rounds of adversarial review
+ * found real bugs in every round, and after the first, most were introduced by
+ * the previous round's fix. The regressions land in the same two places every
+ * time: this file's two open-ended enumerations — NEG's word list and the
+ * identity branch's noun exclusion. Both are attempts to enumerate natural
+ * language ("which words mean this is a denial", "which words mean this OT
+ * is not a claim"), neither can be completed, and each addition is itself
+ * either a new bypass or a new blind spot.
+ *
+ * NEG also does two incompatible jobs in one token: it is a hard sentence-scope
+ * limiter (`[^.?!]`) AND a semantic denial test (the word list), reused across
+ * every branch, so tuning one job moves the other.
+ *
+ * Concretely accepted, because a word list cannot have both: `no` stays in NEG
+ * so "I have no OT license" passes, which means "I have, with no interruption,
+ * held an OT license" escapes. A false positive on a sentence he would really
+ * say is worse than a false negative on one nobody writes.
+ *
+ * So: adding another alternative here is very likely to break something else.
+ * The real fix is a second layer that can read a sentence — a small structured
+ * call answering one narrow question — with this regex demoted to a cheap first
+ * filter. Until that exists, prefer tightening skills/tony.md over adding a
+ * branch here, and never change this file without re-running the adversarial
+ * pass in /predeploy-audit.
  */
 
 /** A clinical credential noun. `ot` needs both boundaries: without the
  *  lookbehind it matches inside "remote", "note", "robot", "screenshot". */
 const CLINICAL =
-  '(?:occupational therap(?:y|ist)|occupational therapy practitioner|(?<![-\\w])otr(?:/l)?(?![-\\w])|(?<![-\\w])o[./]?t\\.?(?![-\\w.])|c/ndt|nbcot)';
+  '(?:occupational therap(?:y|ist)|occupational therapy practitioner|(?<![-\\w])otr(?:/l)?(?![-\\w])|(?<![-\\w])o[./]?t(?![-\\w])|c/ndt|nbcot)';
 
 /** Characters a window may span, stopping at a sentence end or any marker that
  *  makes the sentence past tense or a denial. This is what keeps "I have not
  *  held an occupational therapy license since 2019" — the most natural true
  *  sentence about the lapsed licence — out of the hold/have branch. */
 const NEG =
-  '(?:(?!\\b(?:not|never|no|no longer|used to|former|was|were|expired|lapsed|inactive|dormant)\\b)[^.])';
+  '(?:(?!\\b(?:not|never|no|no longer|used to|former|was|were|expired|lapsed|inactive|dormant)\\b)[^.?!])';
 
 /** A credential adjective. */
 const HELD = '(?:licen[sc]ed|registered|certified|practi[cs]ing)';
@@ -130,7 +155,7 @@ const CURRENT_CLINICAL_CREDENTIAL = new RegExp(
     `\\bi(?:'m| am) (?:still|currently) licen[sc]ed\\b(?! (?:under|to|for|as a [a-z]+ (?:driver|operator|pilot)))`,
     // "I am an occupational therapist", "I'm still an OT". A following noun
     // means the OT qualifies it rather than naming him: "OT alum", "OT school".
-    `\\bi(?:'m| am) (?:still |currently )?(?:an? )?(?:${HELD} )?${CLINICAL}(?! (?:alum|alumni|school|program|programme|student|graduate|grad|curriculum|degree|background|training|turned|by)\\b)`,
+    `\\bi(?:'m| am) (?:still |currently )?(?:an? )?(?:${HELD} )?${CLINICAL}(?! (?:(?:alum|alumni|school|program|programme|student|graduate|grad|curriculum|degree|background|training|turned)\\b|by (?:training|background|education|schooling|degree)\\b))`,
     // "I remain a licensed OT"
     `\\bi remain (?:an? )?(?:${HELD} )?${CLINICAL}`,
     // "I hold a current OT license", "I have an active NBCOT certification",
