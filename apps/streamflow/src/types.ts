@@ -45,3 +45,42 @@ export interface StoredObservation {
  * only caller. Everything else takes the default and gets the strict rule.
  */
 export type KnowabilityAxis = 'recordedAt' | 'validTime';
+
+/**
+ * One hourly forecast value as it arrived from Open-Meteo, before the store has
+ * seen it.
+ *
+ * `leadHours` is canonical: `issuedAt` is derived from it at write time, never
+ * the other way round. Deriving in the other direction would let a rounding
+ * difference forge a duplicate the unique key could not catch.
+ *
+ * `tempC` is optional because the column can be null for an hour the model did
+ * not cover. It is deliberately `undefined` rather than `null` so the diff has
+ * one absent value to reason about, and AC-R3 makes that equal to a stored
+ * null.
+ */
+export interface ForecastValue {
+  validTime: Date;
+  leadHours: number;
+  precipMm: number;
+  tempC?: number;
+}
+
+/**
+ * One forecast value as the store holds it, carrying all three time axes.
+ *
+ * `gaugeId` and `model` are part of the type for the same reason `gaugeId` is
+ * part of `StoredObservation`: the reduction to one row per hour must partition
+ * by them, and omitting either stays correct until a second gauge or a second
+ * model exists and then goes quietly wrong.
+ */
+export interface StoredForecast {
+  gaugeId: string;
+  validTime: Date;
+  leadHours: number;
+  issuedAt: Date;
+  recordedAt: Date;
+  precipMm: number;
+  tempC: number | null;
+  model: string;
+}
