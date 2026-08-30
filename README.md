@@ -1,0 +1,62 @@
+# Tony Chou, interactive portfolio
+
+A portfolio built as working software rather than a page about software. The centerpiece is an interview simulator where an AI interviewer and an AI version of me talk through my real work, grounded in a curated corpus of verified stories, with a code level guard that stops the AI from claiming credit I did not earn.
+
+**Live**: https://tony-chou-portfolio-web.vercel.app
+
+The interesting parts of this repo are the honesty guard, the eval suite that measures it, and the specs that record why each decision was made. Those are under [What to look at](#what-to-look-at).
+
+## What is here
+
+A npm workspaces monorepo, TypeScript throughout, Node 22 or newer.
+
+| Workspace | Stack | What it does |
+|---|---|---|
+| `apps/web` | Next.js 15, React 19, Tailwind, React Three Fiber | The site: portfolio, project case studies, the interview simulator, and the live demos below |
+| `apps/api` | NestJS 11, Prisma 7 on Postgres, Anthropic SDK | Conversation engine, the ownership guard, rate limits and usage caps, the AI pipelines behind each demo |
+| `apps/streamflow` | TypeScript, Prisma on Postgres | The river forecast pipeline behind the Streamflow dashboard: ingest, rescan, predict |
+| `packages/shared` | zod | Request contracts both sides validate against, so the client and server cannot drift |
+| `infra/lambda/feedback-classifier` | AWS Lambda | Feedback classification, the AWS side of spec 0005 |
+
+Three demos run live, no install and no signup:
+
+- **Interview simulator** (`/`): pick a topic and watch the two AI voices work through it, streamed token by token.
+- **Beta** (`/beta`): a return to climbing rehab planner. A three agent pipeline, screener then drafter then coach, with a red flag hard block. Nothing a visitor types is stored.
+- **Streamflow** (`/streamflow`): river forecasts with a skill chart and an as of rewind slider. Prediction intervals are seeded by a hindcast over backfilled history, so they exist on day one rather than after months of live scoring, and a prediction whose interval is not yet seeded says so. Deliberately no LLM; the forecasting is statistical, and the reason is written down in spec 0010.
+
+## What to look at
+
+If you are evaluating how I work, these three are the shortest path.
+
+**The ownership guard** ([`apps/api/src/modules/conversation/ownership-guard.ts`](apps/api/src/modules/conversation/ownership-guard.ts)). An AI playing me is a resume that can hallucinate, so the honesty is enforced in code and not only asked for in a prompt. Every generated answer is checked against a never claim list and an ownership rule: a story I contributed to rather than owned must carry a hedge, and an unhedged sole credit verb fails. On failure the visitor sees a pre written honest answer instead of the model's output. It is a blocklist, not language understanding, and the file says so.
+
+**The eval suite** ([`docs/evals/interview/`](docs/evals/interview/), spec 0011). The guard is only worth something if it is measured, so a golden dataset of 20 hand curated cases runs through the real production code path and is scored on honesty, grounding, and persona, by a code scorer plus two LLM judges. Results and a scoreboard are committed so any prompt or model change can be compared against a baseline, with a published noise band so small deltas are not read as progress. The latest run scores honesty 1.00, grounding 0.97, persona 0.95 across 20 cases, at about 19 cents a run. Five of those cases are bait, written to provoke an overclaim.
+
+**The specs** ([`docs/specs/_root/`](docs/specs/_root/)). Every significant decision has a spec with the options considered and the reasoning, including the ones that were rejected. [0008](docs/specs/_root/0008-beta-clinical-evidence-check/index.md) is the most useful to read: a clinical evidence checker that was fully specced, cross checked, then deliberately not built, because a licence audit found the citable corpus does not exist. Deciding not to build something is also an engineering decision, and it is recorded the same way.
+
+## Running it
+
+```bash
+nvm use 22
+npm install
+npm run dev:api   # NestJS on :3001
+npm run dev:web   # Next.js on :3000
+```
+
+The api needs a Postgres database and an Anthropic API key; see `apps/api/.env.example`. Tests are fully mocked and need neither.
+
+```bash
+npm run lint
+npm test --workspace=apps/api
+npx tsc --noEmit -p apps/api/tsconfig.json
+```
+
+## How it is built
+
+Specs live in `docs/specs/`, and the project context that AI tools read lives in [AGENTS.md](AGENTS.md) plus a nested one per workspace. A good deal of this repo was built with AI agents working against those specs, which is why the context files and the workflow around them are as much a part of the project as the application code.
+
+## Notes
+
+Deliberately not here: any content a visitor typed. The conversation engine persists anonymous counters and hashed IPs, never visitor text. The eval dataset is authored in the repo rather than harvested.
+
+First person text inside `docs/evals/` is generated by a model under test, not a claim by me.
