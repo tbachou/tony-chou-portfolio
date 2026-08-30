@@ -34,7 +34,7 @@ export interface IngestResult {
  * An upsert rather than a seed script, so a fresh database and a redeploy take
  * the same path and the gauge's own attributes stay owned by one place.
  */
-async function ensureGauge(prisma: PrismaClient) {
+export async function ensureGauge(prisma: PrismaClient) {
   return prisma.gauge.upsert({
     where: { usgsSiteId: GAUGE.usgsSiteId },
     update: {

@@ -129,3 +129,48 @@ export const ISSUE_INTERVAL_HOURS = 6;
  * for skill and calibration alike.
  */
 export const SKILL_DEFAULT_WINDOW_DAYS = 90;
+
+/**
+ * Open-Meteo's Previous Runs service, pinned as a constant (AC-R1).
+ *
+ * Pinned rather than assembled, because the ordinary forecast host answers the
+ * same query shape with fresh runs, and a row fetched from it would carry a
+ * lead of zero while looking exactly like an honest one.
+ */
+export const OPEN_METEO_PREVIOUS_RUNS_ENDPOINT =
+  'https://previous-runs-api.open-meteo.com/v1/forecast';
+
+/**
+ * The one weather model this archive is built from, stored literally on every
+ * row (AC-R12).
+ *
+ * Never `best_match`. That is a selector, not a model: which model backs it can
+ * change as Open-Meteo extends coverage, so a row from 2024 and a row from 2026
+ * could come from different physics under one label, putting a silent
+ * inhomogeneity into a training set of only two and a half years.
+ */
+export const OPEN_METEO_MODEL = 'gfs_seamless';
+
+/**
+ * The shortest lead this pipeline will store, in hours.
+ *
+ * Rain arriving with a shorter lead is knowledge from the future wearing a
+ * forecast's clothes. Enforced here in the parser and again by a check
+ * constraint on the table, because the two catch different mistakes (AC-R2).
+ */
+export const MIN_LEAD_HOURS = 24;
+
+/**
+ * Rows per weather insert (AC-R16).
+ *
+ * A thousand rather than the observation path's five thousand, bounded by
+ * Postgres's limit of 65,535 parameters in one statement: at this table's ten
+ * columns a chunk of 1,000 binds 10,000, which leaves ample headroom if a
+ * column is added later.
+ *
+ * The bound exists for cost, not elegance. The hosted store bills by operation
+ * on a free tier of 200,000 a month, so writing the backfill's roughly 70,000
+ * rows one at a time would spend about a third of a month's allowance in a
+ * single run. Batched, the whole archive costs on the order of hundreds.
+ */
+export const WEATHER_INSERT_BATCH_SIZE = 1_000;
