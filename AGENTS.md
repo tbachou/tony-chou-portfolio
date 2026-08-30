@@ -29,6 +29,7 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 - commit: per milestone, only after typecheck + lint + tests pass; several small logical commits over one broad one
 - push/deploy: only on an explicit ask — a push to main deploys web (Vercel) and api (Render, which runs `prisma migrate deploy`)
 - gate: run `/predeploy-audit` before any push that ships user-facing changes
+- **this repo is PUBLIC (since 2026-08-29), so every push is publication.** Audit every commit, push, and PR before the action: read the staged diff rather than trusting `git add -A`; check for real credential patterns (`sk-ant-`, `AKIA`, `BETTER_AUTH_SECRET=`, `postgres://`, any `.env` that is not `.env.example`) and confirm each hit is a placeholder; and check for personal or operational content that is not product work (job search state, client or employer detail beyond the verified story corpus, generated model text in `docs/evals/`). For a PR, audit the whole branch against `origin/main`, since merging publishes every commit on it. Deleting later does not unpublish: clones, forks, and caches keep it. When something must be in git but not in public history, use a local branch with no upstream plus a copy outside the repo, and never `git push --all` or `--mirror`.
 
 ## Specs
 
