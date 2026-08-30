@@ -33,9 +33,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Same-repo guard: fork PRs are excluded by design (AC-8).
+    #
+    # `skip-evals` is a deliberate per-PR opt-out for a change that cannot move
+    # the scores (a pure refactor under the watched paths, a comment, a test).
+    # Runs cost real Anthropic budget, so the escape hatch is explicit rather
+    # than a narrower path filter: the prompt is assembled in
+    # conversation.service.ts as well as in the skill files, so narrowing the
+    # paths would silently skip the runs that matter most.
+    #
+    # Labels are read when the event fires. `pull_request` here triggers on
+    # opened/synchronize/reopened, so labelling an open PR does not cancel a
+    # run already in flight; it takes effect from the next push.
+    #
+    # workflow_dispatch always runs the full set: on dispatch there is no
+    # pull_request object, the label list is empty, and the guard passes.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      (
+        github.event_name == 'workflow_dispatch' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      ) &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-evals')
     env:
       # prisma.config.ts resolves env("DATABASE_URL") at load time; `prisma
       # generate` (postinstall) never connects, it just needs the var set.

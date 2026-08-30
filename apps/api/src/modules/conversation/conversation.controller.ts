@@ -55,7 +55,7 @@ export class ConversationController {
     // Rebuilt from the persisted rows, never echoed by the client (spec 0012
     // phase one, AC-3). Read before prepareTurn reserves this turn's slot, so
     // the empty placeholder row it writes is not part of the transcript.
-    const history = await this.conversationService.loadHistory(
+    const conversation = await this.conversationService.loadConversation(
       body.conversationId,
     );
 
@@ -65,7 +65,7 @@ export class ConversationController {
     const prepared = await this.conversationService.prepareTurn({
       topic,
       conversationId: body.conversationId,
-      history,
+      conversation,
       hashedIp,
     });
 
@@ -78,7 +78,7 @@ export class ConversationController {
     await this.conversationService.generateTurnPair({
       topic,
       prepared,
-      history,
+      history: conversation.turns,
       hashedIp,
       emit: (event, data) => writeSseEvent(res, event, data),
     });

@@ -39,6 +39,32 @@ const NEVER_CLAIM_PHRASES = [
 
 const PRODUCT_FORGE_NUMERIC_CLAIM = /\d+%|\$[\d,]+/;
 
+/**
+ * Present-tense claims of clinical credentials Tony does not hold. He no
+ * longer practices, his OT licence is not current, and his C/NDT certification
+ * is expired (the never-claim list in skills/tony.md leads with this; it is the
+ * only item there that misrepresents a real regulated qualification).
+ *
+ * Anchored on TENSE, not on the credential words. "I was a licensed
+ * occupational therapist for six years" is true and must pass; blocklisting
+ * "licensed occupational therapist" outright would suppress the honest answer
+ * and teach the guard to fire on the truth. Every pattern therefore requires a
+ * present-tense subject ("I am", "I'm", "I still") or a present-tense copula
+ * ("is current"), so a past-tense or negated sentence never matches.
+ */
+const CURRENT_CLINICAL_CREDENTIAL = new RegExp(
+  [
+    // "I am a licensed occupational therapist", "I'm currently licenced"
+    "\\bi(?:'m| am) (?:an? )?(?:currently )?licen[sc]ed\\b",
+    // "I am an occupational therapist", "I'm an OT"
+    "\\bi(?:'m| am) (?:an? )?(?:occupational therapist|ot)\\b",
+    // "I still practice", "I currently treat patients"
+    "\\bi (?:still|currently) (?:practi[cs]e|treat|see patients)\\b",
+    // "my OT licence is current", "my C/NDT is still valid"
+    "\\bmy [^.]{0,40}(?:licen[sc]e|certification|c/ndt) is (?:still )?(?:current|active|valid|up to date)\\b",
+  ].join("|"),
+);
+
 export type GuardResult = { ok: true } | { ok: false; reason: string };
 
 export function evaluateTonyResponse(
@@ -51,6 +77,13 @@ export function evaluateTonyResponse(
     if (lower.includes(phrase)) {
       return { ok: false, reason: `never claim blocklist match: "${phrase}"` };
     }
+  }
+
+  if (CURRENT_CLINICAL_CREDENTIAL.test(lower)) {
+    return {
+      ok: false,
+      reason: 'present-tense clinical credential Tony does not hold',
+    };
   }
 
   if (
