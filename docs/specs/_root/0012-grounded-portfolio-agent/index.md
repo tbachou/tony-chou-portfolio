@@ -1,7 +1,7 @@
 # 0012. Grounded portfolio agent
 
 **Date**: 2026-08-29
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

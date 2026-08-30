@@ -56,11 +56,14 @@ export type SseTurnEvent =
  * Consumes POST /conversation/turn's SSE stream as it arrives. Yields one
  * event per `event:`/`data:` block; the caller drives its own UI state off
  * each event rather than waiting for a single final response.
+ *
+ * The transcript is deliberately NOT sent: the API rebuilds it from its own
+ * persisted turns for `conversationId` (spec 0012 phase one). The contract is
+ * `.strict()`, so sending one is a 400.
  */
 export async function* streamNextTurn(params: {
   topicId: string;
   conversationId?: string;
-  history: ConversationTurn[];
 }): AsyncGenerator<SseTurnEvent> {
   const res = await fetch(`${API_URL}/conversation/turn`, {
     method: 'POST',

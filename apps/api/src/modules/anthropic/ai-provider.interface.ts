@@ -115,3 +115,28 @@ export function resolveConfiguredProvider(): {
     model: process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL,
   };
 }
+
+/**
+ * Every input token the model actually processed, cached or not.
+ *
+ * Both providers mark the system block `cache_control: ephemeral`, and the
+ * API reports a cache hit under `cache_read_input_tokens` rather than
+ * `input_tokens`. Reading `input_tokens` alone therefore under-counts by the
+ * whole cached prefix once a prompt crosses the 1024-token minimum — measured
+ * at 1033 (interviewer) and 1458 (Tony) tokens vanishing per turn pair, which
+ * silently weakens the daily spend backstop that consumes this number.
+ *
+ * This is a token count, not a cost model: cache reads bill at a fraction of
+ * a fresh input token, so the daily cap it feeds is conservative by design.
+ */
+export function totalInputTokens(usage: {
+  input_tokens: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+}): number {
+  return (
+    usage.input_tokens +
+    (usage.cache_read_input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0)
+  );
+}

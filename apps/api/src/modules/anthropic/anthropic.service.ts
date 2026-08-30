@@ -7,6 +7,7 @@ import {
   type ForceToolCallResult,
   type StreamMessageParams,
   type StreamMessageResult,
+  totalInputTokens,
   type UpstreamErrorClassification,
 } from './ai-provider.interface';
 
@@ -71,7 +72,7 @@ export class AnthropicService implements AiProvider {
 
     return {
       text,
-      inputTokens: finalMessage.usage.input_tokens,
+      inputTokens: totalInputTokens(finalMessage.usage),
       outputTokens: finalMessage.usage.output_tokens,
     };
   }
@@ -143,7 +144,7 @@ export class AnthropicService implements AiProvider {
 
     return {
       input: block.input,
-      inputTokens: message.usage.input_tokens,
+      inputTokens: totalInputTokens(message.usage),
       outputTokens: message.usage.output_tokens,
     };
   }
