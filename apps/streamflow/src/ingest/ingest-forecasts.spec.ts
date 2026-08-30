@@ -201,3 +201,97 @@ describe('ingestForecastMonth', () => {
     expect(createMany.data[0].recordedAt).toEqual(ticks[1]);
   });
 });
+
+/**
+ * The month in progress. Open-Meteo answers a request whose end_date is within
+ * fifteen days of today, and answers it with fully populated FUTURE hours, so
+ * an unguarded ingest both looks complete and stores rows that were never
+ * forecast at the lead they claim.
+ */
+describe('ingestForecastMonth, month still in progress', () => {
+  const AUGUST = new Date('2026-08-01T00:00:00.000Z');
+  const NOW = new Date('2026-08-30T12:00:00.000Z');
+  const AUGUST_HOURS = 744;
+
+  const at = (now: Date) => () => now;
+
+  it('never asks for an hour that has not happened yet', async () => {
+    const { prisma } = countingPrisma();
+    const fetchForecasts = jest.fn(async () => [] as never[]);
+
+    await ingestForecastMonth(
+      { prisma, fetchForecasts: fetchForecasts as never, now: at(NOW) },
+      AUGUST,
+      24,
+    );
+
+    const [window] = fetchForecasts.mock.calls[0] as unknown as [
+      { start: Date; end: Date },
+    ];
+    expect(window.start.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(window.end).toEqual(NOW);
+    // The unclamped month would have ended here, and Open-Meteo rejects a
+    // request that far ahead with a 400 for most of the month.
+    expect(window.end.getTime()).toBeLessThan(
+      new Date('2026-08-31T23:00:00.000Z').getTime(),
+    );
+  });
+
+  it('is PARTIAL even when the response looks complete, so it is never skipped', async () => {
+    const { prisma } = countingPrisma();
+    // A full month's worth of hours, exactly the shape that fooled the first
+    // implementation into recording OK.
+    const values = Array.from({ length: AUGUST_HOURS }, (_, hour) => ({
+      validTime: new Date(AUGUST.getTime() + hour * 3_600_000),
+      leadHours: 24,
+      precipMm: 0,
+      tempC: 1,
+    }));
+
+    const result = await ingestForecastMonth(
+      { prisma, fetchForecasts: (async () => values) as never, now: at(NOW) },
+      AUGUST,
+      24,
+    );
+
+    expect(result.status).toBe('PARTIAL');
+  });
+
+  it('records the run against the whole month, not the clamped request', async () => {
+    const { prisma, runs } = countingPrisma();
+
+    await ingestForecastMonth(
+      { prisma, fetchForecasts: (async () => []) as never, now: at(NOW) },
+      AUGUST,
+      24,
+    );
+
+    expect(runs[0]).toMatchObject({
+      windowStart: new Date('2026-08-01T00:00:00.000Z'),
+      windowEnd: new Date('2026-08-31T23:00:00.000Z'),
+      leadHours: 24,
+    });
+  });
+
+  it('is OK again once the month has fully elapsed', async () => {
+    const { prisma } = countingPrisma();
+    const values = Array.from({ length: AUGUST_HOURS }, (_, hour) => ({
+      validTime: new Date(AUGUST.getTime() + hour * 3_600_000),
+      leadHours: 24,
+      precipMm: 0,
+      tempC: 1,
+    }));
+
+    const result = await ingestForecastMonth(
+      {
+        prisma,
+        fetchForecasts: (async () => values) as never,
+        now: at(new Date('2026-09-02T00:00:00.000Z')),
+      },
+      AUGUST,
+      24,
+    );
+
+    expect(result.status).toBe('OK');
+  });
+});

@@ -45,6 +45,34 @@ export function expectedHourCount(window: IngestWindow): number {
 }
 
 /**
+ * Narrows a window so it never asks for an hour that has not happened yet.
+ *
+ * The backfill chunks by calendar month, and the month in progress runs past
+ * the current instant. Asking for it is wrong twice over. Open-Meteo rejects an
+ * `end_date` more than fifteen days ahead with a 400, which kills the whole
+ * walk for the first half of every month; and when the end does fall inside
+ * that allowance the service answers with fully populated future hours, which
+ * is worse, because they look like a complete month.
+ *
+ * Those future rows are not what they claim. Open-Meteo serves the nearest
+ * available run under the nominal lead label, so an hour that has not happened
+ * yet comes back under `_previous_day1` without having been forecast a day
+ * earlier, and storing it yields a row whose derived `issuedAt` postdates the
+ * `recordedAt` at which we learned it. That inverts the two axes the whole
+ * store exists to keep straight.
+ */
+export function clampWindowTo(window: IngestWindow, now: Date): IngestWindow {
+  return window.end.getTime() <= now.getTime()
+    ? window
+    : { start: window.start, end: new Date(now) };
+}
+
+/** Whether every hour in the window has already happened. */
+export function isWindowElapsed(window: IngestWindow, now: Date): boolean {
+  return window.end.getTime() <= now.getTime();
+}
+
+/**
  * Decides whether a response covered its month (AC-R14).
  *
  * PARTIAL means the service answered but returned fewer non null hours than the
@@ -52,13 +80,22 @@ export function expectedHourCount(window: IngestWindow): number {
  * expected to land here, and that is a fact worth recording rather than a
  * failure worth throwing on.
  *
- * Judged against the whole window and not against what arrived, for the same
- * reason `judgeCompleteness` is: a clean run of hours from before a gap tells
- * you nothing about how much is missing after them.
+ * Judged against the requested window and not against what arrived, for the
+ * same reason `judgeCompleteness` is: a clean run of hours from before a gap
+ * tells you nothing about how much is missing after them.
+ *
+ * A month still in progress can never be OK, however complete the answer looks.
+ * Marking it OK would be a lie the backfill could not take back: the resume rule
+ * skips an OK chunk forever, so the hours that had not happened when it ran
+ * would keep whatever the service said about them and never be replaced by the
+ * real fixed lead values. The month is re-fetched on every run until it ends,
+ * which costs one request and writes nothing once the values stop changing.
  */
 export function judgeForecastCompleteness(
   hoursReturned: number,
-  window: IngestWindow,
+  requested: IngestWindow,
+  monthElapsed: boolean,
 ): 'OK' | 'PARTIAL' {
-  return hoursReturned < expectedHourCount(window) ? 'PARTIAL' : 'OK';
+  if (!monthElapsed) return 'PARTIAL';
+  return hoursReturned < expectedHourCount(requested) ? 'PARTIAL' : 'OK';
 }

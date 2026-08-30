@@ -1,4 +1,3 @@
-import { OPEN_METEO_MODEL } from '../config';
 import { buildPreviousRunsUrl, fetchPreviousRuns, toArchiveDate } from './client';
 
 const WINDOW = {
@@ -16,7 +15,8 @@ describe('buildPreviousRunsUrl', () => {
   it('names the pinned model and never best_match', () => {
     const url = new URL(buildPreviousRunsUrl(WINDOW, 24));
 
-    expect(url.searchParams.get('models')).toBe(OPEN_METEO_MODEL);
+    // The literal, not the constant: comparing the constant against itself
+    // would pass no matter what the builder sent.
     expect(url.searchParams.get('models')).toBe('gfs_seamless');
     expect(buildPreviousRunsUrl(WINDOW, 24)).not.toContain('best_match');
   });
@@ -25,7 +25,6 @@ describe('buildPreviousRunsUrl', () => {
     const hourly = new URL(buildPreviousRunsUrl(WINDOW, 72)).searchParams.get('hourly');
 
     expect(hourly).toBe('precipitation_previous_day3,temperature_2m_previous_day3');
-    expect(hourly?.split(',')).not.toContain('precipitation');
   });
 
   it('pins GMT so the parser and the service agree on the clock', () => {
@@ -83,5 +82,61 @@ describe('fetchPreviousRuns', () => {
     await expect(
       fetchPreviousRuns(WINDOW, 24, fetchImpl as unknown as typeof fetch),
     ).rejects.toThrow(/429/);
+  });
+
+  // Open-Meteo's start_date/end_date have calendar day granularity, so a window
+  // ending mid day returns that whole day. Anything past the window end is an
+  // hour that has not happened yet.
+  it('drops hours past the end of the requested window', async () => {
+    const wholeDay = {
+      hourly: {
+        time: [
+          '2026-08-30T11:00',
+          '2026-08-30T12:00',
+          '2026-08-30T13:00',
+          '2026-08-30T23:00',
+        ],
+        precipitation_previous_day1: [1, 2, 3, 4],
+        temperature_2m_previous_day1: [1, 1, 1, 1],
+      },
+    };
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: true, json: async () => wholeDay });
+
+    const values = await fetchPreviousRuns(
+      {
+        start: new Date('2026-08-01T00:00:00.000Z'),
+        end: new Date('2026-08-30T12:00:00.000Z'),
+      },
+      24,
+      fetchImpl as unknown as typeof fetch,
+    );
+
+    expect(values.map((v) => v.validTime.toISOString())).toEqual([
+      '2026-08-30T11:00:00.000Z',
+      '2026-08-30T12:00:00.000Z',
+    ]);
+  });
+
+  it('drops hours before the start of the requested window', async () => {
+    const payload = {
+      hourly: {
+        time: ['2026-07-31T23:00', '2026-08-01T00:00'],
+        precipitation_previous_day1: [9, 1],
+        temperature_2m_previous_day1: [1, 1],
+      },
+    };
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: true, json: async () => payload });
+
+    const values = await fetchPreviousRuns(
+      {
+        start: new Date('2026-08-01T00:00:00.000Z'),
+        end: new Date('2026-08-31T23:00:00.000Z'),
+      },
+      24,
+      fetchImpl as unknown as typeof fetch,
+    );
+
+    expect(values).toHaveLength(1);
+    expect(values[0].validTime.toISOString()).toBe('2026-08-01T00:00:00.000Z');
   });
 });

@@ -1,6 +1,6 @@
 import { config as loadEnvFile } from 'dotenv';
 
-import { BACKFILL_START, HORIZON_HOURS, OPEN_METEO_MODEL } from '../config';
+import { BACKFILL_START, HORIZON_HOURS } from '../config';
 import { createPrismaClient } from '../db';
 import { sanitizeError } from '../errors';
 import type { PrismaClient, RunStatus } from '../generated/prisma/client';
@@ -75,7 +75,6 @@ export interface BackfillOptions {
   to?: Date;
   /** Defaults to every horizon the forecasters issue at. */
   leads?: readonly number[];
-  model?: string;
   /** Called after each chunk, for progress on a run that takes minutes. */
   onChunk?: (result: ForecastIngestResult, index: number, total: number) => void;
 }
@@ -120,7 +119,6 @@ export async function backfillForecasts(
   const from = options.from ?? BACKFILL_START;
   const to = options.to ?? clock();
   const leads = options.leads ?? HORIZON_HOURS;
-  const model = options.model ?? OPEN_METEO_MODEL;
 
   const done = await completedForecastChunks(deps.prisma);
   const months = monthStartsBetween(from, to);
@@ -144,7 +142,7 @@ export async function backfillForecasts(
         continue;
       }
 
-      const result = await ingestForecastMonth(deps, month, leadHours, model);
+      const result = await ingestForecastMonth(deps, month, leadHours);
 
       summary.chunksRun += 1;
       summary.rowsWritten += result.rowsWritten;
@@ -168,7 +166,7 @@ if (require.main === module) {
       onChunk: (result, index, total) => {
         // Counts and status only, never a forecast value.
         console.log(
-          `[${index}/${total}] ${result.window.start.toISOString().slice(0, 7)} ` +
+          `[${index}/${total}] ${result.month.start.toISOString().slice(0, 7)} ` +
             `lead ${result.leadHours}h  ${result.status}  ` +
             `${result.rowsWritten} rows  ${result.hoursReturned}/${result.hoursExpected} hours`,
         );

@@ -41,9 +41,9 @@ describe('parsePreviousRuns', () => {
   it('stores from the suffixed columns alone, never the unsuffixed one', () => {
     const values = parsePreviousRuns(response(), 24);
 
+    // 9.9 is the unsuffixed `precipitation` column, present in the fixture on
+    // purpose. Its absence from this exact list is the acceptance criterion.
     expect(values.map((value) => value.precipMm)).toEqual([0.1, 0, 2.4]);
-    // 9.9 is the unsuffixed column. Its absence is the acceptance criterion.
-    expect(values.some((value) => value.precipMm === 9.9)).toBe(false);
   });
 
   it('reads the lead it was asked for, not the first suffixed column present', () => {
@@ -62,7 +62,7 @@ describe('parsePreviousRuns', () => {
   });
 
   it('tags every value with the lead it was requested at', () => {
-    expect(parsePreviousRuns(response(), 72.0 - 24).map((v) => v.leadHours)).toEqual([
+    expect(parsePreviousRuns(response(), 48).map((v) => v.leadHours)).toEqual([
       48, 48, 48,
     ]);
   });
