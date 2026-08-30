@@ -1,4 +1,7 @@
-import { forecastsAsOf } from './forecasts.repository';
+import {
+  firstForecastValidTimes,
+  forecastsAsOf,
+} from './forecasts.repository';
 import type { ForecastReader } from './forecasts.repository';
 
 /**
@@ -30,11 +33,11 @@ interface Statement {
   values: unknown[];
 }
 
-function reader() {
+function reader(rows: unknown[] = []) {
   const sent: Statement[] = [];
   const $queryRaw = jest.fn((sql: Statement) => {
     sent.push(sql);
-    return Promise.resolve([]);
+    return Promise.resolve(rows);
   });
 
   return {
@@ -117,5 +120,89 @@ describe('forecastsAsOf', () => {
       '"gaugeId", "validTime", "leadHours", "model", "recordedAt" DESC',
     );
     expect(orderBy?.startsWith(distinctOn as string)).toBe(true);
+  });
+});
+
+const FIRST_LEAD_STATEMENT =
+  'SELECT "leadHours", MIN("validTime") AS "firstValidTime" ' +
+  'FROM "weather_forecasts" ' +
+  'WHERE "gaugeId" = $1 AND "model" = $2 ' +
+  'GROUP BY "leadHours" ' +
+  'ORDER BY "leadHours"';
+
+const LEAD_24_FROM = new Date('2024-01-20T00:00:00.000Z');
+const LEAD_72_FROM = new Date('2024-01-22T00:00:00.000Z');
+
+describe('firstForecastValidTimes', () => {
+  it('asks for the least validTime per lead, at one gauge and model', async () => {
+    const { prisma, statement } = reader();
+
+    await firstForecastValidTimes(prisma, 'gauge-darby', 'gfs_seamless');
+
+    expect(statement()).toEqual({
+      text: FIRST_LEAD_STATEMENT,
+      values: ['gauge-darby', 'gfs_seamless'],
+    });
+  });
+
+  // AC-R6's whole point. A query that bound a date would be reading a constant
+  // back to itself, however the constant reached it.
+  it('binds no date at all, so no literal can slip in as a floor', async () => {
+    const { prisma, statement } = reader();
+
+    await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+    const { values } = statement();
+
+    expect(values).toHaveLength(2);
+    expect(values.some((value) => value instanceof Date)).toBe(false);
+  });
+
+  it('keys the answer by lead, so a staggered boundary reads per horizon', async () => {
+    const { prisma } = reader([
+      { leadHours: 24, firstValidTime: LEAD_24_FROM },
+      { leadHours: 72, firstValidTime: LEAD_72_FROM },
+    ]);
+
+    const first = await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(first.get(24)).toEqual(LEAD_24_FROM);
+    expect(first.get(72)).toEqual(LEAD_72_FROM);
+    // The two really do differ: a lead of N days needs N days of runs behind it.
+    expect(first.get(24)?.getTime()).toBeLessThan(first.get(72)?.getTime() as number);
+  });
+
+  // Absent, never a fallback date. A lead with no rows has nothing usable yet,
+  // and saying so is the difference between a gap and a silent zero.
+  it('omits a lead the store holds nothing for', async () => {
+    const { prisma } = reader([{ leadHours: 24, firstValidTime: LEAD_24_FROM }]);
+
+    const first = await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(first.has(48)).toBe(false);
+    expect(first.get(48)).toBeUndefined();
+    expect([...first.keys()]).toEqual([24]);
+  });
+
+  it('reports nothing at all on an empty store, rather than a floor', async () => {
+    const { prisma } = reader();
+
+    const first = await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(first.size).toBe(0);
+  });
+
+  // One grouped statement for every lead, in the spirit of AC-R16: the store
+  // bills by operation, so a loop asking per lead is a defect even though it
+  // would return the same answer.
+  it('issues one statement for every lead, not one per lead', async () => {
+    const { prisma, count } = reader([
+      { leadHours: 24, firstValidTime: LEAD_24_FROM },
+      { leadHours: 48, firstValidTime: LEAD_24_FROM },
+      { leadHours: 72, firstValidTime: LEAD_72_FROM },
+    ]);
+
+    await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(count()).toBe(1);
   });
 });

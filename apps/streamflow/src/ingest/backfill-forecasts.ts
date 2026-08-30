@@ -1,10 +1,12 @@
 import { config as loadEnvFile } from 'dotenv';
 
-import { BACKFILL_START, HORIZON_HOURS } from '../config';
+import { BACKFILL_START, HORIZON_HOURS, OPEN_METEO_MODEL } from '../config';
+import { firstForecastValidTimes } from '../asof/forecasts.repository';
 import { createPrismaClient } from '../db';
 import { sanitizeError } from '../errors';
 import type { PrismaClient, RunStatus } from '../generated/prisma/client';
 import { monthWindow, nextMonthWindow } from './forecast-window';
+import { ensureGauge } from './ingest-observations';
 import {
   ingestForecastMonth,
   type ForecastIngestDeps,
@@ -173,12 +175,28 @@ if (require.main === module) {
       },
     },
   )
-    .then((summary) => {
+    .then(async (summary) => {
       console.log(
         `backfill done: ${summary.chunksRun} run, ${summary.chunksSkipped} skipped, ` +
           `${summary.rowsWritten} rows, ` +
           `OK ${summary.byStatus.OK} PARTIAL ${summary.byStatus.PARTIAL}`,
       );
+
+      // What the archive actually turned out to cover, measured rather than
+      // assumed (AC-R6). The boundary is staggered per lead and it is not
+      // BACKFILL_START, so an operator who has just spent ninety requests
+      // finding that out should be told, and told from the store.
+      const gauge = await ensureGauge(prisma);
+      const first = await firstForecastValidTimes(prisma, gauge.id, OPEN_METEO_MODEL);
+
+      if (first.size === 0) {
+        console.log('first usable date: none, the store holds no forecast rows');
+        return;
+      }
+
+      for (const [leadHours, validTime] of [...first].sort(([a], [b]) => a - b)) {
+        console.log(`first usable at lead ${leadHours}h: ${validTime.toISOString()}`);
+      }
     })
     .catch((cause: unknown) => {
       console.error(`backfill failed: ${sanitizeError(cause)}`);
