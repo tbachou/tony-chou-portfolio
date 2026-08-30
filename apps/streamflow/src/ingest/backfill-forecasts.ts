@@ -186,16 +186,25 @@ if (require.main === module) {
       // assumed (AC-R6). The boundary is staggered per lead and it is not
       // BACKFILL_START, so an operator who has just spent ninety requests
       // finding that out should be told, and told from the store.
-      const gauge = await ensureGauge(prisma);
-      const first = await firstForecastValidTimes(prisma, gauge.id, OPEN_METEO_MODEL);
+      //
+      // Reported inside its own catch because it is a courtesy read after the
+      // work is already done and recorded. Letting it reach the outer handler
+      // would print `backfill failed` over a walk that succeeded and exit 1,
+      // which on a scheduled run invites a retry of every chunk it just did.
+      try {
+        const gauge = await ensureGauge(prisma);
+        const first = await firstForecastValidTimes(prisma, gauge.id, OPEN_METEO_MODEL);
 
-      if (first.size === 0) {
-        console.log('first usable date: none, the store holds no forecast rows');
-        return;
-      }
+        if (first.size === 0) {
+          console.log('first usable date: none, the store holds no forecast rows');
+          return;
+        }
 
-      for (const [leadHours, validTime] of [...first].sort(([a], [b]) => a - b)) {
-        console.log(`first usable at lead ${leadHours}h: ${validTime.toISOString()}`);
+        for (const [leadHours, validTime] of [...first].sort(([a], [b]) => a - b)) {
+          console.log(`first usable at lead ${leadHours}h: ${validTime.toISOString()}`);
+        }
+      } catch (cause: unknown) {
+        console.error(`first usable date unavailable: ${sanitizeError(cause)}`);
       }
     })
     .catch((cause: unknown) => {
