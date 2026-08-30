@@ -73,7 +73,7 @@ Reasoning, tradeoffs, and the concepts behind each choice: see [rationale.md](ra
 | `ModelVersion` | `id` · `name` (req) · `kind` (req, enum) · `trainedAt?` · `trainWindowStart?` · `trainWindowEnd?` · `hyperparams?` json · `codeSha?` · `active` (req) | unique (`name`) |
 | `Prediction` | `id` · `gaugeId` FK (req) · `modelVersionId` FK (req) · `issuedAt` (req) · `targetTime` (req) · `horizonHours` (req) · `centralCfs` (req) · `lowerCfs` (req) · `upperCfs` (req) · `intervalLevel` (req) | unique (`gaugeId`, `modelVersionId`, `issuedAt`, `targetTime`); index (`targetTime`) |
 | `Score` | `id` · `predictionId` FK (req) · `scoredAt` (req) · `actualCfs` (req) · `actualRecordedAt` (req) · `absError` (req) · `pctError` (req) · `withinInterval` (req) · `regime` (req, enum) | unique (`predictionId`, `actualRecordedAt`) |
-| `PipelineRun` | `id` · `job` (req, enum) · `startedAt` (req) · `finishedAt?` · `status` (req, enum) · `rowsWritten` (req) · `windowStart?` · `windowEnd?` · `error?` | index (`job`, `startedAt`) |
+| `PipelineRun` | `id` · `job` (req, enum) · `startedAt` (req) · `finishedAt?` · `status` (req, enum) · `rowsWritten` (req) · `windowStart?` · `windowEnd?` · `error?` · `leadHours?` | index (`job`, `startedAt`) |
 
 Relationships: `Gauge` 1:N `Observation`, `WeatherForecast`, `Prediction`. `ModelVersion` 1:N `Prediction`. `Prediction` 1:N `Score` (more than one when a revision changes the truth). `PipelineRun` 1:N `Observation` and `WeatherForecast`.
 
@@ -179,7 +179,7 @@ Build approach is Tracer Bullet, assumed rather than recorded, as in 0002, 0004 
 
 **Slice 3, rain arrives.** Concept: exogenous inputs, and why you must train on forecasts rather than on what actually fell.
 
-11. `WeatherForecast` table and Open-Meteo Previous Runs ingestion, backfilled from January 2024, storing `leadHours` explicitly. Satisfies **AC-4**.
+11. `WeatherForecast` table and Open-Meteo Previous Runs ingestion, backfilled from January 2024, storing `leadHours` explicitly. The backfill chunks by month and lead, so `PipelineRun` gains a nullable `leadHours` of its own, which is the key a resumed backfill reads to know which chunks are done; see [0010-forecast-rain.md](0010-forecast-rain.md) **AC-R5**. Satisfies **AC-4**.
 12. Attribution on the dashboard. Satisfies **AC-17**.
 
 **Slice 4, the first real model.** Concept: leakage, and what a backtest can and cannot prove.

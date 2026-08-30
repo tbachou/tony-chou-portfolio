@@ -30,10 +30,21 @@ on:
 permissions: {}
 
 concurrency:
-  # Its own group. Scoring writes only score rows and the pipeline writes only
-  # observations and predictions, so the two need not queue behind each other;
-  # two scoring passes at once would simply repeat work.
-  group: streamflow-scoring
+  # The pipeline's group, deliberately, not one of its own. This used to be
+  # `streamflow-scoring`, on the reasoning that scoring writes only score rows
+  # while the pipeline writes only observations and predictions, so neither
+  # needed to wait for the other. Applying migrations here retired that
+  # reasoning: this workflow now issues DDL, and an `ALTER TABLE` waiting on a
+  # lock the pipeline's open write transaction holds queues an
+  # AccessExclusiveLock. Postgres grants locks in order, so every dashboard
+  # read arriving behind it waits too, and the public site stalls until the
+  # ingest commits.
+  #
+  # Sharing the group means the two can never be in flight together, so that
+  # contention cannot arise. The cost is an occasional scoring run queued
+  # behind a pipeline run, which is cheap: the pipeline finishes in about a
+  # minute and scoring is hourly.
+  group: streamflow-pipeline
   cancel-in-progress: false
 
 jobs:
@@ -66,7 +77,49 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Apply pending migrations
+        # Same reason as the pipeline workflow, and it has to be here too
+        # rather than only there. This workflow is the second scheduled entry
+        # point into the same database, and it runs hourly while the pipeline
+        # runs every six hours, so between a merge that adds a migration and
+        # the next pipeline run this job would otherwise meet a database older
+        # than its own client for up to six hours.
+        #
+        # That is not hypothetical. On 2026-08-30 the run recording a weather
+        # backfill's lead added `pipeline_runs.leadHours`, and the 16:35 and
+        # 17:36 scoring passes both failed on it before the 18:13 pipeline run
+        # applied the migration. Scoring never sets that column; it failed
+        # because `pipelineRun.create()` names every column of the model in its
+        # RETURNING clause, so any column the database is missing breaks the
+        # insert whatever the job was writing.
+        #
+        # Safe to run from two workflows. `migrate deploy` takes a Postgres
+        # advisory lock, so two runs never apply the same migration twice, and
+        # the shared concurrency group above means this workflow and the
+        # pipeline cannot be in flight together in the first place.
+        #
+        # The lock is still the backstop that matters, because it is the only
+        # thing guarding against a `migrate deploy` run from outside Actions,
+        # from somebody's laptop against production. Worth knowing what it
+        # actually promises: the wait is capped at 10 seconds, so a contending
+        # run does not queue politely, it exits with P1002 once that elapses.
+        # Safe for the data either way, and it fails the run rather than
+        # blocking it. A run with nothing pending is a no-op costing seven
+        # statements.
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run migrate:deploy --workspace=apps/streamflow
+
       - name: Score predictions
+        # Runs even when the migration step failed, matching the pipeline
+        # workflow's own steps. A half applied migration leaves a failed row
+        # that makes every later `migrate deploy` exit P3009 until a human runs
+        # `prisma migrate resolve`, and that state is sticky. Scoring itself is
+        # usually fine in it, so without this guard one stuck migration would
+        # stop the public scorecard 24 times a day for a reason unrelated to
+        # scoring. If the schema really is too old to score against, this step
+        # fails on its own merits and says so.
+        if: ${{ !cancelled() }}
         env:
           PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
         run: npm run score --workspace=apps/streamflow

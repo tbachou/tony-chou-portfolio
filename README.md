@@ -14,7 +14,7 @@ A npm workspaces monorepo, TypeScript throughout, Node 22 or newer.
 |---|---|---|
 | `apps/web` | Next.js 15, React 19, Tailwind, React Three Fiber | The site: portfolio, project case studies, the interview simulator, and the live demos below |
 | `apps/api` | NestJS 11, Prisma 7 on Postgres, Anthropic SDK | Conversation engine, the ownership guard, rate limits and usage caps, the AI pipelines behind each demo |
-| `apps/streamflow` | TypeScript, Prisma on Postgres | The river forecast pipeline behind the Streamflow dashboard: ingest, rescan, predict |
+| `apps/streamflow` | TypeScript, Prisma on Postgres | The river forecast pipeline behind the Streamflow dashboard: ingest, rescan, predict, score, and the Open-Meteo forecast rain backfill |
 | `packages/shared` | zod | Request contracts both sides validate against, so the client and server cannot drift |
 | `infra/lambda/feedback-classifier` | AWS Lambda | Feedback classification, the AWS side of spec 0005 |
 
