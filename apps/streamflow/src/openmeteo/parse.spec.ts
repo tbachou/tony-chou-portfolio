@@ -53,9 +53,10 @@ describe('parsePreviousRuns', () => {
   });
 
   it('throws rather than falling back when the suffixed column is absent', () => {
-    const { precipitation_previous_day1: _dropped, ...rest } = response().hourly;
+    const hourly: Record<string, unknown> = { ...response().hourly };
+    delete hourly.precipitation_previous_day1;
 
-    expect(() => parsePreviousRuns({ hourly: rest }, 24)).toThrow(
+    expect(() => parsePreviousRuns({ hourly }, 24)).toThrow(
       /missing column precipitation_previous_day1/,
     );
   });
