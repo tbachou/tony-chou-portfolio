@@ -1,8 +1,9 @@
-import type {
-  CaseResult,
-  Difficulty,
-  DimensionResult,
-  RunResults,
+import {
+  RESULTS_PROVENANCE,
+  type CaseResult,
+  type Difficulty,
+  type DimensionResult,
+  type RunResults,
 } from './eval-types';
 
 export function scored(score: number): DimensionResult {
@@ -39,6 +40,7 @@ export function makeRun(
   metaOverrides: Partial<RunResults['meta']> = {},
 ): RunResults {
   return {
+    _readMeFirst: RESULTS_PROVENANCE,
     meta: {
       date: '2026-08-29T00:00:00.000Z',
       gitCommit: 'abcdef1234567890',

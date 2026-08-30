@@ -4,6 +4,8 @@ Read this before quoting anything in this directory.
 
 **First person text in these files was written by a language model under test. It is not a claim by Tony Chou.** These are the outputs of an adversarial test bench: a fixed set of cases is run through the production code path that generates the interview simulator's turns, and the results are committed so that changes can be compared over time. Some cases exist specifically to provoke the model into overclaiming credit. When one succeeds, the false claim it produced is recorded here on purpose, because a scoreboard that reports a failure without showing what was actually said cannot be checked by anyone.
 
+Every results file and the baseline carry this same disclaimer inline, as a `_readMeFirst` field, because a JSON file is reachable on its own and a reader may never open this README.
+
 Designed and specced in [spec 0011](../../specs/_root/0011-interview-simulator-eval-suite/index.md); the suite is the measurement instrument for every phase of [spec 0012](../../specs/_root/0012-grounded-portfolio-agent/index.md).
 
 ## Why this exists
