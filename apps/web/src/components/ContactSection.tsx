@@ -17,7 +17,7 @@ export function ContactSection() {
           <span aria-hidden="true">$ </span>
           cat contact.txt
         </h2>
-        <p className="mt-3 max-w-prose text-term-base leading-relaxed text-term-body">
+        <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
           Open to conversations about senior engineering roles at growth-stage companies.
         </p>
 
@@ -56,7 +56,7 @@ export function ContactSection() {
           <span aria-hidden="true">$ </span>
           cat colophon.txt
         </h3>
-        <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+        <p className="mt-3 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
           This site is hand-built — Next.js and Tailwind up front, NestJS behind it, React Three
           Fiber for the one corner of 3D I couldn&apos;t resist.
         </p>
@@ -76,12 +76,12 @@ export function ContactSection() {
           <span aria-hidden="true">$ </span>
           cat feedback.txt
         </h3>
-        <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-body">
+        <p className="mt-3 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
           Spot a bug or have a feature idea? Send it anonymously below — no account or email
           required. The message is stored, run through an automated classifier on AWS, and
           emailed to me.
         </p>
-        <FeedbackForm source="portfolio" variant="terminal" className="mt-4 max-w-prose" />
+        <FeedbackForm source="portfolio" variant="terminal" className="mt-4 max-w-[39rem]" />
       </TerminalWindow>
     </section>
   );

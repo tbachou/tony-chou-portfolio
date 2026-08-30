@@ -43,7 +43,7 @@ export function ProjectsSection() {
                   [ {project.status} ]
                 </span>
               </div>
-              <p className="mt-2 max-w-prose text-term-sm leading-relaxed text-term-body">
+              <p className="mt-2 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
                 {project.pitch}
               </p>
               {/* hover:text-term-accent was a no-op: --color-accent aliases

@@ -157,11 +157,11 @@ export function ConversationPanel() {
             <span aria-hidden="true">$ </span>
             cat interview.txt
           </p>
-          <p className="mt-3 max-w-prose text-term-base leading-relaxed text-term-body">
+          <p className="mt-3 max-w-[39rem] text-term-base leading-relaxed text-term-body">
             An interview simulator: pick a topic and an AI stand-in for Tony answers questions
             about his work, streaming the reply a token at a time.
           </p>
-          <p className="mt-3 max-w-prose text-term-sm leading-relaxed text-term-muted" role="alert">
+          <p className="mt-3 max-w-[39rem] text-term-sm leading-relaxed text-term-muted" role="alert">
             !! {panelState.message} The service it runs on idles when nobody is using it, so the
             first request after a quiet spell can time out while it wakes.
           </p>
