@@ -83,7 +83,7 @@ A standalone script suite under `apps/api` calls the production turn generation 
 - Baseline moves only by human commit (AC-9); the scoreboard is a pure projection, never hand edited.
 - No visitor derived content anywhere in the suite (AC-10).
 
-**Security model**: no user facing surface. The API key in CI is a repository secret exposed only to the eval workflow, which runs on `pull_request` (never `pull_request_target`), carries `permissions: contents: read`, excludes fork PRs by a same repo guard, and SHA pins third party actions (per the github-actions-hardening skill). Dataset and results are public repo content authored by Tony.
+**Security model**: no user facing surface. The API key in CI is a repository secret exposed only to the eval workflow, which runs on `pull_request` (never `pull_request_target`), carries `permissions: contents: read`, excludes fork PRs by a same repo guard, and SHA pins third party actions (per the github-actions-hardening skill). Dataset and results are repo content authored by Tony, written to be fit for publication (the repo is private today; see spec [0012](../0012-grounded-portfolio-agent/index.md) phase two).
 
 **Configuration required**:
 - `ANTHROPIC_API_KEY`: already used locally by the api; newly added as a GitHub Actions repository secret for the eval workflow.
@@ -124,14 +124,14 @@ Build approach: no project approach is recorded yet (AGENTS.md says TBD), so thi
 - Story selection (`prepareTurn`/`groundingStory`) is not evaluated; a selection bug would not show up here.
 
 **Neutral**:
-- The dataset and scoreboard live in the public repo; that is the point, but it also documents the surface's weak spots publicly.
+- The dataset and scoreboard are committed to be shown; the repo is private today, so nobody outside can read them yet, and when that changes they also document the surface's weak spots to whoever looks.
 - A future public site page visualizing score history reads `docs/evals/interview/` at build time; nothing here blocks or requires it.
 - Extracting `fixtures.ts` slightly touches the seeding path (import moves only, no behavior change).
 
 ## Follow-up
 
-- [ ] The Tony and interviewer prompts are hardcoded in `tony-persona.ts`, while root AGENTS.md says agent prompts live as markdown skill files beside their module. Decide whether to migrate them (a small refactor that also makes the eval's path filter cleaner) in a separate change.
-- [ ] Once a few runs exist, design the public site evals page (chosen as a later feature during this spec's interview).
+- [x] The Tony and interviewer prompts are hardcoded in `tony-persona.ts`, while root AGENTS.md says agent prompts live as markdown skill files beside their module. Decide whether to migrate them (a small refactor that also makes the eval's path filter cleaner) in a separate change. Done: they are `skills/interviewer.md` and `skills/tony.md`, loaded by `skill-loader.ts` (PR #21).
+- [ ] Once a few runs exist, design the public site evals page (chosen as a later feature during this spec's interview). Now phase two of spec [0012](../0012-grounded-portfolio-agent/index.md); needs its own `/architect` run.
 - [ ] A Bedrock comparison mode (local only, AWS credentials, `--provider bedrock`, same dataset) to settle the Sonnet 4.6 vs Sonnet 5 question for the interviewer.
-- [ ] The steered interview feature (guided plus free text visitor questions) and the `searchPortfolio` RAG tool are their own `/architect` runs; this suite should gain cases for them when they land.
+- [ ] The steered interview feature (guided plus free text visitor questions) and the `searchPortfolio` RAG tool are their own `/architect` runs; this suite should gain cases for them when they land. Now phases three, four, and five of spec [0012](../0012-grounded-portfolio-agent/index.md), which also makes this suite the measurement instrument for every phase.
 - [ ] If judge variance proves the noise band too wide to read deltas, consider frozen question replay mode (replay recorded interviewer questions for tighter change detection) before upgrading the judge model.

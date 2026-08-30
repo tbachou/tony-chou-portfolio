@@ -6,7 +6,7 @@ The interview simulator is the portfolio's oldest AI surface and carries its str
 
 Tony is concurrently taking the AI Engineering Fundamentals course (Master.dev), whose lessons 4 and 5 teach the eval discipline: a golden dataset of cases with expected characteristics rather than expected outputs, code based scorers where properties are checkable, LLM judges where they are not, and a baseline so every change shows a measured delta. This spec applies that discipline to the conversation surface. It is both practical (safe prompt iteration, a data driven answer to the provider split question) and a portfolio artifact in its own right.
 
-Forces: a solo maintainer, so anything requiring an always on service or vendor account is overhead; a public repo, so the dataset and scores are visible; a hard privacy rule that no visitor typed content is persisted or logged anywhere, so eval data must be authored, never harvested; CI currently runs with no API keys at all; and eval runs cost real money, so cadence must be deliberate.
+Forces: a solo maintainer, so anything requiring an always on service or vendor account is overhead; a repo that is private today but intended to be readable by others later, so the dataset and scores must be fit to show; a hard privacy rule that no visitor typed content is persisted or logged anywhere, so eval data must be authored, never harvested; CI currently runs with no API keys at all; and eval runs cost real money, so cadence must be deliberate.
 
 ## Options considered
 
@@ -15,7 +15,7 @@ Forces: a solo maintainer, so anything requiring an always on service or vendor 
 A script under `apps/api/scripts/` (the same pattern as the existing `beta-guard-corpus.ts`) that calls `generateTurnPair` with mocked persistence and real model calls, scores with a reused code guard plus judge rubrics, and writes committed JSON and markdown.
 
 **Pros**:
-- No new vendor, account, or data leaving the repo; fits the solo maintainer and public repo forces.
+- No new vendor, account, or data leaving the repo; fits the solo maintainer and shareable repo forces.
 - Full control over the multi step pipeline (interviewer, Tony, guard), which generic frameworks model awkwardly.
 - Building the harness is itself the portfolio demonstration.
 - Follows an existing in repo pattern (the Beta guard corpus script).
