@@ -8,7 +8,7 @@ Three forces shaped the answer. First, the audience that actually exists: engine
 
 Not deciding meant either building the steering feature for an absent audience or abandoning finished design work.
 
-One premise of this umbrella is not yet true. The reframe assumes the measured record is readable by the people it is meant to convince, and the repo is private as of 2026-08-29 (spec 0011's rationale asserts the opposite and was corrected). Going public was recommended and the blocking risk was audited clean: no key or real `.env` has ever been committed on any branch. The decision itself is Tony's, is not made here, and is tracked on phase two. Until it is made, this umbrella improves the product on the merits and banks the evidence; it does not yet deliver the audience.
+One premise of this umbrella was not true when it was written, and was made true the same day. The reframe assumes the measured record is readable by the people it is meant to convince, and the repo was private (spec 0011's rationale asserted the opposite, and was corrected). Before flipping it, the blocking risk was audited across all remote refs and came back clean: no key and no real `.env` has ever been committed on any branch, every match being a placeholder. The repo went public on 2026-08-29, so the audience the umbrella argues for can now actually reach the record. Two consequences follow: every push to this repo is publication, and the generated model text the eval suite commits is public, which is why `docs/evals/interview/README.md` exists to say that first person text there is a model under test rather than a claim by Tony.
 
 ## Options considered
 
