@@ -196,3 +196,68 @@ _Steps derived from **AC-16** in [index.md](index.md): the dashboard shows inter
 
 - The panel reports; it does not act. Nothing feeds the measured miscalibration back into how ranges are drawn, and the rising bucket at 53.1% is the strongest argument in the record for revisiting that.
 - Coverage is read over the whole record rather than a window, so the live figure will move slowly once the sample grows. A windowed view is worth adding when there is enough live history for it to mean anything.
+
+---
+
+# Verify: rain, as it was forecast · spec 0010 · written 2026-08-30
+
+_Steps derived from the acceptance criteria in [0010-forecast-rain.md](0010-forecast-rain.md). `/check verify` runs these; `/test` locks the durable ones._
+
+_This child is **part built**. Build plan tasks 1 to 5 shipped: the table and its two migrations, the pinned client and parser, the as of read with its diff and batched write, one month ingested end to end, and the resumable backfill. Tasks 6 to 12 have not. Eight of the sixteen criteria therefore have no code to exercise and are marked `not built` below, so an unticked box there is not mistaken for a check nobody got round to running. Boxes marked `[x]` were run on 2026-08-30; the unticked ones under Commands need a database and are the operator's._
+
+## Commands
+
+- [x] `npm test --workspace=apps/streamflow` → 403 green across 34 suites, including 97 across the eight rain suites: `openmeteo/client` 11, `openmeteo/parse` 16, `asof/forecasts.repository` 6, `ingest/forecast-window` 18, `ingest/forecast-write` 8, `ingest/forecast-diff` 10, `ingest/ingest-forecasts` 12, `ingest/backfill-forecasts` 16 → AC-R1, AC-R2, AC-R3, AC-R4, AC-R5, AC-R12, AC-R14, AC-R16
+- [x] `npx tsc --noEmit -p apps/streamflow/tsconfig.json` → clean. Note a stale generated Prisma client fails three of these suites at compile time with `'leadHours' does not exist in type 'PipelineRunSelect'`; run `npx prisma generate` in the workspace first, since `src/generated/prisma` is gitignored and does not travel with a branch
+- [x] `gh workflow run streamflow-score.yml` against the live store → `No pending migrations to apply.` then `score OK: 0 rows, run cmtg99m18...`. A `pipelineRun.create()` whose RETURNING clause names `leadHours` now succeeds against the production schema, which is the exact call that raised P2022 on 2026-08-30 → AC-R5
+- [ ] Against a throwaway local Postgres with the migrations applied, insert a `weather_forecasts` row with `leadHours` of 0 → rejected by `weather_forecasts_lead_hours_check`. The parser half is covered by the suite above; this is the database half, and the whole point of AC-R2 is that the two catch different mistakes → AC-R2
+- [ ] Against a throwaway seeded with two months at two leads, run the backfill twice → the second pass fetches nothing and writes nothing. The suite proves the skip against a stubbed reader; this proves it against real rows and a real unique key → AC-R3, AC-R5
+- [ ] Against the live store, read only: count `OK` `OPEN_METEO_INGEST` runs grouped by `leadHours` and compare against the months the archive covers → every month accounted for at every lead, no lead running behind the others → AC-R5
+
+## Value sourcing checks
+
+One per row of the spec's Value sourcing table that has code behind it. Each names the test that exercises it.
+
+- [x] Request host and columns: `names the pinned host`, `requests only suffixed columns for the lead it was given`, `stores from the suffixed columns alone, never the unsuffixed one` → AC-R1
+- [x] The model: `names the pinned model and never best_match` → AC-R12
+- [x] `leadHours` on a row: `tags every value with the lead it was requested at`, plus `throws rather than falling back when the suffixed column is absent`, so an absent column cannot quietly become a different lead → AC-R1, AC-R4
+- [x] `issuedAt`: `derives issuedAt as validTime minus leadHours`, `always lands before the hour it describes` → AC-R4
+- [x] `recordedAt`: `stamps rows with a recordedAt captured after the fetch, never the run start`, so no row claims it was known before the response arrived → AC-R3
+- [x] Whether to write a row: `writes nothing when precip and temp both match`, `treats an absent tempC and a stored null as equal`, `re-running an unchanged month writes zero rows` → AC-R3
+- [x] `PipelineRun.leadHours`: `records each run against its own lead`, written at run creation before anything is fetched → AC-R5
+- [x] Which chunks remain: `keys on the month and the lead together, in one query`, `skips a month already recorded OK for that lead`, `still runs a month at lead 48 when only lead 24 is done`, `ignores a PARTIAL month, so a ramp in gap is not frozen forever`, `ignores a run carrying no lead, such as a USGS ingest` → AC-R5
+- [x] Run status: `records PARTIAL when the response falls short of the window`, `is PARTIAL even when the response looks complete, so it is never skipped`, `is OK again once the month has fully elapsed` → AC-R14
+- [x] Never asking for the future: `never asks for an hour that has not happened yet`, `records the run against the whole month, not the clamped request` → AC-R14
+- [x] Bounded database cost: `reads the comparison set in exactly one query regardless of month length`, `issues exactly one statement per call`, `ingests a full month in a statement count in the low tens, not hundreds` → AC-R16
+
+## What this does not yet do
+
+Eight criteria have no implementation at all. Listed so an unticked box is not read as an unrun check.
+
+- **AC-R6**, first usable date per lead derived from the store. Nothing reads the least `validTime`, and `config.ts:46` still pins `BACKFILL_START` to `2024-01-01`, which the spec's own measurements put about three weeks early and wrong differently per lead.
+- **AC-R7**, the rain feature as a sum over the reduced one row per hour set. No consumer of `precipMm` exists outside ingest.
+- **AC-R8** and **AC-R8a**, the weather read taking `KnowabilityAxis`, with the archive mode mapped onto `issuedAt` by a hand written branch rather than `row[axis]`.
+- **AC-R9**, the leakage test extended to weather rows on both axes.
+- **AC-R10**, a short window yielding null rather than zero, and the forecaster skipped with the tally incremented.
+- **AC-R11**, antecedent wetness reusing `regimeInputs`.
+- **AC-R13**, live weather ingest at 00, 06, 12 and 18 UTC. The pipeline workflow has no weather step.
+- **AC-R15**, Open-Meteo attribution on the dashboard. The walkthrough page credits the source; `/streamflow` does not, and the licence requires it wherever the data is shown.
+
+## Acceptance-criteria coverage
+
+- AC-R1 covered by the client and parser suites: suffixed columns only, the unsuffixed one never read, a missing column throwing rather than falling back
+- AC-R2 covered on the parser side by `refuses a lead the store may never hold`; the database check constraint is unexercised and owed above
+- AC-R3 covered by the diff suite, including the absent tempC against stored null case that would otherwise write a row every run
+- AC-R4 covered by the write suite's derivation tests and by the unique key in migration `20260830050821`
+- AC-R5 covered by the backfill suite's resume tests and, at runtime, by the dispatched scoring run writing a `PipelineRun` against the production schema
+- AC-R6 not built
+- AC-R7 not built
+- AC-R8, AC-R8a not built
+- AC-R9 not built
+- AC-R10 not built
+- AC-R11 not built
+- AC-R12 covered by the client suite's pinned model assertion
+- AC-R13 not built
+- AC-R14 covered by the window suite's PARTIAL cases, including the clamped future window
+- AC-R15 not built
+- AC-R16 covered by the statement counting tests on both the read and the write path
