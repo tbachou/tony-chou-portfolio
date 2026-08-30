@@ -130,8 +130,8 @@ Build approach: no project approach is recorded yet (AGENTS.md says TBD), so thi
 
 ## Follow-up
 
-- [ ] The Tony and interviewer prompts are hardcoded in `tony-persona.ts`, while root AGENTS.md says agent prompts live as markdown skill files beside their module. Decide whether to migrate them (a small refactor that also makes the eval's path filter cleaner) in a separate change.
-- [ ] Once a few runs exist, design the public site evals page (chosen as a later feature during this spec's interview).
+- [x] The Tony and interviewer prompts are hardcoded in `tony-persona.ts`, while root AGENTS.md says agent prompts live as markdown skill files beside their module. Decide whether to migrate them (a small refactor that also makes the eval's path filter cleaner) in a separate change. Done: they are `skills/interviewer.md` and `skills/tony.md`, loaded by `skill-loader.ts` (PR #21).
+- [ ] Once a few runs exist, design the public site evals page (chosen as a later feature during this spec's interview). Now phase two of spec [0012](../0012-grounded-portfolio-agent/index.md); needs its own `/architect` run.
 - [ ] A Bedrock comparison mode (local only, AWS credentials, `--provider bedrock`, same dataset) to settle the Sonnet 4.6 vs Sonnet 5 question for the interviewer.
-- [ ] The steered interview feature (guided plus free text visitor questions) and the `searchPortfolio` RAG tool are their own `/architect` runs; this suite should gain cases for them when they land.
+- [ ] The steered interview feature (guided plus free text visitor questions) and the `searchPortfolio` RAG tool are their own `/architect` runs; this suite should gain cases for them when they land. Now phases three, four, and five of spec [0012](../0012-grounded-portfolio-agent/index.md), which also makes this suite the measurement instrument for every phase.
 - [ ] If judge variance proves the noise band too wide to read deltas, consider frozen question replay mode (replay recorded interviewer questions for tighter change detection) before upgrading the judge model.
