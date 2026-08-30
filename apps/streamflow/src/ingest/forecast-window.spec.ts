@@ -1,5 +1,7 @@
 import {
+  clampWindowTo,
   expectedHourCount,
+  isWindowElapsed,
   judgeForecastCompleteness,
   monthWindow,
   nextMonthWindow,
@@ -51,20 +53,76 @@ describe('expectedHourCount', () => {
   });
 });
 
+describe('clampWindowTo', () => {
+  const august = monthWindow(new Date('2026-08-01T00:00:00.000Z'));
+
+  it('leaves a wholly past window alone', () => {
+    const now = new Date('2026-09-05T00:00:00.000Z');
+
+    expect(clampWindowTo(august, now)).toEqual(august);
+  });
+
+  // The defect this exists to stop: Open-Meteo rejects an end_date more than
+  // fifteen days ahead with a 400, which killed the whole walk.
+  it('pulls a future end back to now', () => {
+    const now = new Date('2026-08-30T12:00:00.000Z');
+
+    const clamped = clampWindowTo(august, now);
+
+    expect(clamped.start).toEqual(august.start);
+    expect(clamped.end).toEqual(now);
+    expect(clamped.end.getTime()).toBeLessThan(august.end.getTime());
+  });
+
+  it('never returns an end after now', () => {
+    const now = new Date('2026-08-02T03:00:00.000Z');
+
+    expect(clampWindowTo(august, now).end.getTime()).toBeLessThanOrEqual(now.getTime());
+  });
+});
+
+describe('isWindowElapsed', () => {
+  const august = monthWindow(new Date('2026-08-01T00:00:00.000Z'));
+
+  it('is true once the month has ended', () => {
+    expect(isWindowElapsed(august, new Date('2026-09-01T00:00:00.000Z'))).toBe(true);
+  });
+
+  it('is false while the month is still running', () => {
+    expect(isWindowElapsed(august, new Date('2026-08-30T12:00:00.000Z'))).toBe(false);
+  });
+
+  it('is true exactly at the final hour', () => {
+    expect(isWindowElapsed(august, august.end)).toBe(true);
+  });
+});
+
 describe('judgeForecastCompleteness', () => {
   const february = monthWindow(new Date('2024-02-01T00:00:00.000Z'));
 
-  it('is OK when every hour came back', () => {
-    expect(judgeForecastCompleteness(696, february)).toBe('OK');
+  it('is OK when every hour of an elapsed month came back', () => {
+    expect(judgeForecastCompleteness(696, february, true)).toBe('OK');
   });
 
   // AC-R14: the archive ramps in at its start, so this is expected there and is
   // not a failure.
   it('is PARTIAL when the response fell short of the window', () => {
-    expect(judgeForecastCompleteness(400, february)).toBe('PARTIAL');
+    expect(judgeForecastCompleteness(400, february, true)).toBe('PARTIAL');
   });
 
   it('is PARTIAL when nothing came back at all', () => {
-    expect(judgeForecastCompleteness(0, february)).toBe('PARTIAL');
+    expect(judgeForecastCompleteness(0, february, true)).toBe('PARTIAL');
+  });
+
+  // The freeze this prevents: an OK chunk is skipped forever, so a month still
+  // in progress would keep whatever the service said about hours that had not
+  // happened yet.
+  it('is never OK while the month is still in progress, however complete it looks', () => {
+    const august = monthWindow(new Date('2026-08-01T00:00:00.000Z'));
+    const clamped = clampWindowTo(august, new Date('2026-08-30T12:00:00.000Z'));
+
+    expect(judgeForecastCompleteness(expectedHourCount(clamped), clamped, false)).toBe(
+      'PARTIAL',
+    );
   });
 });

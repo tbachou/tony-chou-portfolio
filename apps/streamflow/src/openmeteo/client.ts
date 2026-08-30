@@ -74,5 +74,15 @@ export async function fetchPreviousRuns(
     );
   }
 
-  return parsePreviousRuns(await response.json(), leadHours);
+  // Trimmed to the window actually asked for. Open-Meteo's date parameters have
+  // calendar day granularity, so a window ending mid day comes back with that
+  // whole day attached, including hours that have not happened yet. Storing
+  // those would put rows in the archive that were never forecast at the lead
+  // they carry, which is the same defect clamping the window exists to prevent;
+  // the clamp alone does not close it, because the request can only name a day.
+  return parsePreviousRuns(await response.json(), leadHours).filter(
+    (value) =>
+      value.validTime.getTime() >= window.start.getTime() &&
+      value.validTime.getTime() <= window.end.getTime(),
+  );
 }

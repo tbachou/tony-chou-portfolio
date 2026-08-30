@@ -88,7 +88,6 @@ describe('writeForecasts', () => {
 
     expect(written).toBe(720);
     expect(calls).toHaveLength(1);
-    expect(calls.length).toBeLessThan(10);
   });
 
   // AC-R16: the chunk is bounded, so a large batch becomes several statements
@@ -102,9 +101,6 @@ describe('writeForecasts', () => {
     expect(calls).toHaveLength(2);
     expect(calls[0].count).toBe(WEATHER_INSERT_BATCH_SIZE);
     expect(calls[1].count).toBe(250);
-    expect(Math.max(...calls.map((c) => c.count))).toBeLessThanOrEqual(
-      WEATHER_INSERT_BATCH_SIZE,
-    );
   });
 
   it('orders rows oldest first so a partial write is a complete prefix', async () => {

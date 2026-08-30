@@ -9,8 +9,10 @@ import { fetchPreviousRuns } from '../openmeteo/client';
 import { assertStorableLead } from '../openmeteo/parse';
 import { selectChangedForecasts } from './forecast-diff';
 import {
-  judgeForecastCompleteness,
+  clampWindowTo,
   expectedHourCount,
+  isWindowElapsed,
+  judgeForecastCompleteness,
   monthWindow,
 } from './forecast-window';
 import { writeForecasts } from './forecast-write';
@@ -32,7 +34,10 @@ export interface ForecastIngestResult {
   hoursReturned: number;
   hoursExpected: number;
   leadHours: number;
+  /** The hours actually requested, clamped to exclude the future. */
   window: IngestWindow;
+  /** The calendar month the chunk stands for, recorded on the run. */
+  month: IngestWindow;
 }
 
 /**
@@ -61,7 +66,6 @@ export async function ingestForecastMonth(
   deps: ForecastIngestDeps,
   within: Date,
   leadHours: number,
-  model: string = OPEN_METEO_MODEL,
 ): Promise<ForecastIngestResult> {
   assertStorableLead(leadHours);
 
@@ -70,7 +74,12 @@ export async function ingestForecastMonth(
   const fetchForecasts = deps.fetchForecasts ?? fetchPreviousRuns;
 
   const startedAt = clock();
-  const window = monthWindow(within);
+  const month = monthWindow(within);
+  // Never ask for an hour that has not happened yet: Open-Meteo either rejects
+  // the request outright or answers with future hours that are not the fixed
+  // lead they claim to be.
+  const window = clampWindowTo(month, startedAt);
+  const monthElapsed = isWindowElapsed(month, startedAt);
   const gauge = await ensureGauge(prisma);
 
   const run = await prisma.pipelineRun.create({
@@ -79,8 +88,8 @@ export async function ingestForecastMonth(
       startedAt,
       status: 'FAILED',
       rowsWritten: 0,
-      windowStart: window.start,
-      windowEnd: window.end,
+      windowStart: month.start,
+      windowEnd: month.end,
       // What makes a resumed backfill able to tell two runs for the same month
       // apart. Without it, this month at lead 24 and at lead 48 are identical
       // rows and AC-R5's skip has nothing to key on.
@@ -104,7 +113,7 @@ export async function ingestForecastMonth(
     const known = await forecastsAsOf(
       prisma,
       gauge.id,
-      model,
+      OPEN_METEO_MODEL,
       leadHours,
       window.start,
       window.end,
@@ -112,14 +121,18 @@ export async function ingestForecastMonth(
     );
 
     const changed = selectChangedForecasts(values, known);
-    const status: RunStatus = judgeForecastCompleteness(values.length, window);
+    const status: RunStatus = judgeForecastCompleteness(
+      values.length,
+      window,
+      monthElapsed,
+    );
 
     await writeForecasts(
       prisma,
       gauge.id,
       run.id,
       recordedAt,
-      model,
+      OPEN_METEO_MODEL,
       changed,
       (written) => {
         rowsWritten = written;
@@ -139,6 +152,7 @@ export async function ingestForecastMonth(
       hoursExpected: expectedHourCount(window),
       leadHours,
       window,
+      month,
     };
   } catch (cause) {
     // rowsWritten carries whatever landed before the failure, so the run row
