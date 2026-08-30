@@ -238,52 +238,137 @@ describe('ConversationService.generateTurnPair', () => {
   });
 });
 
-describe('ConversationService.loadHistory (spec 0012 AC-3)', () => {
+describe('ConversationService.loadConversation (spec 0012 AC-3)', () => {
   beforeAll(() => {
     Logger.overrideLogger(false);
   });
 
   it('returns nothing when no conversationId is given, without querying', async () => {
     const h = makeHarness();
-    await expect(h.service.loadHistory(undefined)).resolves.toEqual([]);
+    await expect(h.service.loadConversation(undefined)).resolves.toEqual({
+      turns: [],
+      topicId: null,
+      nextTurnIndex: 0,
+    });
     expect(h.prisma.conversationTurn.findMany).not.toHaveBeenCalled();
   });
 
   it('a known conversationId with no persisted rows behaves like a new conversation', async () => {
     const h = makeHarness();
     h.prisma.conversationTurn.findMany.mockResolvedValue([]);
-    await expect(h.service.loadHistory('conv-unknown')).resolves.toEqual([]);
+    await expect(h.service.loadConversation('conv-unknown')).resolves.toEqual({
+      turns: [],
+      topicId: null,
+      nextTurnIndex: 0,
+    });
   });
 
   it('orders by turnIndex, interviewer before Tony within a pair, whatever order the rows arrive in', async () => {
     const h = makeHarness();
     h.prisma.conversationTurn.findMany.mockResolvedValue([
-      { turnIndex: 1, role: ConversationRole.TONY, text: 'A2' },
-      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1' },
-      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: 'Q2' },
-      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1' },
+      { turnIndex: 1, role: ConversationRole.TONY, text: 'A2', topicId: 'topic-1' },
+      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1', topicId: 'topic-1' },
+      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: 'Q2', topicId: 'topic-1' },
+      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1', topicId: 'topic-1' },
     ]);
 
-    await expect(h.service.loadHistory('conv-1')).resolves.toEqual([
+    const loaded = await h.service.loadConversation('conv-1');
+    expect(loaded.turns).toEqual([
       { role: 'interviewer', text: 'Q1' },
       { role: 'tony', text: 'A1' },
       { role: 'interviewer', text: 'Q2' },
       { role: 'tony', text: 'A2' },
     ]);
+    expect(loaded.topicId).toBe('topic-1');
+    expect(loaded.nextTurnIndex).toBe(2);
   });
 
-  it('skips the empty placeholder row prepareTurn reserves before generation', async () => {
+  it('skips the empty placeholder row for the transcript but still counts it for the next slot', async () => {
     const h = makeHarness();
     h.prisma.conversationTurn.findMany.mockResolvedValue([
-      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1' },
-      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1' },
-      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: '' },
+      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1', topicId: 'topic-1' },
+      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1', topicId: 'topic-1' },
+      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: '', topicId: 'topic-1' },
     ]);
 
-    await expect(h.service.loadHistory('conv-1')).resolves.toEqual([
+    const loaded = await h.service.loadConversation('conv-1');
+    expect(loaded.turns).toEqual([
       { role: 'interviewer', text: 'Q1' },
       { role: 'tony', text: 'A1' },
     ]);
+    // The reserved slot is not a turn, but it is taken: reusing index 1 would
+    // hit the (conversationId, turnIndex, role) unique constraint.
+    expect(loaded.nextTurnIndex).toBe(2);
+  });
+});
+
+describe('ConversationService.prepareTurn topic scoping', () => {
+  beforeAll(() => {
+    Logger.overrideLogger(false);
+  });
+
+  const continuing = {
+    turns: [
+      { role: 'interviewer' as const, text: 'Q1' },
+      { role: 'tony' as const, text: 'A1' },
+    ],
+    topicId: 'topic-1',
+    nextTurnIndex: 1,
+  };
+
+  it('rejects a conversationId that belongs to a different topic', async () => {
+    const h = makeHarness();
+    const otherTopic = { ...topic, id: 'topic-2' } as TopicWithStories;
+
+    await expect(
+      h.service.prepareTurn({
+        topic: otherTopic,
+        conversationId: 'conv-1',
+        conversation: continuing,
+        hashedIp: 'hashed-ip',
+      }),
+    ).rejects.toThrow('This conversation belongs to a different topic');
+
+    // Rejected before any slot is claimed, so no row is written.
+    expect(h.prisma.conversationTurn.create).not.toHaveBeenCalled();
+  });
+
+  it('continues normally when the topic matches', async () => {
+    const h = makeHarness();
+    // The harness stub returns a plain object, not a promise; prepareTurn
+    // awaits it either way. Retyped because that shape widens the mock to never.
+    (h.prisma.conversationTurn.create as jest.Mock).mockReturnValue({
+      id: 'turn-9',
+    });
+
+    const prepared = await h.service.prepareTurn({
+      topic,
+      conversationId: 'conv-1',
+      conversation: continuing,
+      hashedIp: 'hashed-ip',
+    });
+
+    expect(prepared.conversationId).toBe('conv-1');
+    expect(prepared.turnIndex).toBe(1);
+  });
+
+  it('does not apply the topic check to a new conversation', async () => {
+    const h = makeHarness();
+    // The harness stub returns a plain object, not a promise; prepareTurn
+    // awaits it either way. Retyped because that shape widens the mock to never.
+    (h.prisma.conversationTurn.create as jest.Mock).mockReturnValue({
+      id: 'turn-9',
+    });
+
+    const prepared = await h.service.prepareTurn({
+      topic,
+      conversationId: undefined,
+      conversation: { turns: [], topicId: null, nextTurnIndex: 0 },
+      hashedIp: 'hashed-ip',
+    });
+
+    expect(prepared.turnIndex).toBe(0);
+    expect(prepared.conversationId).not.toBe('conv-1');
   });
 });
 

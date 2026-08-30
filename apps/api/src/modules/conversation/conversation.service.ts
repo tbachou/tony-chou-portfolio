@@ -24,6 +24,27 @@ export type HistoryTurn = {
 
 export type TopicWithStories = TopicModel & { stories: StoryModel[] };
 
+/** One read of a conversation's persisted rows, per `loadConversation`. */
+export type LoadedConversation = {
+  /** The rebuilt transcript, oldest first, blank rows excluded. */
+  turns: HistoryTurn[];
+  /** The topic every persisted row belongs to; null when there are none. */
+  topicId: string | null;
+  /** The next free slot, counting reserved rows. */
+  nextTurnIndex: number;
+};
+
+/**
+ * A fresh object per call, never a shared constant. The server is long lived
+ * and this value is handed to request code that owns it; one shared instance
+ * would mean one shared `turns` array, so any caller that ever mutated it
+ * (appending a synthetic opening turn, sorting in place) would leak that edit
+ * into every later conversation in the process.
+ */
+function emptyConversation(): LoadedConversation {
+  return { turns: [], topicId: null, nextTurnIndex: 0 };
+}
+
 export type EmitFn = (event: string, data: unknown) => void;
 
 const TURN_PAIR_CAP = Number(process.env.TURN_PAIR_CAP ?? 5);
@@ -54,48 +75,54 @@ export class ConversationService {
   }
 
   /**
-   * Rebuilds the transcript from the persisted rows rather than trusting a
-   * client-echoed one (spec 0012 phase one, AC-3). Nothing a visitor types
-   * reaches a prompt: the request carries only a topic slug and a uuid.
+   * Rebuilds a conversation from its persisted rows rather than trusting a
+   * client-echoed transcript (spec 0012 phase one, AC-3). Nothing a visitor
+   * types reaches a prompt: the request carries only a topic slug and a uuid.
    *
-   * Ordered by turnIndex, and within a pair the interviewer turn before
-   * Tony's — sorted here rather than by `role` in the query, so the order
-   * does not silently depend on the Postgres enum's declaration order.
-   * Empty-text rows are skipped: prepareTurn reserves the interviewer slot
-   * with `text: ''` before generation, and a crashed process can orphan one.
+   * One query answers all three questions the caller has — what was said, what
+   * topic it was said about, and which slot is next — so there is exactly one
+   * definition of "the rows of this conversation" rather than two reads that
+   * can disagree.
    *
-   * An unknown conversationId yields no rows, which prepareTurn already
-   * treats as a new conversation.
+   * An unknown conversationId yields no rows, which prepareTurn treats as a
+   * new conversation.
    */
-  async loadHistory(conversationId?: string): Promise<HistoryTurn[]> {
-    if (!conversationId) return [];
+  async loadConversation(
+    conversationId?: string,
+  ): Promise<LoadedConversation> {
+    if (!conversationId) return emptyConversation();
     const rows = await this.prisma.conversationTurn.findMany({
       where: { conversationId },
       orderBy: { turnIndex: 'asc' },
-      select: { turnIndex: true, role: true, text: true },
+      select: { turnIndex: true, role: true, text: true, topicId: true },
     });
-    return rows
-      .filter((row) => row.text.length > 0)
-      .sort(
-        (a, b) =>
-          a.turnIndex - b.turnIndex || rolePosition(a.role) - rolePosition(b.role),
-      )
-      .map((row) => ({
-        role:
-          row.role === ConversationRole.INTERVIEWER
-            ? ('interviewer' as const)
-            : ('tony' as const),
-        text: row.text,
-      }));
-  }
+    if (rows.length === 0) return emptyConversation();
 
-  private async nextTurnIndex(conversationId: string): Promise<number> {
-    const last = await this.prisma.conversationTurn.findFirst({
-      where: { conversationId },
-      orderBy: { turnIndex: 'desc' },
-      select: { turnIndex: true },
-    });
-    return last ? last.turnIndex + 1 : 0;
+    return {
+      // Counts EVERY row, including a reserved one whose text is still empty,
+      // so a crashed generation leaves a hole rather than handing the next
+      // request a slot the unique constraint would reject.
+      nextTurnIndex: Math.max(...rows.map((row) => row.turnIndex)) + 1,
+      // Every row of one conversation shares a topic; prepareTurn enforces it.
+      topicId: rows[0].topicId,
+      turns: rows
+        // prepareTurn reserves the interviewer slot with `text: ''` before
+        // generation, and a crashed process can orphan one. A blank turn in a
+        // prompt reads as a question nobody answered.
+        .filter((row) => row.text.length > 0)
+        .sort(
+          (a, b) =>
+            a.turnIndex - b.turnIndex ||
+            rolePosition(a.role) - rolePosition(b.role),
+        )
+        .map((row) => ({
+          role:
+            row.role === ConversationRole.INTERVIEWER
+              ? ('interviewer' as const)
+              : ('tony' as const),
+          text: row.text,
+        })),
+    };
   }
 
   private groundingStory(
@@ -114,22 +141,37 @@ export class ConversationService {
   async prepareTurn(params: {
     topic: TopicWithStories;
     conversationId?: string;
-    history: HistoryTurn[];
+    conversation: LoadedConversation;
     hashedIp: string;
   }): Promise<PreparedTurn> {
-    const { topic, history, hashedIp } = params;
+    const { topic, conversation, hashedIp } = params;
 
     // Independent of the per IP throttle: a global hard backstop on daily
     // Anthropic spend, checked before any AI call regardless of who's asking.
     await this.dailyUsage.assertCapNotExceeded();
 
-    const isNewConversation = !params.conversationId || history.length === 0;
+    const isNewConversation =
+      !params.conversationId || conversation.turns.length === 0;
+
+    // A conversation is about exactly one topic. Pairing one topic's slug with
+    // another topic's conversationId is a malformed request, not a new
+    // conversation: continuing it would splice one transcript into the other's
+    // prompts and leave the persisted rows permanently mixed. Rejected rather
+    // than silently restarted, so the client learns its id was wrong.
+    if (
+      !isNewConversation &&
+      conversation.topicId !== null &&
+      conversation.topicId !== topic.id
+    ) {
+      throw new ConflictException(
+        'This conversation belongs to a different topic',
+      );
+    }
+
     const conversationId = isNewConversation
       ? randomUUID()
       : (params.conversationId as string);
-    const turnIndex = isNewConversation
-      ? 0
-      : await this.nextTurnIndex(conversationId);
+    const turnIndex = isNewConversation ? 0 : conversation.nextTurnIndex;
 
     if (turnIndex >= TURN_PAIR_CAP) {
       throw new ConflictException('This conversation has already concluded');
