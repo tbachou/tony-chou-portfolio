@@ -117,12 +117,15 @@ const CURRENT_CLINICAL_CREDENTIAL = new RegExp(
     "\\bi(?:'m| am)(?:, in fact,)? (?:still |currently )?(?:an? )?(?:practi[cs]ing )?licen[sc]ed\\b",
     // "I am an occupational therapist", "I'm still an OT",
     // "I am a practicing occupational therapist"
-    "\\bi(?:'m| am) (?:still |currently )?(?:an? )?(?:practi[cs]ing )?(?:occupational therapist|ot)\\b",
+    "\\bi(?:'m| am) (?:still |currently )?(?:an? )?(?:practi[cs]ing )?(?:occupational therapist|ot(?![-\\w])(?! (?:alum|school|program|programme|student|graduate|grad|curriculum|degree|background|training)\\b))\\b",
     // "I remain a licensed OT"
     "\\bi remain (?:an? )?(?:licen[sc]ed|occupational therapist|ot)\\b",
-    // "I hold a current OT license" — "current" is required, so "I hold an
-    // M.S. in Occupational Therapy" and "I hold a driver license" both pass.
-    "\\bi hold (?:an? )?current [^.]{0,20}licen[sc]e\\b",
+    // "I hold a current OT license", "I have an active OT license", "I still
+    // keep my OT license". The clinical noun is REQUIRED before the licence:
+    // without it this fires on "I hold a current driver license".
+    "\\bi (?:still |currently )?(?:hold|have|keep|maintain|renew)\\b[^.]{0,25}(?:occupational therapy|ot) licen[sc]e\\b",
+    // "I work as an occupational therapist"
+    "\\bi work as an? (?:occupational therapist|ot)\\b",
     // "I am board certified" — true of no clinical credential he holds.
     "\\bi(?:'m| am) board.certified\\b",
     // Clinical practice only. Bare "I still practice" is not enough: "I still
@@ -130,8 +133,12 @@ const CURRENT_CLINICAL_CREDENTIAL = new RegExp(
     "\\bi (?:still|currently) (?:practi[cs]e (?:occupational therapy|clinically|as an? ot)|treat patients|see patients)\\b",
     // "As a licensed occupational therapist, I see patients weekly"
     "\\bas an? licen[sc]ed (?:occupational therapist|ot),? i (?:see|treat|work with) patients\\b",
-    // "my OT licence is current" — no first-person subject to anchor on.
-    "\\bmy [^.]{0,40}(?:licen[sc]e|certification|c/ndt) is (?:still )?(?:current|active|valid|up to date)\\b",
+    // "my OT licence is current" — no first-person subject to anchor on, so the
+    // CLINICAL noun carries the anchor instead. Without it this branch fires on
+    // "my AWS certification is still valid" and "my JetBrains license is
+    // active", which is the proximity reasoning this whole design rejects — and
+    // this persona talks about cloud certifications constantly.
+    "\\bmy [^.]{0,25}(?:occupational therapy|c/ndt|nbcot|otr|ot)[^.]{0,25}? is (?:still )?(?:current|active|valid|up to date)\\b",
   ].join("|"),
 );
 

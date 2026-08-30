@@ -57,10 +57,20 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     'I am an OT. My ex-colleague can confirm it.',
   ];
 
+  // Realistic misses the enumerated list was widened to cover: the
+  // hold/have/keep family and "work as", each still requiring a clinical noun.
+  const maintenanceClaims = [
+    'I have an active OT license.',
+    'I still hold my OT license.',
+    'I keep my OT license current.',
+    'I work as an occupational therapist.',
+  ];
+
   it.each([
     ...overclaims,
     ...filleredOverclaims,
     ...claimsWithTrailingPastTense,
+    ...maintenanceClaims,
   ])('blocks: %s', (text) => {
     const result = evaluateTonyResponse(text, soloStory);
     expect(result).toEqual({
@@ -112,6 +122,28 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     'I currently mentor students in the OT program.',
     // Product-domain talk that happens to name the clinical verb.
     'I am building a scheduler that helps clinics see patients faster.',
+    // Non-clinical certifications and licences. Two branches used to match
+    // "certification is current" and "hold a current ... license" with no
+    // clinical word in them at all — proximity reasoning wearing a regex
+    // costume. This persona talks about cloud certifications constantly, so
+    // these are the likeliest sentences in the whole list.
+    'My AWS certification is still valid until 2027.',
+    'My Solutions Architect certification is current.',
+    'My CPR certification is current, which is unrelated to clinical work.',
+    'My JetBrains license is active on this machine.',
+    'My open source license is still valid for this use.',
+    'My driver license is still valid.',
+    'I hold a current driver license.',
+    'I hold a current AWS certification in AI practitioner.',
+    // "OT" bound into a compound or qualifying a noun is not a claim to be one.
+    'I am an OT-trained engineer.',
+    'I am an OT alum who now writes TypeScript.',
+    'I am an OT school graduate turned engineer.',
+    // Past tense, however it is phrased.
+    'I am a former OT.',
+    'I am an ex-OT.',
+    'The OT license I held is long expired; I am an engineer now.',
+    'I am not licensed and have not been since 2020.',
   ];
 
   it.each([...honest, ...honestButKeywordDense])('allows: %s', (text) => {
