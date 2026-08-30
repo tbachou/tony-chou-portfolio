@@ -1,6 +1,10 @@
 import { StoryOwnership } from '../../generated/prisma/enums';
 import type { StoryModel } from '../../generated/prisma/models';
-import { evaluateTonyResponse } from './ownership-guard';
+import {
+  CREDENTIAL_GUARD_FALLBACK,
+  GENERIC_GUARD_FALLBACK,
+  evaluateTonyResponse,
+} from './ownership-guard';
 
 const soloStory = {
   id: 'story-1',
@@ -20,7 +24,10 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     'I am a licensed occupational therapist, so I think about accessibility a lot.',
     "I'm a licensed OT and that shapes how I approach this.",
     'I am currently licensed in occupational therapy.',
-    'I am an occupational therapist by training and still one on paper.',
+    // Re-baselined: the original said "by training and still one on paper",
+    // which conflated an honest qualifier with the overclaim. "by training" is
+    // now an allowed phrasing, so the claim here is the licence, explicitly.
+    'I am an occupational therapist by training and I still hold my OT license.',
     "I'm an OT, which is where the ergonomics instinct comes from.",
     'I still practice occupational therapy on the side.',
     'I currently treat patients two days a week.',
@@ -109,6 +116,20 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     // Exceeds the old 25-character window between the verb and the licence.
     "I hold, and have held without interruption since 2011, an OT license.",
     'I have, for what it\u2019s worth, a current OT license.',
+    // Whitespace and apostrophe variants. The double space needs no exotic
+    // input at all — it is an ordinary stream-join artefact, and it bypassed
+    // the entire guard.
+    'I am  a licensed occupational therapist.',
+    'I am\ta licensed occupational therapist.',
+    'I\u00a0am a licensed occupational therapist.',
+    'I am a licensed occupational\u00a0therapist.',
+    'I\u202fam a licensed occupational therapist.',
+    'I\u00b4m a licensed occupational therapist.',
+    'I\uff07m a licensed occupational therapist.',
+    'I\u2032m a licensed occupational therapist.',
+    // "O.T." is a standard written form of the credential.
+    'I am a licensed O.T.',
+    'I am a licensed O/T.',
   ];
 
   it.each([
@@ -219,6 +240,26 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     // clause about someone else must still pass.
     'I work with a therapist who still sees patients weekly.',
     'I am building software for a clinic whose OTs see patients daily.',
+    // The relative-clause branch is bound to a self-identification. A clause
+    // about a colleague, a teammate, or a spouse must pass.
+    "I'm on a team with an OT who treats patients.",
+    'I am the engineer on a product with an OT who still sees patients.',
+    'I am working alongside an occupational therapist who treats patients weekly.',
+    "I'm married to an OT who still sees patients.",
+    'I am reviewing notes from an OT who sees patients daily.',
+    // Plain statements of the fact the guard exists to protect.
+    'I have no OT license.',
+    'I have no current OT license.',
+    'I hold no OT certification.',
+    'I have no plans to renew my OT license.',
+    'I have an inactive OT license.',
+    'I have a dormant OT license.',
+    // Honest qualifiers: the credential describes his background, not his job.
+    "I'm an occupational therapist by training, now a software engineer.",
+    'I am an OT by training who moved into engineering.',
+    'I am an occupational therapist turned software engineer.',
+    'I am an OT turned engineer.',
+    "I'm an occupational therapist by background.",
   ];
 
   it.each([...honest, ...honestButKeywordDense])('allows: %s', (text) => {
@@ -392,4 +433,17 @@ describe('evaluateTonyResponse: the unverified reach figure', () => {
         .ok,
     ).toBe(true);
   });
+});
+
+describe('the guard does not reject its own fallbacks', () => {
+  // Both fallbacks are substituted for a rejected answer, so if either tripped
+  // the guard the replacement would itself be suppressed. CREDENTIAL_GUARD_
+  // FALLBACK clears branch 11 by two characters (the "my"-to-"c/ndt" window is
+  // 29 against a 25 budget), so pin it: widening that window re-blocks it.
+  it.each([CREDENTIAL_GUARD_FALLBACK, GENERIC_GUARD_FALLBACK])(
+    'allows: %s',
+    (text) => {
+      expect(evaluateTonyResponse(text, soloStory)).toEqual({ ok: true });
+    },
+  );
 });
