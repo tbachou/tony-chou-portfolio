@@ -305,6 +305,17 @@ model PipelineRun {
   windowStart DateTime?
   windowEnd   DateTime?
   error       String?
+  /// Which forecast lead an OPEN_METEO_INGEST run covered. Null on every other
+  /// job, which is why it is optional rather than defaulted.
+  ///
+  /// A generic runs table carrying one job's parameter is a real wart, and it
+  /// earns its place: the weather backfill chunks by (month, lead), so two runs
+  /// for one month at different leads are otherwise identical in job, window
+  /// and status, and a resumed backfill cannot tell which of them it already
+  /// finished. Deriving the lead by joining the rows a run wrote was the
+  /// alternative and is worse: it answers a question about process state by
+  /// inspecting data, and a run that wrote nothing has no discoverable lead.
+  leadHours   Int?
 
   observations     Observation[]
   weatherForecasts WeatherForecast[]

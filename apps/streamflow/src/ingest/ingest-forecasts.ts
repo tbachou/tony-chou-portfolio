@@ -81,6 +81,10 @@ export async function ingestForecastMonth(
       rowsWritten: 0,
       windowStart: window.start,
       windowEnd: window.end,
+      // What makes a resumed backfill able to tell two runs for the same month
+      // apart. Without it, this month at lead 24 and at lead 48 are identical
+      // rows and AC-R5's skip has nothing to key on.
+      leadHours,
     },
   });
 
