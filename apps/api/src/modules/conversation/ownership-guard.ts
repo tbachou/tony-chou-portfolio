@@ -90,47 +90,50 @@ function isRejectedFigure(lower: string, index: number): boolean {
  * expired. skills/tony.md leads its never-claim list with this: it is the only
  * item there that misrepresents a real, regulated qualification.
  *
- * A span check, not one regex. The regex version required the credential word
- * to sit immediately after "I am", so a single filler defeated it — "I'm still
- * a licensed OT", "I remain a licensed OT", "I hold a current OT license" all
- * walked through. Allowing filler in a regex instead re-imports the negation
- * problem, because "I am not a licensed OT any more" is honest and must pass.
+ * An enumerated list of CLAIM FORMS. Two smarter designs were tried and both
+ * failed in both directions. A negation detector excused real claims; a span
+ * check ("credential word nearby, negation word absent") blocked 17 honest
+ * answers — "I am practicing test-driven development", "I am shipping under an
+ * open source license", "My wife is a licensed occupational therapist" — while
+ * still excusing 9 real ones, because a stray "was" anywhere in the window
+ * whitelisted the whole span.
  *
- * So: find a present-tense subject, read the short span after it, and block
- * only when that span names a credential AND carries no past-tense or negating
- * marker. The marker list is the load-bearing part — every honest phrasing of
- * "I used to be one" has to contain one of them.
+ * The words this rule cares about are ordinary engineering vocabulary.
+ * "Practice", "license" and "OT" appear constantly in honest answers, so
+ * proximity means nothing and only the exact shape of a first-person claim
+ * does. Each alternative below binds the credential to a present-tense
+ * self-attribution; nothing fires on a credential belonging to someone else,
+ * to a repo, or to a discipline.
+ *
+ * The tradeoff is deliberate: an unusual phrasing can slip through, and the
+ * prompt rule in tony.md is the first line of defence for that. Blocking an
+ * honest answer is the worse failure here, because it fires on ordinary
+ * engineering talk and the visitor sees a canned deflection instead.
  */
-const CLINICAL_SUBJECT =
-  /\bi(?:'m| am|\s+still|\s+currently|\s+remain|\s+hold)\b|\bas an? licen[sc]ed\b/g;
-
-/** Naming one of these is what makes a span a credential claim. */
-const CLINICAL_CREDENTIAL =
-  /\b(?:licen[sc]ed|licen[sc]e|c\/ndt|practi[cs](?:e|ing)|occupational therapist|ot|(?:treat|treating|see|seeing) patients)\b/;
-
-/**
- * Any of these in the span means it is not a claim of a CURRENT credential.
- * "occupational therapy" as a field of study is deliberately absent from the
- * credential list above for the same reason: the M.S. is real and held.
- */
-const NOT_A_CURRENT_CLAIM =
-  /\b(?:not|no longer|never|used to|formerly|was|were|until|before|prior|expired|lapsed|worked|spent|then|ex)\b/;
-
-function claimsCurrentClinicalCredential(lower: string): boolean {
-  for (const match of lower.matchAll(CLINICAL_SUBJECT)) {
-    const span = lower.slice(match.index, match.index + 70);
-    if (
-      CLINICAL_CREDENTIAL.test(span) &&
-      !NOT_A_CURRENT_CLAIM.test(span)
-    ) {
-      return true;
-    }
-  }
-  // "my OT licence is current" has no first-person subject to anchor on.
-  return /\bmy [^.]{0,40}(?:licen[sc]e|certification|c\/ndt) is (?:still )?(?:current|active|valid|up to date)\b/.test(
-    lower,
-  );
-}
+const CURRENT_CLINICAL_CREDENTIAL = new RegExp(
+  [
+    // "I am a licensed OT", "I'm still a licensed occupational therapist",
+    // "I am currently licenced", "I am, in fact, a licensed OT"
+    "\\bi(?:'m| am)(?:, in fact,)? (?:still |currently )?(?:an? )?(?:practi[cs]ing )?licen[sc]ed\\b",
+    // "I am an occupational therapist", "I'm still an OT",
+    // "I am a practicing occupational therapist"
+    "\\bi(?:'m| am) (?:still |currently )?(?:an? )?(?:practi[cs]ing )?(?:occupational therapist|ot)\\b",
+    // "I remain a licensed OT"
+    "\\bi remain (?:an? )?(?:licen[sc]ed|occupational therapist|ot)\\b",
+    // "I hold a current OT license" — "current" is required, so "I hold an
+    // M.S. in Occupational Therapy" and "I hold a driver license" both pass.
+    "\\bi hold (?:an? )?current [^.]{0,20}licen[sc]e\\b",
+    // "I am board certified" — true of no clinical credential he holds.
+    "\\bi(?:'m| am) board.certified\\b",
+    // Clinical practice only. Bare "I still practice" is not enough: "I still
+    // practice code review discipline" is an honest answer about engineering.
+    "\\bi (?:still|currently) (?:practi[cs]e (?:occupational therapy|clinically|as an? ot)|treat patients|see patients)\\b",
+    // "As a licensed occupational therapist, I see patients weekly"
+    "\\bas an? licen[sc]ed (?:occupational therapist|ot),? i (?:see|treat|work with) patients\\b",
+    // "my OT licence is current" — no first-person subject to anchor on.
+    "\\bmy [^.]{0,40}(?:licen[sc]e|certification|c/ndt) is (?:still )?(?:current|active|valid|up to date)\\b",
+  ].join("|"),
+);
 
 export type GuardResult = { ok: true } | { ok: false; reason: string };
 
@@ -182,7 +185,7 @@ export function evaluateTonyResponse(
     };
   }
 
-  if (claimsCurrentClinicalCredential(lower)) {
+  if (CURRENT_CLINICAL_CREDENTIAL.test(lower)) {
     return {
       ok: false,
       reason: 'present-tense clinical credential Tony does not hold',

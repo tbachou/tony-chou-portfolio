@@ -42,7 +42,26 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     'As a licensed occupational therapist, I see patients weekly.',
   ];
 
-  it.each([...overclaims, ...filleredOverclaims])('blocks: %s', (text) => {
+  // Each of these was ALLOWED by a version that excused a span containing any
+  // past-tense or negating word. The marker sat after the credential, or in a
+  // different clause, and whitelisted a claim that had already been made.
+  const claimsWithTrailingPastTense = [
+    'I am a licensed OT and was for years.',
+    'I am still a licensed occupational therapist, then and now.',
+    "I'm a licensed OT; before that I was a student.",
+    'I am a licensed occupational therapist and my license has not expired.',
+    'I am currently a licensed OT, as I was in 2019.',
+    'I hold a current OT license and worked clinically for six years.',
+    'I remain a licensed OT, never having let it lapse.',
+    'I am a practicing occupational therapist and spent six years in the field.',
+    'I am an OT. My ex-colleague can confirm it.',
+  ];
+
+  it.each([
+    ...overclaims,
+    ...filleredOverclaims,
+    ...claimsWithTrailingPastTense,
+  ])('blocks: %s', (text) => {
     const result = evaluateTonyResponse(text, soloStory);
     expect(result).toEqual({
       ok: false,
@@ -67,7 +86,35 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     'I am a senior software engineer with six years of production experience.',
   ];
 
-  it.each(honest)('allows: %s', (text) => {
+  // The words this rule keys on are ordinary engineering vocabulary. Every
+  // string below was blocked by a "credential word nearby, negation absent"
+  // span check that looked reasonable and was not: proximity means nothing
+  // here, only the shape of a first-person claim does. They are the reason
+  // the rule is an enumerated list of claim forms rather than a heuristic.
+  const honestButKeywordDense = [
+    // The credential belongs to someone else.
+    'I am a software engineer. My wife is a licensed occupational therapist.',
+    'I am building a tool for licensed occupational therapists.',
+    'I currently collaborate with licensed clinicians on the content.',
+    "I'm designing the intake flow with a licensed OT reviewing it.",
+    "I'm on a team building software for licensed therapists.",
+    // "practice" with no clinical sense at all.
+    'I am practicing test-driven development on this codebase.',
+    'I still practice code review discipline every day.',
+    'I currently practice pair programming with the team.',
+    // "license" in a software or civil sense.
+    'I am the licensee of the MIT license for this repo.',
+    'I currently hold a driver license and nothing more exotic.',
+    'I am shipping under an open source license.',
+    // "OT" as a field, a programme, or an abbreviation of the real degree.
+    'I hold an M.S. in OT from Ohio State.',
+    'I am reading about OT history for background.',
+    'I currently mentor students in the OT program.',
+    // Product-domain talk that happens to name the clinical verb.
+    'I am building a scheduler that helps clinics see patients faster.',
+  ];
+
+  it.each([...honest, ...honestButKeywordDense])('allows: %s', (text) => {
     expect(evaluateTonyResponse(text, soloStory)).toEqual({ ok: true });
   });
 
