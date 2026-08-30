@@ -40,7 +40,7 @@ const NEVER_CLAIM_PHRASES = [
  * verb ("i built linear"), so a denial cannot match them, but a bare figure
  * matches a rejection just as happily as a claim.
  */
-const UNVERIFIED_USER_FIGURE = /\b(?:over |about |around )?500\+? users\b/;
+const UNVERIFIED_USER_FIGURE = /\b(?:over |about |around )?500\+? users\b/g;
 
 const PRODUCT_FORGE_NUMERIC_CLAIM = /\d+%|\$[\d,]+/;
 
@@ -56,9 +56,14 @@ const PRODUCT_FORGE_NUMERIC_CLAIM = /\d+%|\$[\d,]+/;
  * A WHITELIST of denial forms, not a negation detector. Enumerating negation
  * is a losing game: an earlier attempt allowed bare `than`, which let "more
  * than 500 users" and "no fewer than 500 users" through — the most idiomatic
- * phrasings of the exact claim this guard exists to stop. Comparatives are
- * ambiguous by nature ("bigger than" corrects upward, "more than" asserts), so
- * only the correcting forms are listed and `more`/`fewer`/`beyond` are not.
+ * phrasings of the exact claim this guard exists to stop.
+ *
+ * NO comparative is listed, including "bigger than". "It was larger than 500
+ * users" is grammatically identical to an assertion of at least 500; whether it
+ * corrects or claims depends on the world, not the sentence, and a guard cannot
+ * read the world. A model that must deny the figure should do so without
+ * repeating it ("the reach was millions"), which is a prompt rule, not
+ * something to buy here by widening the whitelist.
  *
  * Every marker must sit IMMEDIATELY before the figure (`\s*$`). That adjacency
  * is what stops a negation belonging to another clause from excusing a claim:
@@ -74,48 +79,71 @@ function isRejectedFigure(lower: string, index: number): boolean {
   const preceding = lower.slice(Math.max(0, index - 30), index);
   // `n't` carries no leading word boundary: in "wasn't" the `s` and `n` are
   // both word characters, so `\bn't` never matches a contraction.
-  return /(?:nowhere near|rather than|(?:much |far |way )?(?:bigger|larger) than|n't|\bnot\b(?! only)|\bnever\b)\s*$/.test(
+  return /(?:nowhere near|rather than|n't|\bnot\b(?! only)|\bnever\b)\s*$/.test(
     preceding,
   );
 }
 
 /**
- * Present-tense claims of clinical credentials Tony does not hold. He no
- * longer practices, his OT licence is not current, and his C/NDT certification
- * is expired (the never-claim list in skills/tony.md leads with this; it is the
- * only item there that misrepresents a real regulated qualification).
+ * Present-tense claims of clinical credentials Tony does not hold. He no longer
+ * practices, his OT licence is not current, and his C/NDT certification is
+ * expired. skills/tony.md leads its never-claim list with this: it is the only
+ * item there that misrepresents a real, regulated qualification.
  *
- * Anchored on TENSE, not on the credential words. "I was a licensed
- * occupational therapist for six years" is true and must pass; blocklisting
- * "licensed occupational therapist" outright would suppress the honest answer
- * and teach the guard to fire on the truth. Every pattern therefore requires a
- * present-tense subject ("I am", "I'm", "I still") or a present-tense copula
- * ("is current"), so a past-tense or negated sentence never matches.
+ * A span check, not one regex. The regex version required the credential word
+ * to sit immediately after "I am", so a single filler defeated it — "I'm still
+ * a licensed OT", "I remain a licensed OT", "I hold a current OT license" all
+ * walked through. Allowing filler in a regex instead re-imports the negation
+ * problem, because "I am not a licensed OT any more" is honest and must pass.
+ *
+ * So: find a present-tense subject, read the short span after it, and block
+ * only when that span names a credential AND carries no past-tense or negating
+ * marker. The marker list is the load-bearing part — every honest phrasing of
+ * "I used to be one" has to contain one of them.
  */
-const CURRENT_CLINICAL_CREDENTIAL = new RegExp(
-  [
-    // "I am a licensed occupational therapist", "I'm currently licenced"
-    "\\bi(?:'m| am) (?:an? )?(?:currently )?licen[sc]ed\\b",
-    // "I am an occupational therapist", "I'm an OT"
-    "\\bi(?:'m| am) (?:an? )?(?:occupational therapist|ot)\\b",
-    // "I still practice", "I currently treat patients"
-    "\\bi (?:still|currently) (?:practi[cs]e|treat|see patients)\\b",
-    // "my OT licence is current", "my C/NDT is still valid"
-    "\\bmy [^.]{0,40}(?:licen[sc]e|certification|c/ndt) is (?:still )?(?:current|active|valid|up to date)\\b",
-  ].join("|"),
-);
+const CLINICAL_SUBJECT =
+  /\bi(?:'m| am|\s+still|\s+currently|\s+remain|\s+hold)\b|\bas an? licen[sc]ed\b/g;
+
+/** Naming one of these is what makes a span a credential claim. */
+const CLINICAL_CREDENTIAL =
+  /\b(?:licen[sc]ed|licen[sc]e|c\/ndt|practi[cs](?:e|ing)|occupational therapist|ot|(?:treat|treating|see|seeing) patients)\b/;
+
+/**
+ * Any of these in the span means it is not a claim of a CURRENT credential.
+ * "occupational therapy" as a field of study is deliberately absent from the
+ * credential list above for the same reason: the M.S. is real and held.
+ */
+const NOT_A_CURRENT_CLAIM =
+  /\b(?:not|no longer|never|used to|formerly|was|were|until|before|prior|expired|lapsed|worked|spent|then|ex)\b/;
+
+function claimsCurrentClinicalCredential(lower: string): boolean {
+  for (const match of lower.matchAll(CLINICAL_SUBJECT)) {
+    const span = lower.slice(match.index, match.index + 70);
+    if (
+      CLINICAL_CREDENTIAL.test(span) &&
+      !NOT_A_CURRENT_CLAIM.test(span)
+    ) {
+      return true;
+    }
+  }
+  // "my OT licence is current" has no first-person subject to anchor on.
+  return /\bmy [^.]{0,40}(?:licen[sc]e|certification|c\/ndt) is (?:still )?(?:current|active|valid|up to date)\b/.test(
+    lower,
+  );
+}
 
 export type GuardResult = { ok: true } | { ok: false; reason: string };
 
-/**
- * Whether a response is visually blank. Not `trim()`: that strips the Unicode
- * White_Space set but leaves format and combining characters, so a reply of a
- * single zero-width space renders as nothing while passing every length check.
- * `\p{Cf}` covers the zero-width and directional-format characters, `\p{Mn}` a
- * bare combining mark with nothing to combine with.
- */
+const BLANK_CHARACTERS =
+  // \p{Cc} control characters (a truncated stream chunk, a stray byte),
+  // \p{Cs} lone surrogates, \p{Co} private use, plus the named fillers that
+  // belong to visible categories but render as nothing: Hangul fillers and the
+  // blank Braille pattern. \p{Cn} cannot be expressed as a property escape in
+  // JS, which is why the tail is enumerated.
+  /[\s\p{Cf}\p{Mn}\p{Cc}\p{Cs}\p{Co}\u115F\u1160\u3164\u2800\uFFFC]/gu;
+
 export function isBlankResponse(text: string): boolean {
-  return text.replace(/[\s\p{Cf}\p{Mn}]/gu, '').length === 0;
+  return text.replace(BLANK_CHARACTERS, '').length === 0;
 }
 
 export function evaluateTonyResponse(
@@ -141,15 +169,20 @@ export function evaluateTonyResponse(
     }
   }
 
-  const figure = UNVERIFIED_USER_FIGURE.exec(lower);
-  if (figure && !isRejectedFigure(lower, figure.index)) {
+  // EVERY occurrence, not just the first: "it wasn't 500 users at launch, we
+  // hit over 500 users by week two" opens with a denial and then makes the
+  // claim, and checking only the first match launders the second.
+  const claimed = [...lower.matchAll(UNVERIFIED_USER_FIGURE)].find(
+    (match) => !isRejectedFigure(lower, match.index),
+  );
+  if (claimed) {
     return {
       ok: false,
-      reason: `never claim blocklist match: "${figure[0]}"`,
+      reason: `never claim blocklist match: "${claimed[0]}"`,
     };
   }
 
-  if (CURRENT_CLINICAL_CREDENTIAL.test(lower)) {
+  if (claimsCurrentClinicalCredential(lower)) {
     return {
       ok: false,
       reason: 'present-tense clinical credential Tony does not hold',
