@@ -15,6 +15,7 @@ Child specs, added when the decision they settle is reached:
 2. [0010-hindcast-seeding.md](0010-hindcast-seeding.md): what "knowable at T" means while the seeding hindcast walks an archive that was imported in one pass, and where the interval bucket's time bound moves as a result. Settles what AC-20 leaves open about reconstructing history the pipeline learned all at once.
 3. [0010-falling-regime.md](0010-falling-regime.md): a fourth regime for a river on its way down, and the threshold that decides when a fall counts. Settles the gap AC-12's three class rule leaves over a recession, where persistence is biased in a way the peak and baseflow buckets both hide.
 4. [0010-falling-denominator.md](0010-falling-denominator.md): revises the falling threshold's denominator from `max(v, m)` to `v` alone, after measurement showed the median floor holds recession like scores in baseflow. Supersedes only the denominator of the child above; everything else in it stands.
+5. [0010-forecast-rain.md](0010-forecast-rain.md): the `WeatherForecast` table, the Open-Meteo Previous Runs backfill, and the lead matched rain feature. Settles what AC-4 and the Value sourcing rain rule leave open, and amends AC-4's unique key. Its subject is the second leakage trap: rain must be stored as it was forecast, at a stated lead, never as it was later observed.
 
 ## Requirements
 
@@ -156,6 +157,8 @@ Neither data source needs a key. USGS is open and Open-Meteo is keyless on the f
 ## Build plan
 
 Build approach is Tracer Bullet, assumed rather than recorded, as in 0002, 0004 and 0009. Ordering is deliberately bent for teaching: each slice is a working end to end thread, and each one earns a concept that the next slice depends on. Notably, slice 2 delivers a complete live forecasting system with a public scorecard and **no machine learning at all**. That is the point. If the plumbing cannot be trusted, no model built on it can be either, and you will have learned what a baseline is by shipping one rather than by reading about it.
+
+> **Delivered order, recorded 2026-08-29.** The slices below are numbered by concept, not by the order they shipped. Slice 5, the honesty surfaces, was built **third**, ahead of rain and ahead of the first model, and the public walkthrough at `/projects/streamflow/walkthrough` describes it as third because that is what happened. The resequencing was deliberate and is worth keeping: the calibration view is what turns the scorecard from a claim into a measurement, and building it early is what produced the regime split that now tells the modelling work where to aim. Shipped so far: slices 1, 2 and 5. Rain, slice 3, is next and is settled in [0010-forecast-rain.md](0010-forecast-rain.md). The numbering is left alone rather than renumbered, because every child spec and finding already cites these slice numbers.
 
 **Slice 1, the two time axes.** Concept: why one timestamp is not enough.
 
