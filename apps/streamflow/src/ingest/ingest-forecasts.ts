@@ -1,6 +1,6 @@
 import { config as loadEnvFile } from 'dotenv';
 
-import { GAUGE, OPEN_METEO_MODEL } from '../config';
+import { OPEN_METEO_MODEL } from '../config';
 import { forecastsAsOf } from '../asof/forecasts.repository';
 import { createPrismaClient } from '../db';
 import { sanitizeError } from '../errors';
