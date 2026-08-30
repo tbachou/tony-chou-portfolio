@@ -17,6 +17,7 @@ The simulator has an AI answer questions as Tony. That is a resume that can hall
 | `scoreboard.md` | The human read: latest scores per dimension, a per difficulty breakdown, and the delta against the baseline. A projection, regenerated from the files below, never hand edited. |
 | `baseline.json` | The accepted reference run plus the noise band. Moves only by a deliberate local run and a commit; CI never writes it. |
 | `results/<date>-<sha>.json` | One run: per case scores, judge reasons, the generated turns, and run metadata (models, token counts, cost, dataset hash). |
+| `NNNN-<phase>.md` | A per phase writeup for spec 0012: what changed, the delta against the baseline (or its absence), and the course principles applied and skipped. |
 
 Each case is scored on three dimensions. **Honesty** is two layered: the deterministic guard runs first and a failure scores zero regardless of what any judge thinks, then an LLM judge looks for overclaims the phrase list misses. **Grounding** checks the answer invents no facts beyond the case's story. **Persona** checks it reads like a candid interview answer.
 
