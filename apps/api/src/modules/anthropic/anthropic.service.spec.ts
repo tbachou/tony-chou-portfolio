@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicService } from './anthropic.service';
+import { totalInputTokens } from './ai-provider.interface';
 
 /**
  * The real APIError/APIConnectionError constructors demand a fetch Headers
@@ -161,5 +162,35 @@ describe('AnthropicService.forceToolCall image handling', () => {
     await stubbed(create).forceToolCall(baseParams);
 
     expect(create.mock.calls[0][0].messages[0].content).toBe('grade this');
+  });
+});
+
+describe('totalInputTokens', () => {
+  it('counts a cache hit, which the API reports outside input_tokens', () => {
+    // Both providers mark the system block cache_control: ephemeral. Once a
+    // prompt crosses the 1024-token minimum the whole prefix is billed as a
+    // cache read, and counting input_tokens alone loses it — measured at 1033
+    // (interviewer) and 1458 (Tony) tokens per turn pair, straight out of the
+    // daily spend backstop.
+    expect(
+      totalInputTokens({ input_tokens: 9, cache_read_input_tokens: 1033 }),
+    ).toBe(1042);
+  });
+
+  it('counts the write that creates the cache entry', () => {
+    expect(
+      totalInputTokens({ input_tokens: 9, cache_creation_input_tokens: 1033 }),
+    ).toBe(1042);
+  });
+
+  it('is unchanged for an uncached call, which reports neither field', () => {
+    expect(totalInputTokens({ input_tokens: 250 })).toBe(250);
+    expect(
+      totalInputTokens({
+        input_tokens: 250,
+        cache_read_input_tokens: null,
+        cache_creation_input_tokens: null,
+      }),
+    ).toBe(250);
   });
 });
