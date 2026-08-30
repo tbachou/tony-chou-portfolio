@@ -39,9 +39,20 @@ export const USGS_NO_DATA_VALUE = -999999;
 export const INGEST_OVERLAP_HOURS = 2;
 
 /**
- * Where ingestion starts on an empty table. This is where the Open-Meteo
- * archive begins, so it is the earliest date at which a row can ever be
- * matched with the rainfall that explains it.
+ * Where observation ingestion starts on an empty table.
+ *
+ * It is not where the Open-Meteo archive begins. This comment said that it was
+ * until the rain child measured it, and the claim was wrong by about three
+ * weeks and wrong by a different amount for each lead: a lead of N days needs N
+ * days of prior runs behind it, so the longest horizon becomes usable last.
+ *
+ * The date stays where it is. The few extra weeks of discharge it buys cannot
+ * be matched with forecast rain, which costs a little storage and nothing else,
+ * and moving it would trade that for re-fetching the whole observation archive.
+ *
+ * The archive's real boundary is not a constant anywhere. `firstForecastValidTimes`
+ * reads it per lead out of the store, which is the only place it is ever true,
+ * and it stays true as Open-Meteo extends or trims what it serves (AC-R6).
  */
 export const BACKFILL_START = new Date('2024-01-01T00:00:00.000Z');
 
