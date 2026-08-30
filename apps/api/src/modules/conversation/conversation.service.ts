@@ -53,6 +53,42 @@ export class ConversationService {
     });
   }
 
+  /**
+   * Rebuilds the transcript from the persisted rows rather than trusting a
+   * client-echoed one (spec 0012 phase one, AC-3). Nothing a visitor types
+   * reaches a prompt: the request carries only a topic slug and a uuid.
+   *
+   * Ordered by turnIndex, and within a pair the interviewer turn before
+   * Tony's — sorted here rather than by `role` in the query, so the order
+   * does not silently depend on the Postgres enum's declaration order.
+   * Empty-text rows are skipped: prepareTurn reserves the interviewer slot
+   * with `text: ''` before generation, and a crashed process can orphan one.
+   *
+   * An unknown conversationId yields no rows, which prepareTurn already
+   * treats as a new conversation.
+   */
+  async loadHistory(conversationId?: string): Promise<HistoryTurn[]> {
+    if (!conversationId) return [];
+    const rows = await this.prisma.conversationTurn.findMany({
+      where: { conversationId },
+      orderBy: { turnIndex: 'asc' },
+      select: { turnIndex: true, role: true, text: true },
+    });
+    return rows
+      .filter((row) => row.text.length > 0)
+      .sort(
+        (a, b) =>
+          a.turnIndex - b.turnIndex || rolePosition(a.role) - rolePosition(b.role),
+      )
+      .map((row) => ({
+        role:
+          row.role === ConversationRole.INTERVIEWER
+            ? ('interviewer' as const)
+            : ('tony' as const),
+        text: row.text,
+      }));
+  }
+
   private async nextTurnIndex(conversationId: string): Promise<number> {
     const last = await this.prisma.conversationTurn.findFirst({
       where: { conversationId },
@@ -266,6 +302,10 @@ function buildInterviewerUserMessage(
   ]
     .filter(Boolean)
     .join('\n\n');
+}
+
+function rolePosition(role: ConversationRole): number {
+  return role === ConversationRole.INTERVIEWER ? 0 : 1;
 }
 
 function buildTonyUserMessage(

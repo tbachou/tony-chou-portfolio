@@ -52,7 +52,12 @@ export class ConversationController {
     }
 
     const hashedIp = hashIp(resolveClientIp(req));
-    const history = body.history;
+    // Rebuilt from the persisted rows, never echoed by the client (spec 0012
+    // phase one, AC-3). Read before prepareTurn reserves this turn's slot, so
+    // the empty placeholder row it writes is not part of the transcript.
+    const history = await this.conversationService.loadHistory(
+      body.conversationId,
+    );
 
     // Resolves turnIndex, rejects an already-concluded conversation, and
     // claims the turn slot via the DB unique constraint — all before any
