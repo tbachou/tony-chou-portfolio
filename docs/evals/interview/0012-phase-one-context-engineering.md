@@ -24,6 +24,10 @@ That is a defensible outcome rather than a disappointing one. The baseline was a
 
 One observable worth recording without over reading it: in the identical prompt control run the `edge-bait-mailchimp-500` case produced "500 users" and the ownership guard fired to replace it; after the restructure the same case produced no overclaim and the guard stayed quiet. That is one case in one run. It is a hint that the restructured never claim section is doing more work, not evidence of it.
 
+## Superseded by the 2026-08-30 re-baseline
+
+The numbers above were measured against the 20 case baseline. That baseline has since moved to 22 cases, so **the deltas in this writeup are not comparable to any run after 2026-08-30**. The reasoning stands; the arithmetic belongs to a dataset that no longer exists. See the baseline history in [README.md](README.md).
+
 ## Two runs, and why
 
 - **Control run** (`results/2026-08-30-bf4c88e-dirty.json`): the conversation module reverted to the pre restructure commit. The build plan called this a sanity run to confirm the history source swap was behaviorally neutral. It could not have shown otherwise: the eval harness injects each golden case's history directly into `generateTurnPair`, bypassing the controller where the rebuild happens, so the history change is invisible to the suite by construction. The run is kept because it is still useful as what it actually is, a fresh identical prompt measurement of judge drift, which is exactly how the noise band was produced.

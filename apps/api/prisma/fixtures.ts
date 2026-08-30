@@ -73,7 +73,7 @@ export const stories: StorySeed[] = [
     ownership: StoryOwnership.SOLO,
     engagement: 'Product Forge',
     summary:
-      'Split real-time collaborative document state (Liveblocks, typed LiveObject/LiveList, live cursors and presence), server-persisted state (TanStack Query, cache invalidation), and local UI state (Context/reducer) into three distinct layers instead of one undifferentiated store, fixing a real class of stale-state and re-render bugs. liveblocks.config.ts: 10/10 commits Tony; TanStack Query layer: 8/9 commits; reducer pattern: 13/15 commits.',
+      'Split real-time collaborative document state (Liveblocks, typed LiveObject/LiveList, live cursors and presence), server-persisted state (TanStack Query, cache invalidation), and local UI state (Context/reducer) into three distinct layers instead of one undifferentiated store, fixing a real class of stale-state and re-render bugs. liveblocks.config.ts: 10/10 commits Tony; TanStack Query layer: 8/9 commits Tony; reducer pattern: 13/15 commits Tony.',
     topics: ['real-time-collaboration'],
   },
   {
