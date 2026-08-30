@@ -71,3 +71,24 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     );
   });
 });
+
+describe('evaluateTonyResponse: blank answers', () => {
+  // A blank answer used to pass the guard, persist as Tony's turn, and then be
+  // dropped from later transcripts by loadConversation's empty-text filter —
+  // leaving the next prompt holding a question with no answer under it.
+  it.each(['', '   ', '\n\n', '\t '])(
+    'rejects a blank answer (%j) rather than passing it through',
+    (text) => {
+      expect(evaluateTonyResponse(text, soloStory)).toEqual({
+        ok: false,
+        reason: 'empty response',
+      });
+    },
+  );
+
+  it('still allows a short but real answer', () => {
+    expect(evaluateTonyResponse('Yes, briefly.', soloStory)).toEqual({
+      ok: true,
+    });
+  });
+});

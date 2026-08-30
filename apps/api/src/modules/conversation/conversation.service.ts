@@ -238,6 +238,14 @@ export class ConversationService {
         onToken: (text) => emit('token', { text }),
       });
 
+      // The interviewer has no guard of its own, so a blank question would be
+      // persisted as-is and then dropped from later transcripts, leaving an
+      // answer with no question above it. Treat it as a failed generation:
+      // the catch below releases the reserved slot, so a retry can re-claim it.
+      if (interviewerResult.text.trim().length === 0) {
+        throw new Error('The interviewer produced an empty question');
+      }
+
       emit('turn_start', { role: 'tony' });
       // Buffered, not live: the ownership guard below must see the complete
       // response before anything reaches the client, so onToken here only
