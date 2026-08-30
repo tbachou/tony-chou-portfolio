@@ -29,6 +29,8 @@ Two scores are not comparable unless their `datasetHash` matches; a changed data
 
 Scores never fail CI. The workflow reports; it does not gate.
 
+CI runs a capped 8 case subset on a pull request that touches the conversation module, the fixtures, or the suite itself. Runs cost real budget, so a PR that cannot move the scores (a pure refactor, a comment, a test) can carry the `skip-evals` label to opt out. Labels are read when the event fires, so labelling an open PR takes effect from the next push, not retroactively. The full 20 case set is always available on demand from the Actions tab via `workflow_dispatch`.
+
 ## Running it
 
 ```bash
