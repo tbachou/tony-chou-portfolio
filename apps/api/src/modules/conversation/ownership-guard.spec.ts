@@ -144,6 +144,12 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     // "O.T." is a standard written form of the credential.
     'I am a licensed O.T.',
     'I am a licensed O/T.',
+    // A bare `by` in the noun-exclusion excused every asserting by-phrase.
+    // It now has to carry a background qualifier.
+    'I am an OT by day and an engineer by night.',
+    "I'm an occupational therapist by profession.",
+    'I am an OT by trade.',
+    'I am an occupational therapist by license.',
   ];
 
   it.each([
@@ -274,6 +280,12 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     'I am an occupational therapist turned software engineer.',
     'I am an OT turned engineer.',
     "I'm an occupational therapist by background.",
+    // The abbreviation's trailing dot used to eat the sentence terminator, so
+    // a window ran on into the next sentence and blocked these.
+    'My OT. Everything I list is current.',
+    'My degree is an OT. Everything on the resume is valid.',
+    'My background is O.T. Everything I claim here is current.',
+    'My OT? Everything I list is current.',
   ];
 
   it.each([...honest, ...honestButKeywordDense])('allows: %s', (text) => {
