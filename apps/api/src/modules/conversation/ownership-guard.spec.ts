@@ -66,11 +66,60 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     'I work as an occupational therapist.',
   ];
 
+  // A curly apostrophe defeated every "I'm" branch: one character, and a false
+  // claim of medical licensure reached the visitor. U+2019 is the default
+  // typography of the model whose output this reads, so this was not exotic.
+  const curlyApostrophe = [
+    '\u2019m a licensed occupational therapist.'.replace('\u2019', 'I\u2019'),
+    'I\u2019m an occupational therapist and I treat patients weekly.',
+    'I\u2019m still a practicing occupational therapist.',
+    'I\u2019m still an OT and I take clients.',
+  ];
+
+  // The modal forms, which are the grammatical echo of the question a visitor
+  // actually asks ("could you still treat patients?").
+  const modalClaims = [
+    'I could still treat patients.',
+    'I can still see patients.',
+    'I could take a caseload again tomorrow.',
+    'I do still practice occupational therapy.',
+  ];
+
+  // Bare present tense, with no "still" or "currently" to key on.
+  const barePresentClaims = [
+    'I treat patients on Fridays.',
+    'I see patients weekly at the clinic.',
+    'I practice occupational therapy on weekends.',
+    'I am an OT alum and I treat patients on weekends.',
+    'I am an OT program graduate who still sees patients weekly.',
+  ];
+
+  // Credential nouns and copulas the enumeration was missing.
+  const otherCredentialWords = [
+    'I am a registered occupational therapist.',
+    'I am a certified occupational therapist.',
+    'I am an OTR/L licensed in Colorado.',
+    'I hold an active OT certification.',
+    'I have an active NBCOT certification.',
+    'My OT license remains current.',
+    'I am an occupational therapy practitioner.',
+    'My OT license is in good standing.',
+    'My C/NDT never expired.',
+    'Yes, I am still licensed.',
+    // Exceeds the old 25-character window between the verb and the licence.
+    "I hold, and have held without interruption since 2011, an OT license.",
+    'I have, for what it\u2019s worth, a current OT license.',
+  ];
+
   it.each([
     ...overclaims,
     ...filleredOverclaims,
     ...claimsWithTrailingPastTense,
     ...maintenanceClaims,
+    ...curlyApostrophe,
+    ...modalClaims,
+    ...barePresentClaims,
+    ...otherCredentialWords,
   ])('blocks: %s', (text) => {
     const result = evaluateTonyResponse(text, soloStory);
     expect(result).toEqual({
@@ -144,6 +193,32 @@ describe('evaluateTonyResponse: current clinical credentials', () => {
     'I am an ex-OT.',
     'The OT license I held is long expired; I am an engineer now.',
     'I am not licensed and have not been since 2020.',
+    // `ot` with no boundary guard matched inside ordinary words. Every one of
+    // these is a sentence this engineering persona would actually say.
+    'My note on that is still valid.',
+    'My remote branch is up to date.',
+    'My robot certification is current.',
+    'My bot token is still valid.',
+    'My footer copy is current.',
+    'My Terraform remote state is up to date.',
+    'My screenshot of the dashboard is current.',
+    'My knowledge of the protocol is current.',
+    'I have a chatbot license key in the repo.',
+    'I still have the robot license plate photo somewhere.',
+    // A licence with no clinical noun attached to it.
+    'I am a licensed pilot, which is where the checklist habit comes from.',
+    'I am licensed to use that dataset commercially.',
+    "I'm licensed under MIT for everything I publish.",
+    'I am currently licensed to drive commercial vehicles.',
+    'I am a licensed amateur radio operator.',
+    'I am board certified in Kubernetes.',
+    // The most natural TRUE sentence about the lapsed licence. An earlier
+    // window bridged "I have" to the licence straight across the word "not".
+    'I have not held an occupational therapy license since 2019.',
+    // The relative-clause branch is bound to a self-identification, so a
+    // clause about someone else must still pass.
+    'I work with a therapist who still sees patients weekly.',
+    'I am building software for a clinic whose OTs see patients daily.',
   ];
 
   it.each([...honest, ...honestButKeywordDense])('allows: %s', (text) => {

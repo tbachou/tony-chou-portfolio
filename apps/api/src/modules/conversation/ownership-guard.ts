@@ -86,63 +86,89 @@ function isRejectedFigure(lower: string, index: number): boolean {
 
 /**
  * Present-tense claims of clinical credentials Tony does not hold. He no longer
- * practices, his OT licence is not current, and his C/NDT certification is
+ * practices, holds no current OT licence, and his C/NDT certification is
  * expired. skills/tony.md leads its never-claim list with this: it is the only
  * item there that misrepresents a real, regulated qualification.
  *
- * An enumerated list of CLAIM FORMS. Two smarter designs were tried and both
- * failed in both directions. A negation detector excused real claims; a span
- * check ("credential word nearby, negation word absent") blocked 17 honest
- * answers — "I am practicing test-driven development", "I am shipping under an
- * open source license", "My wife is a licensed occupational therapist" — while
- * still excusing 9 real ones, because a stray "was" anywhere in the window
- * whitelisted the whole span.
+ * Built from three shared fragments rather than a flat list of alternatives.
+ * Five rounds of adversarial review each found a bypass or a false positive,
+ * and most came from one branch being written slightly differently from its
+ * neighbours: an unanchored `ot` that matched inside "remote" and "robot", a
+ * branch missing the clinical noun so it fired on "licensed under MIT", a
+ * window that bridged "I have" to a licence across the word "not". Sharing the
+ * fragments is what stops the branches drifting apart again.
  *
- * The words this rule cares about are ordinary engineering vocabulary.
- * "Practice", "license" and "OT" appear constantly in honest answers, so
- * proximity means nothing and only the exact shape of a first-person claim
- * does. Each alternative below binds the credential to a present-tense
- * self-attribution; nothing fires on a credential belonging to someone else,
- * to a repo, or to a discipline.
- *
- * The tradeoff is deliberate: an unusual phrasing can slip through, and the
- * prompt rule in tony.md is the first line of defence for that. Blocking an
- * honest answer is the worse failure here, because it fires on ordinary
- * engineering talk and the visitor sees a canned deflection instead.
+ * The words this rule keys on are ordinary engineering vocabulary — "practice",
+ * "license" and "OT" appear constantly in honest answers — so proximity alone
+ * means nothing. Every branch requires BOTH a present-tense self-attribution
+ * and CLINICAL, and none may span NEG.
  */
+
+/** A clinical credential noun. `ot` needs both boundaries: without the
+ *  lookbehind it matches inside "remote", "note", "robot", "screenshot". */
+const CLINICAL =
+  '(?:occupational therap(?:y|ist)|occupational therapy practitioner|(?<![-\\w])otr(?:/l)?(?![-\\w])|(?<![-\\w])ot(?![-\\w])|c/ndt|nbcot)';
+
+/** Characters a window may span, stopping at a sentence end or any marker that
+ *  makes the sentence past tense or a denial. This is what keeps "I have not
+ *  held an occupational therapy license since 2019" — the most natural true
+ *  sentence about the lapsed licence — out of the hold/have branch. */
+const NEG = '(?:(?!\\b(?:not|never|no longer|used to|former|was|were|expired|lapsed)\\b)[^.])';
+
+/** A credential adjective. */
+const HELD = '(?:licen[sc]ed|registered|certified|practi[cs]ing)';
+
 const CURRENT_CLINICAL_CREDENTIAL = new RegExp(
   [
-    // "I am a licensed OT", "I'm still a licensed occupational therapist",
-    // "I am currently licenced", "I am, in fact, a licensed OT"
-    "\\bi(?:'m| am)(?:, in fact,)? (?:still |currently )?(?:an? )?(?:practi[cs]ing )?licen[sc]ed\\b",
-    // "I am an occupational therapist", "I'm still an OT",
-    // "I am a practicing occupational therapist"
-    "\\bi(?:'m| am) (?:still |currently )?(?:an? )?(?:practi[cs]ing )?(?:occupational therapist|ot(?![-\\w])(?! (?:alum|school|program|programme|student|graduate|grad|curriculum|degree|background|training)\\b))\\b",
+    // "I am a licensed occupational therapist", "I'm a registered OT".
+    // CLINICAL is required: without it this fires on "I'm licensed under MIT".
+    `\\bi(?:'m| am)(?:, in fact,)? (?:still |currently |also |now )*(?:an? )?(?:still |currently )*${HELD} ?${NEG}{0,15}${CLINICAL}`,
+    // "Yes, I am still licensed." No noun follows, but "still"/"currently"
+    // asserts continuity of a credential he does not hold. Excluded when the
+    // licence is bound to something else ("currently licensed to drive").
+    `\\bi(?:'m| am) (?:still|currently) licen[sc]ed\\b(?! (?:under|to|for|as a [a-z]+ (?:driver|operator|pilot)))`,
+    // "I am an occupational therapist", "I'm still an OT". A following noun
+    // means the OT qualifies it rather than naming him: "OT alum", "OT school".
+    `\\bi(?:'m| am) (?:still |currently )?(?:an? )?(?:${HELD} )?${CLINICAL}(?! (?:alum|alumni|school|program|programme|student|graduate|grad|curriculum|degree|background|training)\\b)`,
     // "I remain a licensed OT"
-    "\\bi remain (?:an? )?(?:licen[sc]ed|occupational therapist|ot)\\b",
-    // "I hold a current OT license", "I have an active OT license", "I still
-    // keep my OT license". The clinical noun is REQUIRED before the licence:
-    // without it this fires on "I hold a current driver license".
-    "\\bi (?:still |currently )?(?:hold|have|keep|maintain|renew)\\b[^.]{0,25}(?:occupational therapy|ot) licen[sc]e\\b",
+    `\\bi remain (?:an? )?(?:${HELD} )?${CLINICAL}`,
+    // "I hold a current OT license", "I have an active NBCOT certification",
+    // "I hold, and have held without interruption since 2011, an OT license".
+    // The window is wide but cannot cross NEG, so the honest denial passes.
+    `\\bi (?:still |currently )?(?:hold|have|keep|maintain|renew)s?\\b${NEG}{0,60}${CLINICAL}${NEG}{0,20}(?:licen[sc]e|certification|credential|registration)`,
     // "I work as an occupational therapist"
-    "\\bi work as an? (?:occupational therapist|ot)\\b",
-    // "I am board certified" — true of no clinical credential he holds.
-    "\\bi(?:'m| am) board.certified\\b",
-    // Clinical practice only. Bare "I still practice" is not enough: "I still
-    // practice code review discipline" is an honest answer about engineering.
-    "\\bi (?:still|currently) (?:practi[cs]e (?:occupational therapy|clinically|as an? ot)|treat patients|see patients)\\b",
+    `\\bi work as an? ${CLINICAL}`,
+    // "I am board certified in occupational therapy". CLINICAL required, so
+    // "I am board certified in Kubernetes" passes.
+    `\\bi(?:'m| am) board[- ]certified(?: in)?${NEG}{0,20}${CLINICAL}`,
+    // Clinical practice, including the MODAL forms a visitor's question invites
+    // ("could you still treat patients?" -> "I could still treat patients").
+    // "still"/"currently" is optional: "I treat patients on Fridays" has no
+    // honest engineering reading, while bare "practice" is gated on a clinical
+    // object so "I still practice code review discipline" passes.
+    `\\bi (?:can |could |do |am able to |would be able to )?(?:still |currently )?(?:practi[cs]e (?:occupational therapy|clinically|as an? ot)|treat patients|see patients|take a caseload)`,
+    // "I am an OT program graduate who still sees patients weekly" — the claim
+    // sits in a relative clause with a third-person verb, so no first-person
+    // branch reaches it. Bound to a self-identification, so it cannot fire on
+    // "I work with a therapist who still sees patients".
+    `\\bi(?:'m| am)${NEG}{0,40}${CLINICAL}${NEG}{0,25}who (?:still |currently )?(?:sees|treats|works with) patients`,
     // "As a licensed occupational therapist, I see patients weekly"
-    "\\bas an? licen[sc]ed (?:occupational therapist|ot),? i (?:see|treat|work with) patients\\b",
-    // "my OT licence is current" — no first-person subject to anchor on, so the
-    // CLINICAL noun carries the anchor instead. Without it this branch fires on
-    // "my AWS certification is still valid" and "my JetBrains license is
-    // active", which is the proximity reasoning this whole design rejects — and
-    // this persona talks about cloud certifications constantly.
-    "\\bmy [^.]{0,25}(?:occupational therapy|c/ndt|nbcot|otr|ot)[^.]{0,25}? is (?:still )?(?:current|active|valid|up to date)\\b",
-  ].join("|"),
+    `\\bas an? ${HELD} ${CLINICAL},? i (?:see|treat|work with) patients`,
+    // "my OT licence is current", "my C/NDT remains valid". No first-person
+    // subject, so CLINICAL carries the anchor: without it this fired on
+    // "my AWS certification is still valid" and "my remote branch is up to date".
+    `\\bmy ${NEG}{0,25}${CLINICAL}${NEG}{0,25}(?:licen[sc]e|certification|credential|registration)? (?:is|remains) (?:still )?(?:current|active|valid|up to date|in good standing)`,
+    // "my OT licence has not lapsed", "my C/NDT never expired" — a denial in
+    // form, a claim in substance.
+    `\\bmy [^.]{0,25}${CLINICAL}[^.]{0,30}(?:has ?n't|has not|never) (?:lapsed|expired)`,
+  ].join('|'),
 );
 
 export type GuardResult = { ok: true } | { ok: false; reason: string };
+
+/** Shared so the call site's fallback choice cannot drift from the reason. */
+export const CREDENTIAL_GUARD_REASON =
+  'present-tense clinical credential Tony does not hold';
 
 const BLANK_CHARACTERS =
   // \p{Cc} control characters (a truncated stream chunk, a stray byte),
@@ -171,7 +197,22 @@ export function evaluateTonyResponse(
     return { ok: false, reason: 'empty response' };
   }
 
-  const lower = text.toLowerCase();
+  // Normalised, not just lowercased. Every "I'm" branch below is written with
+  // an ASCII apostrophe, but U+2019 is the default typography of the model
+  // whose output this reads — so "I’m a licensed occupational therapist"
+  // walked straight through a guard that blocked the ASCII spelling.
+  const lower = text.toLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'");
+
+  // First, ahead of the commercial rules: it is the only check here guarding a
+  // real regulated qualification, and whichever branch fires first supplies the
+  // reason that reaches the log and the eval record. Ordering it last let a
+  // "500 users" match mask a licensure claim in the same answer.
+  if (CURRENT_CLINICAL_CREDENTIAL.test(lower)) {
+    return {
+      ok: false,
+      reason: CREDENTIAL_GUARD_REASON,
+    };
+  }
 
   for (const phrase of NEVER_CLAIM_PHRASES) {
     if (lower.includes(phrase)) {
@@ -189,13 +230,6 @@ export function evaluateTonyResponse(
     return {
       ok: false,
       reason: `never claim blocklist match: "${claimed[0]}"`,
-    };
-  }
-
-  if (CURRENT_CLINICAL_CREDENTIAL.test(lower)) {
-    return {
-      ok: false,
-      reason: 'present-tense clinical credential Tony does not hold',
     };
   }
 
@@ -233,6 +267,15 @@ export function evaluateTonyResponse(
 
 // Used only when the never-claim blocklist fires on a SOLO story, which has no
 // requiredFraming (that field is scripted specifically for non-SOLO stories).
+/**
+ * Substituted when the credential check fires. The generic fallback deflects,
+ * and `requiredFraming` is an OWNERSHIP sentence — so a visitor who asked "are
+ * you still licensed?" got a line about who built the editing layer. The true
+ * answer is short and responsive, so say it rather than dodging.
+ */
+export const CREDENTIAL_GUARD_FALLBACK =
+  "I was a licensed occupational therapist for six years, but I don't practice now — my licence isn't current and my C/NDT certification is expired. These days I'm a software engineer, and that's the work I can speak to.";
+
 export const GENERIC_GUARD_FALLBACK =
   "That's not something I can speak to confidently, let's keep to what's verified in my work.";
 

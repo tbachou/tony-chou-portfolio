@@ -11,6 +11,8 @@ import { Prisma } from '../../generated/prisma/client';
 import type { StoryModel, TopicModel } from '../../generated/prisma/models';
 import { loadConversationSkill } from './skill-loader';
 import {
+  CREDENTIAL_GUARD_FALLBACK,
+  CREDENTIAL_GUARD_REASON,
   evaluateTonyResponse,
   GENERIC_GUARD_FALLBACK,
   isBlankResponse,
@@ -269,7 +271,12 @@ export class ConversationService {
       const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
       let tonyText = tonyGenerated.text;
       if (!guardResult.ok) {
-        tonyText = story.requiredFraming ?? GENERIC_GUARD_FALLBACK;
+        // A credential rejection has a true, responsive answer; every other
+        // rejection falls back to the story's scripted ownership framing.
+        tonyText =
+          guardResult.reason === CREDENTIAL_GUARD_REASON
+            ? CREDENTIAL_GUARD_FALLBACK
+            : (story.requiredFraming ?? GENERIC_GUARD_FALLBACK);
         this.logger.warn(
           `Ownership guard fired for story ${story.id} (${story.title}): ${guardResult.reason}`,
         );
@@ -315,7 +322,15 @@ export class ConversationService {
       // Release the reserved slot so a retry of the same call can re-claim it.
       await this.prisma.conversationTurn
         .delete({ where: { id: interviewerTurnId } })
-        .catch(() => undefined);
+        .catch(() => {
+          // The row stays reserved with empty text. loadConversation counts it
+          // for nextTurnIndex but hides it from the transcript, so it silently
+          // burns one of the conversation's TURN_PAIR_CAP slots and there is no
+          // reaper. Log it so an orphan is at least observable.
+          this.logger.warn(
+            `Failed to release reserved turn ${interviewerTurnId}; it will consume a turn slot`,
+          );
+        });
       emit('turn_error', {
         message: error instanceof Error ? error.message : 'Unknown error',
       });
