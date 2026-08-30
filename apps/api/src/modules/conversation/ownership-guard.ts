@@ -122,7 +122,8 @@ function isRejectedFigure(lower: string, index: number): boolean {
  * say is worse than a false negative on one nobody writes.
  *
  * So: adding another alternative here is very likely to break something else.
- * The real fix is a second layer that can read a sentence — a small structured
+ * The real fix is spec 0013 (docs/specs/_root/0013-credential-check-second-layer.md):
+ * a second layer that can read a sentence — a small structured
  * call answering one narrow question — with this regex demoted to a cheap first
  * filter. Until that exists, prefer tightening skills/tony.md over adding a
  * branch here, and never change this file without re-running the adversarial
