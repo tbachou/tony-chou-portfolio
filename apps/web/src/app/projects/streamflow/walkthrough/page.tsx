@@ -98,13 +98,15 @@ const TABLES = [
   },
   {
     name: 'PipelineRun',
-    holds: 'Every job execution, including the ones that failed.',
+    holds:
+      'Every job execution, including the ones that failed. A weather backfill run also records which lead it was covering, so an interrupted backfill knows which months it still owes.',
     unique: '—'
   },
   {
     name: 'WeatherForecast',
-    holds: 'Rain. Designed, not yet built.',
-    unique: '—'
+    holds:
+      'Past rain forecasts, each stored with how far ahead it was predicting. Backfilled to January 2024. No forecaster reads it yet.',
+    unique: 'gauge + validTime + leadHours + model + recordedAt'
   }
 ];
 
@@ -147,19 +149,19 @@ const STAGES = [
   {
     n: '03',
     name: 'Honesty surfaces',
-    tag: 'next',
+    tag: 'shipped',
     body: 'The calibration view: does an 80 percent range actually contain the truth 80 percent of the time, broken down by horizon and river state? Every field it needs is already being recorded, so this is a read and a chart rather than new machinery.'
   },
   {
     n: '04',
     name: 'Rain arrives',
-    tag: 'planned',
-    body: 'Past weather forecasts, stored with the lead time each was issued at. The subtlety this stage teaches: a model must be trained on past forecasts, not on the rain that actually fell, or it learns from information it will not have when it runs for real.'
+    tag: 'in progress',
+    body: 'Past weather forecasts, stored with the lead time each was issued at. The store and the backfill are built; no forecaster reads them yet. The subtlety this stage teaches: a model must be trained on past forecasts, not on the rain that actually fell, or it learns from information it will not have when it runs for real. Which archive you take it from matters just as much. The obvious one stitches together the first few hours of every model run, which makes it nearly as accurate as measurement, and it would leak in exactly the same way while looking like a forecast.'
   },
   {
     n: '05',
     name: 'The first real model',
-    tag: 'planned',
+    tag: 'next',
     body: 'Gradient boosted trees over recent flow and lead matched rain, producing their range directly from three quantile models. It registers as an ordinary forecaster and competes in the same tables as the baselines. It may not beat persistence at 24 hours; the design makes that visible rather than hideable.'
   },
   {
@@ -303,9 +305,9 @@ const REFERENCES = [
     what: 'The method planned for the first real model, including the quantile loss used to produce a range directly.'
   },
   {
-    href: 'https://open-meteo.com/en/docs/historical-forecast-api',
-    name: 'Open-Meteo Historical Forecast API',
-    what: 'The archive of past weather forecasts the rain stage will train on. Free for non-commercial use, CC BY 4.0.'
+    href: 'https://open-meteo.com/en/docs/previous-runs-api',
+    name: 'Open-Meteo Previous Runs API',
+    what: 'The archive of past weather forecasts the rain stage will train on, served at fixed lead times of one to seven days. Chosen over the Historical Forecast API, which stitches the first hours of each run into one series and is therefore nearly as accurate as measurement rather than a fair test of a forecast. Free for non-commercial use, CC BY 4.0.'
   }
 ];
 
@@ -1152,11 +1154,13 @@ export default function StreamflowWalkthroughPage() {
                     <span className="sr-only"> — </span>
                     <span
                       className={
-                        stage.tag === 'next'
-                          ? 'ml-2 bg-term-accent px-1.5 py-0.5 text-term-xs uppercase tracking-wide text-term-on-accent'
-                          : stage.tag === 'shipped'
-                            ? 'ml-2 text-term-xs uppercase tracking-wide text-term-accent'
-                            : 'ml-2 text-term-xs uppercase tracking-wide text-term-muted'
+                        stage.tag === 'in progress'
+                          ? 'ml-2 whitespace-nowrap bg-term-accent px-1.5 py-0.5 text-term-xs uppercase tracking-wide text-term-on-accent'
+                          : stage.tag === 'next'
+                            ? 'ml-2 border border-term-accent px-1.5 py-0.5 text-term-xs uppercase tracking-wide text-term-accent'
+                            : stage.tag === 'shipped'
+                              ? 'ml-2 text-term-xs uppercase tracking-wide text-term-accent'
+                              : 'ml-2 text-term-xs uppercase tracking-wide text-term-muted'
                       }
                     >
                       {stage.tag}
