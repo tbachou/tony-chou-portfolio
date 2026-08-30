@@ -6,7 +6,7 @@
 // makes the later backtest mean anything.
 //
 // Slice 1 covers Gauge, Observation and PipelineRun. Slice 2 adds
-// ModelVersion, Prediction and Score. WeatherForecast arrives in slice 3.
+// ModelVersion, Prediction and Score. Slice 3 adds WeatherForecast.
 
 generator client {
   provider     = "prisma-client"
@@ -102,8 +102,9 @@ model Gauge {
   active           Boolean  @default(true)
   createdAt        DateTime @default(now())
 
-  observations Observation[]
-  predictions  Prediction[]
+  observations     Observation[]
+  predictions      Prediction[]
+  weatherForecasts WeatherForecast[]
 
   @@map("gauges")
 }
@@ -127,6 +128,59 @@ model Observation {
   @@unique([gaugeId, validTime, recordedAt])
   @@index([gaugeId, validTime, recordedAt(sort: Desc)])
   @@map("observations")
+}
+
+/// What rain was *forecast* for one hour, at one lead time, by one pinned
+/// model. The model must learn what was expected rather than what fell:
+/// training on the observed column hands the forecaster perfect weather
+/// foresight it will never have live, and the leakage arrives disguised as a
+/// good backtest.
+///
+/// Append only, exactly like Observation. Nothing updates or deletes a row; a
+/// revised forecast is a new row with a later recordedAt. Without that third
+/// timestamp an Open-Meteo re-analysis of its own archive would overwrite
+/// history invisibly, which is the failure Observation already exists to
+/// prevent, and weather is no reason to make an exception.
+///
+/// The three timestamps are three different questions and all three are
+/// needed. validTime is when the weather is expected to happen, issuedAt is
+/// when it was forecast, recordedAt is when this pipeline fetched it.
+model WeatherForecast {
+  id          String      @id @default(cuid())
+  gaugeId     String
+  gauge       Gauge       @relation(fields: [gaugeId], references: [id])
+  /// When the forecast weather is expected to occur.
+  validTime   DateTime
+  /// How far ahead this value was forecast, 24 times the N of the Open-Meteo
+  /// column it came from.
+  ///
+  /// Canonical: issuedAt is derived from this, never the other way round.
+  /// Deriving in the other direction would let a rounding difference forge a
+  /// duplicate the unique key could not catch. Held at 24 or more by a check
+  /// constraint as well as by the parser, because the two catch different
+  /// mistakes: rain that arrives with a shorter lead is knowledge from the
+  /// future wearing a forecast's clothes.
+  leadHours   Int
+  /// validTime minus leadHours. Nominal rather than observed: the Previous
+  /// Runs endpoint does not report a run's true initialisation time, so this
+  /// asserts a round number the real run may sit a few hours either side of.
+  /// Stored because the archive knowability axis reads it, not validTime.
+  issuedAt    DateTime
+  /// When this pipeline learned it, its own wall clock, as Observation does.
+  recordedAt  DateTime
+  precipMm    Float
+  tempC       Float?
+  /// The pinned model name, stored literally. best_match is never requested:
+  /// it is a selector, not a model, and which model backs it can change, which
+  /// would put a silent inhomogeneity into a training set of only two and a
+  /// half years.
+  model       String
+  ingestRunId String
+  ingestRun   PipelineRun @relation(fields: [ingestRunId], references: [id])
+
+  @@unique([gaugeId, validTime, leadHours, model, recordedAt])
+  @@index([gaugeId, model, leadHours, validTime])
+  @@map("weather_forecasts")
 }
 
 /// One version of one forecaster. A baseline is a row here exactly like a
@@ -251,8 +305,20 @@ model PipelineRun {
   windowStart DateTime?
   windowEnd   DateTime?
   error       String?
+  /// Which forecast lead an OPEN_METEO_INGEST run covered. Null on every other
+  /// job, which is why it is optional rather than defaulted.
+  ///
+  /// A generic runs table carrying one job's parameter is a real wart, and it
+  /// earns its place: the weather backfill chunks by (month, lead), so two runs
+  /// for one month at different leads are otherwise identical in job, window
+  /// and status, and a resumed backfill cannot tell which of them it already
+  /// finished. Deriving the lead by joining the rows a run wrote was the
+  /// alternative and is worse: it answers a question about process state by
+  /// inspecting data, and a run that wrote nothing has no discoverable lead.
+  leadHours   Int?
 
-  observations Observation[]
+  observations     Observation[]
+  weatherForecasts WeatherForecast[]
 
   @@index([job, startedAt])
   @@map("pipeline_runs")
