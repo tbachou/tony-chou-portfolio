@@ -22,12 +22,12 @@
   "devDependencies": {
     "@types/aws-lambda": "^8.10.161",
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.0.0",
-    "archiver": "^7.0.1",
-    "esbuild": "^0.24.2",
-    "jest": "^30.0.0",
+    "@types/node": "^26.4.0",
+    "archiver": "^8.0.0",
+    "esbuild": "^0.28.2",
+    "jest": "^30.5.0",
     "ts-jest": "^29.2.5",
-    "typescript": "^5.7.3"
+    "typescript": "^7.0.2"
   },
   "jest": {
     "moduleFileExtensions": ["js", "json", "ts"],
