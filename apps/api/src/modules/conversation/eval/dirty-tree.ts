@@ -21,6 +21,27 @@
  * The list of harmless areas is a git pathspec, so git can do the matching.
  * It has never been wrong about renames, quoting, or case, and there is no
  * parser left to have a bug in.
+ *
+ * KNOWN LIMIT, and it is a property of this design rather than a bug in it.
+ * The guard sees exactly what `git status` sees, so anything hidden FROM git
+ * status is hidden from the guard:
+ *
+ *   git update-index --assume-unchanged apps/api/prisma/fixtures.ts
+ *
+ * marks a tracked file as never-modified, and after that an edited eval
+ * corpus is invisible to any pathspec query. Confirmed by running it. The
+ * same holds for `--skip-worktree`. People set these to silence a noisy
+ * generated file and forget, which is what makes it worth writing down.
+ *
+ * Catching it would need `git ls-files -v` and a scan for lowercase status
+ * letters (`h` for assume-unchanged, `S` for skip-worktree), or a
+ * `git update-index --refresh` before the status call. That is not built,
+ * deliberately: it adds a second mechanism to maintain for a case that is
+ * self inflicted and local only, and it cannot occur in CI, which checks out
+ * fresh. If a run's numbers ever look impossible to explain, check this
+ * first:
+ *
+ *   git ls-files -v | grep '^[a-z]'
  */
 
 /**
