@@ -5,7 +5,7 @@ import { earliestStoredForecastValidTimes } from '../asof/forecasts.repository';
 import { createPrismaClient } from '../db';
 import { sanitizeError } from '../errors';
 import type { PrismaClient, RunStatus } from '../generated/prisma/client';
-import { monthWindow, nextMonthWindow } from './forecast-window';
+import { isCalendarMonth, monthWindow, nextMonthWindow } from './forecast-window';
 import {
   ingestForecastMonth,
   type ForecastIngestDeps,
@@ -51,18 +51,30 @@ export function monthStartsBetween(from: Date, to: Date): Date[] {
  * them. Skipping a `PARTIAL` month would freeze that gap permanently. Re-running
  * a month that really is complete costs one request and writes nothing, which
  * is the cheap side of the trade.
+ *
+ * A run whose window is not a whole calendar month contributes no chunk, for
+ * the same reason a run missing either column does not: it covers something
+ * other than a chunk, and reading it as one would skip a month nobody fetched.
+ * The live ingest is the case that makes this real. It writes `OPEN_METEO_INGEST`
+ * runs carrying a lead, exactly like the backfill, over windows that are not
+ * months, and a live window can start precisely on a month boundary when the
+ * greatest stored `validTime` lands two hours into the first of a month. Keying
+ * on the start alone would then read one live run as a finished month and leave
+ * a permanent hole in the archive.
  */
 export async function completedForecastChunks(
   prisma: RunReader,
 ): Promise<Set<string>> {
   const runs = await prisma.pipelineRun.findMany({
     where: { job: 'OPEN_METEO_INGEST', status: 'OK' },
-    select: { windowStart: true, leadHours: true },
+    select: { windowStart: true, windowEnd: true, leadHours: true },
   });
 
   const done = new Set<string>();
   for (const run of runs) {
-    if (run.windowStart === null || run.leadHours === null) continue;
+    if (run.windowStart === null || run.windowEnd === null) continue;
+    if (run.leadHours === null) continue;
+    if (!isCalendarMonth({ start: run.windowStart, end: run.windowEnd })) continue;
     done.add(chunkKey(run.windowStart, run.leadHours));
   }
 
