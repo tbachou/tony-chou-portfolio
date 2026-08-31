@@ -86,7 +86,7 @@ describe('DataSources', () => {
  * phantom block comment that swallowed the import. A guard that cries wolf is
  * worse than none, because it is the one that gets deleted.
  *
- * Rendering costs three module mocks and three panel stubs, and in exchange
+ * Rendering costs two module mocks and three panel stubs, and in exchange
  * it cannot be fooled by any of that: only markup that really reaches the
  * screen satisfies it.
  */
@@ -103,8 +103,27 @@ vi.mock('@/lib/streamflow-db', () => ({
         active: true,
       }),
     },
-    observation: { count: async () => 0, findFirst: async () => null },
-    pipelineRun: { findFirst: async () => null },
+    // Shaped like production, not like an empty store. The mocks used to
+    // return 0, null and empty arrays everywhere, which is the page's EMPTY
+    // state: a credit gated on there being data would then have been proven
+    // in exactly the wrong direction.
+    observation: {
+      count: async () => 18_849,
+      findFirst: async () => ({
+        validTime: new Date('2026-08-31T12:00:00.000Z'),
+        recordedAt: new Date('2026-08-31T12:05:00.000Z'),
+        valueCfs: 142.5,
+        qualifier: 'PROVISIONAL' as const,
+      }),
+    },
+    pipelineRun: {
+      findFirst: async () => ({
+        job: 'USGS_INGEST' as const,
+        status: 'OK' as const,
+        startedAt: new Date('2026-08-31T12:00:00.000Z'),
+        rowsWritten: 96,
+      }),
+    },
   }),
 }));
 
@@ -127,13 +146,46 @@ describe('the dashboard page', () => {
   it('renders the Open-Meteo credit and its licence link', async () => {
     const { default: StreamflowPage } = await import('./page');
 
-    render(await StreamflowPage());
+    // The page swallows read failures by design (`settled` in page.tsx turns a
+    // rejected read into a console.error and a fallback), so a mock that has
+    // drifted out of step with a new query would otherwise leave this test
+    // certifying a page whose data layer is broken.
+    const swallowed: string[] = [];
+    const spy = vi
+      .spyOn(console, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        swallowed.push(String(args[0]));
+      });
 
-    expect(
-      screen.getByRole('link', { name: /open-meteo/i }).getAttribute('href'),
-    ).toBe('https://open-meteo.com/');
-    expect(
-      screen.getByRole('link', { name: /cc by 4\.0/i }).getAttribute('href'),
-    ).toBe('https://creativecommons.org/licenses/by/4.0/');
+    try {
+      render(await StreamflowPage());
+    } finally {
+      spy.mockRestore();
+    }
+
+    // Checked FIRST, and deliberately separate from the licence assertions.
+    // `render(await StreamflowPage())` is the client renderer: it can await
+    // this page, but not a nested async child. If someone moves the footer
+    // into its own `async function` server component, which is the ordinary
+    // Next 15 pattern, the whole tree collapses to nothing and every
+    // assertion below fails with a message identical to the credit having
+    // been deleted. This line makes those two cases say different things.
+    // If it fails, the page rendered nothing: look for a new async child,
+    // not for a missing credit.
+    expect(screen.getByRole('main')).toBeTruthy();
+
+    expect(swallowed.filter((line) => line.includes('[streamflow]'))).toEqual(
+      [],
+    );
+
+    // Matched by `href` rather than by accessible name, so that adding a
+    // second, perfectly legitimate Open-Meteo link elsewhere on the page
+    // cannot fail this while the site is fully in licence.
+    const hrefs = screen
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
+
+    expect(hrefs).toContain('https://open-meteo.com/');
+    expect(hrefs).toContain('https://creativecommons.org/licenses/by/4.0/');
   });
 });
