@@ -24,7 +24,7 @@ import { streamflowDb } from '@/lib/streamflow-db';
 
 import { HydrographPanel } from './HydrographPanel';
 import { CalibrationPanel } from './CalibrationPanel';
-import { DataSources } from './DataSources';
+import { DataSources, NOT_A_FLOOD_FORECAST } from './DataSources';
 import { rangeSource } from './range-source';
 import { SkillChart } from './SkillChart';
 
@@ -321,6 +321,9 @@ export default async function StreamflowPage() {
                   {newestReading.qualifier.toLowerCase()}
                 </span>
               </p>
+              <p className="mt-3 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
+                {NOT_A_FLOOD_FORECAST}
+              </p>
             </div>
           )}
         </TerminalWindow>
@@ -460,6 +463,12 @@ export default async function StreamflowPage() {
                 </tbody>
               </table>
             </div>
+          )}
+
+          {currentForecasts.length > 0 && (
+            <p className="mt-4 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
+              {NOT_A_FLOOD_FORECAST}
+            </p>
           )}
 
           {currentForecasts.some(
