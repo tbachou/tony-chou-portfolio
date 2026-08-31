@@ -203,7 +203,7 @@ _Steps derived from **AC-16** in [index.md](index.md): the dashboard shows inter
 
 _Steps derived from the acceptance criteria in [0010-forecast-rain.md](0010-forecast-rain.md). `/check verify` runs these; `/test` locks the durable ones._
 
-_This child is **part built**. Build plan tasks 1 to 11 shipped: the table and its two migrations, the pinned client and parser, the as of read with its diff and batched write, one month ingested end to end, the resumable backfill, the archive boundary derived per lead from the store, the weather read's knowability axis, the rain window feature with its paired query and verify script, the antecedent wetness feature, the leakage test over weather rows on both axes, and the live ingest job with its step in the scheduled workflow. Task 12 has not. One of the sixteen criteria therefore has no code to exercise and is marked `not built` below, so an unticked box there is not mistaken for a check nobody got round to running. **AC-R10 is deliberately half built**: the feature returns null on a short window, and the forecaster skip and tally it calls for belong to slice 4, since nothing in this child consumes the features. Boxes marked `[x]` were run on 2026-08-30; the unticked ones under Commands need a database and are the operator's._
+_This child is **built**. All twelve build plan tasks shipped: the table and its two migrations, the pinned client and parser, the as of read with its diff and batched write, one month ingested end to end, the resumable backfill, the archive boundary derived per lead from the store, the weather read's knowability axis, the rain window feature with its paired query and verify script, the antecedent wetness feature, the leakage test over weather rows on both axes, the live ingest job with its step in the scheduled workflow, and the Open-Meteo attribution the licence requires. **AC-R10 is deliberately half built**: the feature returns null on a short window, and the forecaster skip and tally it calls for belong to slice 4, since nothing in this child consumes the features. Boxes marked `[x]` were run on 2026-08-30; the unticked ones under Commands need a database and are the operator's._
 
 ## Commands
 
@@ -272,12 +272,21 @@ One per row of the spec's Value sourcing table that has code behind it. Each nam
 - [x] Where wetness refuses: `is null below the 224 reading minimum` (223 refuses, 224 answers), `is null on a non positive median`, and `is null when no reading sits near the twelve hour mark, though the median is fine`. **That third refusal is not in AC-R11's list**, and it is real: `regimeInputs` also needs a reading within two hours of the twelve hour mark, because it derives the twelve hour change beside the median. Wetness does not use that change and inherits the refusal anyway, so it refuses a little more often than the criterion's prose implies. Safe direction, since it becomes AC-R10's skip rather than a wrong number, and worth correcting in the spec → AC-R11
 - [x] That the reconstruction is the caller's job: `cannot see the difference a reconstruction makes, which is why callers must do it`. `regimeInputs` filters on `validTime` only, so a reading that had happened but had not yet reached the pipeline is invisible to it. The axis is spent before a slot reaches wetness, which is why the function takes none → AC-R11
 
+## UI / manual
+
+- [x] `npm test --workspace=apps/web` → 87 green across 10 suites, 6 of them the new `app/streamflow/DataSources` suite: the source link, the licence link, both asserted by `href`, `target` and `rel` on both, the USGS credit kept, the forecast rather than observed rain wording, and the timezone passed in rather than baked in → AC-R15
+- [x] That the suite can actually fail, proven by mutation on 2026-08-31 rather than assumed. Repointing the licence at `by-nc/4.0` failed 1 test; deleting the whole Open-Meteo sentence failed 3. A credit is exactly the kind of thing a copy edit removes silently, so a test that cannot fail here is worth nothing → AC-R15
+- [x] Rendered on the running page against a real store, 2026-08-31: both links present with `target="_blank"` and `rel="noopener noreferrer"`, the block at 13px, and its colours resolving from `--color-muted`, `--color-ink` and `--color-border` rather than any literal → AC-R15
+- [x] Both palettes, measured with transitions disabled: the credit links resolve to `#16304f` on the printout and `#39ff14` on the CRT, tracking `--color-ink`. Worth recording how this was measured, because the first reading said green on paper, which would have broken `design.md`'s ban on phosphor type on the printout. It was an artifact: `.terminal-select` transitions `color`, and in a hidden, paint paused pane the transition never advances, so the computed value stays one theme behind. Plain elements next to it updated immediately, which is what exposed it → AC-R15
+- [ ] The credit is legible on a phone, at the foot of the pipeline panel, at 375px. Needs a browser and is the operator's
+
 ## What this does not yet do
 
-One criterion has no implementation at all, and one is half built. Listed so an unticked box is not read as an unrun check.
+One criterion is half built. Listed so an unticked box is not read as an unrun check.
 
 - **AC-R10 is half built.** `rainWindow` returns null on a short window, which is the part this child owns. The rest of the criterion, a forecaster skipped for that horizon with the existing skipped tally incremented and the run's status reflecting it, has nothing to attach to: no forecaster reads rain, `BaselineModel.central` takes no weather argument, and the build plan states plainly that nothing in this child consumes the features. It lands in slice 4 with the first consumer.
-- **AC-R15**, Open-Meteo attribution on the dashboard. The walkthrough page credits the source; `/streamflow` does not, and the licence requires it wherever the data is shown.
+
+**AC-R15 is built, and one thing about it is worth recording.** The dashboard now carries the credit, but nothing on that page is drawn from the weather rows yet, because nothing in this child consumes the features. So the attribution currently runs ahead of the display rather than beside it. That is the safe direction for a licence, and the copy says only what the pipeline stores rather than what the page shows, so it does not go stale when slice 4 wires a rain aware forecaster.
 
 One thing about AC-R13 is built but unproven, and it is worth naming rather than leaving to the ticks. The job has never run on the schedule, so what is verified is the code and one live probe of the endpoint, not a week of real six hourly runs. The follow-up in the child spec about live edge availability stays open and this is the run that will answer it.
 
@@ -298,5 +307,5 @@ One thing about AC-R13 is built but unproven, and it is worth naming rather than
 - AC-R12 covered by the client suite's pinned model assertion
 - AC-R13 covered by `ingest/live-forecasts.spec.ts` on the job and by `ingest/forecast-window.spec.ts` on the window it derives, plus the workflow step ordered ahead of the prediction step. The cadence itself is the existing `0 0,6,12,18 * * *` cron the pipeline already runs on, so the criterion's schedule half is inherited rather than newly built
 - AC-R14 covered by the window suite's PARTIAL cases, including the clamped future window
-- AC-R15 not built
+- AC-R15 covered by `app/streamflow/DataSources.spec.tsx`, which asserts the source and the licence by `href` rather than by wording, so a credit that names CC BY without linking it fails
 - AC-R16 covered by the statement counting tests on both the read and the write path
