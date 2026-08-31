@@ -24,6 +24,7 @@ import { streamflowDb } from '@/lib/streamflow-db';
 
 import { HydrographPanel } from './HydrographPanel';
 import { CalibrationPanel } from './CalibrationPanel';
+import { DataSources } from './DataSources';
 import { rangeSource } from './range-source';
 import { SkillChart } from './SkillChart';
 
@@ -634,11 +635,7 @@ export default async function StreamflowPage() {
             </dl>
           )}
 
-          <p className="mt-6 border-t border-term-border pt-5 text-term-xs text-term-muted">
-            Discharge data courtesy of the U.S. Geological Survey, National
-            Water Information System. Readings are shown in{' '}
-            {DISPLAY_TIMEZONE.replace('_', ' ')}; everything is stored in UTC.
-          </p>
+          <DataSources timeZone={DISPLAY_TIMEZONE.replace('_', ' ')} />
         </TerminalWindow>
       </main>
     </div>
