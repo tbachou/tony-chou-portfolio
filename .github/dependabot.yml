@@ -64,6 +64,28 @@ updates:
       # whole, so removing this would not just re-open a known-bad upgrade, it
       # would break every grouped dev pull request until someone noticed why.
       #
+      # Naming `eslint` alone was not enough, and the grouping above is what
+      # exposed it. `@eslint/js` and `@eslint/eslintrc` ship in lockstep with
+      # eslint, and `@eslint/js@10` peer requires `eslint@^10`, so bumping it
+      # while eslint is held at 9 cannot install at all. Proven on 2026-08-31:
+      # the first grouped development pull request (#49, twenty updates) took
+      # `@eslint/js` to 10.0.1 and died on Vercel with an ERESOLVE before any
+      # build step ran, holding nineteen good updates hostage to one bad one.
+      #
+      # Listed by name rather than as `@eslint/*` on purpose: a wildcard that
+      # turns out not to match fails silently, which is the same class of
+      # mistake as the one this entry is fixing. A new `@eslint/` sibling
+      # entering the manifests needs adding here by hand.
+      #
+      # `eslint-config-next@16` is deliberately NOT ignored. It widens its
+      # eslint peer to >=9.0.0, so it installs fine against eslint 9 and is
+      # part of the path off this pin rather than another thing blocking it.
+      - dependency-name: "@eslint/js"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@eslint/eslintrc"
+        update-types:
+          - version-update:semver-major
       # eslint 10 does not work here yet. The visible symptom is the peer
       # range on eslint-config-next@15, which stops at eslint ^9 and is what
       # killed Vercel's `npm install` on PR #4. eslint-config-next@16 widens
