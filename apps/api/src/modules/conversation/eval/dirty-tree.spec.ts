@@ -1,4 +1,67 @@
-import { classifyDirtyFiles, isInert } from './dirty-tree';
+import { classifyDirtyFiles, isInert, porcelainPath } from './dirty-tree';
+
+describe('porcelainPath', () => {
+  it('reads the path out of an ordinary status line', () => {
+    expect(porcelainPath(' M apps/api/prisma/fixtures.ts')).toBe('apps/api/prisma/fixtures.ts');
+    expect(porcelainPath('?? docs/notes.md')).toBe('docs/notes.md');
+    expect(porcelainPath('MM apps/web/src/app/page.tsx')).toBe('apps/web/src/app/page.tsx');
+  });
+
+  it('takes the NEW path of a rename, not the whole "old -> new" string', () => {
+    // The 2026-08-31 predeploy audit found this by running it. Slicing off the
+    // status and stopping left the whole string, which starts with `docs/`, so
+    // a renamed interviewer prompt was waved through as inert and a paid run
+    // proceeded against modified prompts.
+    expect(
+      porcelainPath(
+        'R  docs/oldname.md -> apps/api/src/modules/conversation/skills/interviewer.md',
+      ),
+    ).toBe('apps/api/src/modules/conversation/skills/interviewer.md');
+    expect(porcelainPath('RM docs/evals/x.json -> apps/api/src/prompt.ts')).toBe(
+      'apps/api/src/prompt.ts',
+    );
+    expect(porcelainPath('C  docs/a.md -> apps/api/prisma/fixtures.ts')).toBe(
+      'apps/api/prisma/fixtures.ts',
+    );
+  });
+
+  it('does not split an ordinary path that happens to contain " -> "', () => {
+    // Only a rename or copy carries two paths. Splitting unconditionally would
+    // corrupt this one and report the wrong file.
+    expect(porcelainPath(' M docs/a -> b.md')).toBe('docs/a -> b.md');
+  });
+
+  it('unquotes a path git quoted because of a space', () => {
+    expect(porcelainPath('?? "docs/my file.md"')).toBe('docs/my file.md');
+    expect(porcelainPath('R  "docs/old one.md" -> "apps/api/src/new file.ts"')).toBe(
+      'apps/api/src/new file.ts',
+    );
+  });
+
+  it('returns null for a line carrying no path', () => {
+    expect(porcelainPath('')).toBeNull();
+    expect(porcelainPath('M')).toBeNull();
+    expect(porcelainPath(' M ')).toBeNull();
+  });
+});
+
+describe('rename classification, end to end', () => {
+  it('refuses a rename whose destination is a file the suite loads', () => {
+    // The exact failing input from the audit: old path inert, new path a live
+    // prompt. Parsing first is what makes the classifier see the real target.
+    const line = 'R  docs/oldname.md -> apps/api/src/modules/conversation/skills/interviewer.md';
+    const parsed = porcelainPath(line) as string;
+    expect(isInert(parsed)).toBe(false);
+    expect(classifyDirtyFiles([parsed]).material).toEqual([
+      'apps/api/src/modules/conversation/skills/interviewer.md',
+    ]);
+  });
+
+  it('still allows a rename whose destination the suite never reads', () => {
+    const parsed = porcelainPath('R  apps/api/prisma/fixtures.ts -> docs/renamed.ts') as string;
+    expect(isInert(parsed)).toBe(true);
+  });
+});
 
 describe('isInert', () => {
   it('treats the suite\'s own outputs as inert, since every run rewrites them', () => {

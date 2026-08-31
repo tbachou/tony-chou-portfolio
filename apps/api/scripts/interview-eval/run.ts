@@ -36,7 +36,11 @@ import {
 } from '../../src/modules/conversation/eval/pricing';
 import { aggregate } from '../../src/modules/conversation/eval/aggregate';
 import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
-import { classifyDirtyFiles, isInert } from '../../src/modules/conversation/eval/dirty-tree';
+import {
+  classifyDirtyFiles,
+  isInert,
+  porcelainPath,
+} from '../../src/modules/conversation/eval/dirty-tree';
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
 import {
   RESULTS_PROVENANCE,
@@ -114,8 +118,13 @@ function gitInfo(): GitInfo {
       encoding: 'utf8',
     })
       .split('\n')
-      .map((line) => line.slice(3).trim())
-      .filter((f) => f.length > 0 && !f.startsWith('docs/evals/'));
+      // Parse each line into a real path FIRST. A rename reads
+      // `R  old -> new`, and slicing the status off without splitting left the
+      // whole string, which then both classified on the old path and, when the
+      // old path was under docs/evals, was dropped by the filter below without
+      // appearing anywhere in the output.
+      .map((line) => porcelainPath(line))
+      .filter((f): f is string => f !== null && !f.startsWith('docs/evals/'));
     return {
       commit,
       dirty: dirtyFiles.length > 0,
