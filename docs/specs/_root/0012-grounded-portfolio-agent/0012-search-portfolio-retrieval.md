@@ -14,7 +14,7 @@ What retrieval can honestly do is different and still worth building. The story 
 
 The corpus was scoped to the decisions and the measurements, and deliberately excludes the nine `rationale.md` files. Those record options that were weighed and rejected. A retrieved passage from one reads exactly like a current decision when it is the opposite, and a model that quotes a rejected option as though it were chosen is a new way to be confidently wrong. That is the same shape as the embellishment problem, so it is designed out rather than mitigated.
 
-Upstash Vector was chosen because the course lesson this phase applies uses it, and because it hosts the embedding model itself: the SDK takes raw text on both write and read, so there is no second AI provider and no third credential. That matters here more than usual. This repo already splits providers per surface in a way that has caused real confusion (Beta on the direct Anthropic API, the conversation on Bedrock), and adding an embedding provider would deepen a split that is already the most misunderstood thing in `apps/api`.
+Upstash Vector was chosen because the course lesson this phase applies uses it, and because it hosts the embedding model itself: the SDK takes raw text on both write and read. Stated precisely, since the looser version overclaims: the model is `openai/text-embedding-3-small`, so OpenAI's model is in the path, but Upstash brokers it. There is no second credential to hold, no second SDK, and no second provider integration to keep working. That is the argument, and it matters here more than usual. This repo already splits providers per surface in a way that has caused real confusion (Beta on the direct Anthropic API, the conversation on Bedrock), and a directly integrated embedding provider would deepen the split that is already the most misunderstood thing in `apps/api`.
 
 The measurement design carries one thing the course does not need. The eval already hashes the golden case set, so two runs are comparable only when they scored the same cases. Retrieval adds a second input, the contents of the index, and two runs over different corpora are no more comparable than two runs over different cases. So the corpus is hashed the same way and recorded beside the dataset hash, and the eval refuses to run when the committed documents no longer match the manifest. Without that, the index becomes an untracked variable in every future delta, which is precisely the unreproducible baseline this project spent 2026-08-31 correcting.
 
@@ -64,7 +64,7 @@ The measurement design carries one thing the course does not need. The eval alre
 - **AC-12**: Before a run, the eval recomputes the corpus hash from the committed documents and refuses to run when it disagrees with `corpus.json`, naming the documents that changed (this is what the per document hashes are for). A stale index is a refusal, not a silent difference. A document matched by the AC-1 glob that cannot be read is a hard failure of the embed script, never a silent omission from the corpus.
 - **AC-13**: No visitor content and no retrieval query text is written to any log or database, holding the umbrella's AC-4. Retrieval logging records the fact of a call, the result count, the latency, and the source paths returned, never the query.
 
-  One thing this criterion does not cover and should be honest about: query text leaves the process and reaches Upstash, which embeds it server side and handles it under its own retention policy. Nothing in this repo controls that. Before build, Upstash's data handling terms for query text are read and the finding recorded here; if they are unacceptable, the design changes rather than the criterion.
+  One thing this criterion does not cover and should be honest about: query text leaves the process and reaches Upstash, which embeds it server side using `openai/text-embedding-3-small` and handles it under its own retention policy. That is two hops, not one, since the text reaches OpenAI's model through Upstash's brokering. Nothing in this repo controls either. Before build, Upstash's data handling terms for query text, and what they say about their embedding provider, are read and the finding recorded here; if they are unacceptable, the design changes rather than the criterion.
 - **AC-14**: **Four to six** golden cases are added that ask about Tony's own projects and process, the questions retrieval can actually answer: how he specs a decision, what he does when a guard keeps breaking, why a feature was rejected, what a measurement actually showed. At least one is written to reliably trigger a search, so a suite run exercises the retrieval path rather than passing AC-9 vacuously by never calling the tool.
 
   They are scored on the **existing three dimensions**, and attribution correctness folds into `grounding`'s judge rubric. No fourth score column is added: `baseline.json`, `scoreboard.md`, the noise band, and the publish loader are all built around three dimensions, and a fourth ripples further than this phase should reach.
@@ -175,6 +175,16 @@ No new HTTP endpoint. `/conversation/turn` is unchanged in shape, per the umbrel
 | eval results file | `meta.datasetHash` | unchanged, existing `hashDataset` over the golden cases |
 | publish loader | comparability of two published runs | both `datasetHash` and `corpusHash` equal, enforced in `apps/web/src/lib/evals.ts` |
 
+**Index type, dense rather than hybrid**:
+
+Upstash offers dense (semantic matching through embeddings), sparse (exact token matching, BM25 or SPLADE style), and hybrid (both, fused). This uses **dense**.
+
+The queries are conversational, "how do you approach testing", "what do you do when a guard keeps breaking", which is meaning matching, and it is what the course lesson uses.
+
+Hybrid was genuinely tempting and is worth recording as a known limitation rather than an oversight. This corpus is unusually full of distinctive exact tokens (`AC-12`, `gitDirty`, `corpusHash`, `0011`), and dense embeddings match those poorly: a question phrased as "what does AC-15 say" is precisely what sparse retrieval is good at and dense is bad at. It is skipped because the golden cases in AC-14 are all conversational, a visitor does not ask in spec ID form, and the cost is real: a hybrid upsert requires **both** a dense and a sparse vector and fails if either is missing, so the embed script would produce two representations of everything. Fused ranking would also replace a single similarity score with a rank, which is what AC-5's threshold is expressed in.
+
+Revisit only if retrieval visibly misses on exact token questions. That would be a new index, not a setting change.
+
 **Key invariants**:
 - The index contents always correspond to the documents named in `corpus.json`. The eval enforces this by recomputing the hash and refusing on a mismatch (AC-12); nothing else can detect drift.
 - Only the embed script writes to the index. The deployed API physically cannot, because it holds a read only token (AC-10).
@@ -192,7 +202,18 @@ Two things are worth naming. First, query text leaves the process and reaches Up
 - `UPSTASH_VECTOR_REST_TOKEN`: a **read only** token, used by the running API and by the eval harness.
 - `UPSTASH_VECTOR_REST_TOKEN_WRITE`: the write token, present only where the embed script runs (Tony's machine). Never set on Render.
 
-Prerequisite before coding: create the Upstash Vector index and choose its embedding model in the Upstash dashboard, since the model is fixed at index creation and changing it later means re embedding the whole corpus.
+Prerequisite before coding: create the Upstash Vector index, since the embedding model is fixed at creation and changing it later means a new index rather than a setting change. The settled configuration:
+
+| Setting | Value | Why |
+|---|---|---|
+| Name | `portfolio-docs` | Names the corpus rather than one consumer, so it still fits if something other than the interview simulator reads it |
+| Namespace | the default (empty) | The index is dedicated to this corpus, so a namespace buys nothing, and `index.reset()` then clears exactly what the embed script owns |
+| Type | dense | See the index type note above |
+| Embedding model | `openai/text-embedding-3-small` | The only model the dashboard offers; brokered by Upstash so no OpenAI credential is held here |
+| Dimensions | 1536, the model's native size | The model supports truncation to smaller sizes, which trades recall for storage and speed. With roughly 32 documents there is nothing to save |
+| Similarity metric | `COSINE` | OpenAI embeddings are normalised, so cosine and dot product rank identically, and cosine is what the documentation for these models assumes. Euclidean is wrong for normalised text embeddings. Upstash normalises returned scores to 0 to 1 whatever the metric, so AC-5's threshold holds either way |
+
+One operational note the build should not rediscover: `reset()` followed by upsert is not atomic, so an embed run leaves a brief window where the index is empty. Production already handles it correctly, since AC-8 degrades an empty result to a story only answer, but the embed script should be run when traffic is not expected.
 
 **Critical test scenarios**:
 - Happy path: a question about how Tony specs a decision triggers one `searchKnowledge` call, three chunks come back, and the answer names the source document, verifies AC-4, AC-5, AC-6.
