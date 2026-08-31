@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -402,6 +402,38 @@ describe('path containment', () => {
 
   it('still allows the ordinary nested paths the real record uses', () => {
     expect(() => loadPublished(fixture({}))).not.toThrow();
+  });
+
+  it('refuses a SYMLINK inside the record whose target is outside it', () => {
+    // The string check passes: the link's own path is contained. Only the
+    // target escapes, and readFileSync follows targets. Git stores symlinks
+    // and recreates them on checkout, so this is a file a fork PR can add.
+    const dir = fixture({});
+    const outside = path.resolve(dir, '..', '..', '..', 'secret.txt');
+    writeFileSync(outside, 'must never reach the page\n');
+    symlinkSync(outside, path.join(dir, 'escape.md'));
+    const entry = { ...loadPublished(dir).publishedRuns[0], writeupFile: 'escape.md' };
+    expect(() => loadWriteup(entry, dir)).toThrow(/outside/i);
+  });
+
+  it('refuses a symlinked results file too', () => {
+    const dir = fixture({});
+    const outside = path.resolve(dir, '..', '..', '..', 'secret.json');
+    writeFileSync(outside, '{}\n');
+    symlinkSync(outside, path.join(dir, 'results', 'escape.json'));
+    const entry = {
+      ...loadPublished(dir).publishedRuns[0],
+      resultsFile: 'results/escape.json'
+    };
+    expect(() => loadRun(entry, dir)).toThrow(/outside/i);
+  });
+
+  it('allows a symlink whose target stays inside the record', () => {
+    // Containment is about where the read lands, not about symlinks as such.
+    const dir = fixture({});
+    symlinkSync(path.join(dir, 'phase-one.md'), path.join(dir, 'alias.md'));
+    const entry = { ...loadPublished(dir).publishedRuns[0], writeupFile: 'alias.md' };
+    expect(loadWriteup(entry, dir)).toContain('phase-one.md');
   });
 });
 

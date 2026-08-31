@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -285,16 +285,36 @@ function summarise(results: ParsedResults): RunSummary {
  *
  * Refusing here rather than in the schema keeps the check at the read site,
  * so a caller that reaches a loader directly is covered too.
+ *
+ * The check runs TWICE, and the second time is the one that matters. Comparing
+ * resolved strings stops `..`, and stops nothing else: a symlink committed
+ * inside the eval record keeps a path that is textually contained while
+ * pointing anywhere on disk, and `readFileSync` follows it without comment.
+ * Git stores symlinks and recreates them on checkout, so that is a file a
+ * fork pull request can add. So the resolved path is compared again after
+ * `realpathSync`, which is what actually answers "which file will be read".
  */
-function containedPath(base: string, relative: string, label: string): string {
-  const resolved = path.resolve(base, relative);
+function assertInside(base: string, candidate: string, relative: string, label: string): void {
   const fence = base.endsWith(path.sep) ? base : base + path.sep;
-  if (resolved !== base && !resolved.startsWith(fence)) {
+  if (candidate !== base && !candidate.startsWith(fence)) {
     throw new Error(
-      `${label}: resolves outside ${base}: ${relative}. ` +
-        'These fields name files inside the eval record; a path that climbs out of it is refused.'
+      `${label}: resolves outside ${base}: ${relative} (reads ${candidate}). ` +
+        'These fields name files inside the eval record; a path that climbs out of it, ' +
+        'directly or through a symlink, is refused.'
     );
   }
+}
+
+function containedPath(base: string, relative: string, label: string): string {
+  const resolved = path.resolve(base, relative);
+  assertInside(base, resolved, relative, label);
+  // A path that does not exist yet is the caller's problem to report, and
+  // realpathSync would throw a worse error than "writeupFile does not exist".
+  if (!existsSync(resolved)) return resolved;
+  // The base is resolved too: on macOS a temporary directory is itself a
+  // symlink (/var -> /private/var), so comparing a real path against a
+  // symlinked base would reject every legitimate read.
+  assertInside(realpathSync(base), realpathSync(resolved), relative, label);
   return resolved;
 }
 

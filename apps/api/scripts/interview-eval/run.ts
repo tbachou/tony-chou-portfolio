@@ -118,8 +118,27 @@ function gitInfo(): GitInfo {
       materialText: status(MATERIAL_STATUS_ARGS),
       root,
     };
-  } catch {
-    return { commit: 'unknown', dirtyText: '', materialText: '', root: process.cwd() };
+  } catch (error) {
+    // Fail CLOSED. Returning empty strings here reads as "nothing material
+    // changed" downstream, so a git that cannot answer used to hand back a
+    // clean bill of health and the run spent money unguarded. Reproduced
+    // outside a repository and with a corrupted .git/index while a material
+    // file had live edits: the preflight printed `unknown (clean)` and
+    // proceeded. A guard that cannot check must refuse, not wave through.
+    console.error('❌ git could not answer whether this run is reproducible:');
+    console.error(`   ${error instanceof Error ? error.message.trim() : String(error)}`);
+    if (process.argv.includes('--allow-dirty')) {
+      console.warn(
+        '\n⚠ Continuing because --allow-dirty was passed. Reproducibility is ' +
+          'unverified, so this run cannot be baselined.\n',
+      );
+      return { commit: 'unknown', dirtyText: '', materialText: '', root: process.cwd() };
+    }
+    console.error(
+      '   Refusing before spending anything. Run from inside the repository, or pass\n' +
+        '   --allow-dirty to spend anyway on a run that cannot be baselined.',
+    );
+    process.exit(1);
   }
 }
 
