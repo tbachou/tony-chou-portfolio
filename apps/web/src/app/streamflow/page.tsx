@@ -622,7 +622,7 @@ export default async function StreamflowPage() {
           {lastRun && (
             <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 text-term-sm sm:grid-cols-4">
               {[
-                ['last job', lastRun.job.toLowerCase().replace('_', ' ')],
+                ['last job', lastRun.job.toLowerCase().replaceAll('_', ' ')],
                 ['outcome', lastRun.status.toLowerCase()],
                 ['rows written', lastRun.rowsWritten.toLocaleString()],
                 ['ran', relativeAge(lastRun.startedAt, now)],
@@ -635,7 +635,7 @@ export default async function StreamflowPage() {
             </dl>
           )}
 
-          <DataSources timeZone={DISPLAY_TIMEZONE.replace('_', ' ')} />
+          <DataSources timeZone={DISPLAY_TIMEZONE.replaceAll('_', ' ')} />
         </TerminalWindow>
       </main>
     </div>
