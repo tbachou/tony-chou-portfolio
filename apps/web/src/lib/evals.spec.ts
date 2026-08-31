@@ -6,6 +6,8 @@ import {
   DIMENSIONS,
   blobUrl,
   evalsRepoPath,
+  isComparable,
+  latestMeasured,
   loadPublished,
   loadRun,
   loadWriteup,
@@ -152,8 +154,7 @@ describe('loadPublished', () => {
     const manifest = loadPublished(dir);
 
     expect(manifest.publishedRuns).toHaveLength(2);
-    const latestMeasured = [...manifest.publishedRuns].reverse().find((entry) => entry.measured);
-    expect(latestMeasured?.phase).toBe(1);
+    expect(latestMeasured(manifest)?.phase).toBe(1);
     expect(manifest.publishedRuns[1].measured).toBe(false);
     expect(manifest.publishedRuns[1].delta).toBeUndefined();
     expect(manifest.baselineHistory[0].cases).toBe(20);
@@ -224,6 +225,32 @@ describe('loadPublished', () => {
   it('names the manifest path when the file is missing (AC-2)', () => {
     const dir = path.join(tmpdir(), 'evals-fixture-absent');
     expect(() => loadPublished(dir)).toThrow(/publish manifest is missing.*published\.json/s);
+  });
+});
+
+describe('comparability and the latest row', () => {
+  it('marks a measured run on a different case set as not comparable (AC-4)', () => {
+    const dir = fixture({});
+    const manifest = loadPublished(dir);
+    const latest = latestMeasured(manifest) as (typeof manifest.publishedRuns)[number];
+    const run = loadRun(latest, dir);
+
+    expect(isComparable(run, run.datasetHash)).toBe(true);
+    expect(isComparable(run, 'some-other-hash')).toBe(false);
+  });
+
+  it('gives an unmeasured row no comparability marker at all (AC-4)', () => {
+    // It has no scores to compare, so "not comparable" would be a claim
+    // about a measurement that was never taken.
+    expect(isComparable(null, 'any-hash')).toBe(true);
+  });
+
+  it('builds the latest scores from the last measured entry, not the last entry (AC-3)', () => {
+    const dir = fixture({});
+    const manifest = loadPublished(dir);
+
+    expect(manifest.publishedRuns.at(-1)?.phase).toBe(2);
+    expect(latestMeasured(manifest)?.phase).toBe(1);
   });
 });
 

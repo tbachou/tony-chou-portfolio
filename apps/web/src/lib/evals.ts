@@ -392,6 +392,24 @@ export function loadWriteup(entry: PublishedRun, evalsDir: string = EVALS_DIR): 
   return readFileSync(absolute, 'utf8');
 }
 
+/**
+ * Whether a published row's scores can honestly be read next to the latest
+ * ones (AC-4). Two runs are comparable only when they scored the same case
+ * set: a changed dataset changes the hash, and comparing across one is how a
+ * scoreboard tells a lie without anybody typing a wrong number.
+ *
+ * A phase that took no measurement is neither comparable nor incomparable.
+ * It has no scores, so it carries no marker either.
+ */
+export function isComparable(run: RunSummary | null, latestDatasetHash: string): boolean {
+  return run === null || run.datasetHash === latestDatasetHash;
+}
+
+/** The run a page's latest scores section is built from: the last measured entry (AC-3). */
+export function latestMeasured(manifest: PublishedManifest): PublishedRun | undefined {
+  return [...manifest.publishedRuns].reverse().find((entry) => entry.measured);
+}
+
 // ---------------------------------------------------------------------------
 // Provenance links
 // ---------------------------------------------------------------------------
