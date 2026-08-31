@@ -15,6 +15,12 @@ import { DataSources } from './DataSources';
  */
 afterEach(cleanup);
 
+/** The two links the licence actually rests on, addressed by href. */
+const CREDIT_HREFS = [
+  'https://open-meteo.com/',
+  'https://creativecommons.org/licenses/by/4.0/',
+];
+
 function hrefOf(name: RegExp): string | null {
   return screen.getByRole('link', { name }).getAttribute('href');
 }
@@ -37,9 +43,17 @@ describe('DataSources', () => {
   it('opens both credits without handing over the opener', () => {
     render(<DataSources timeZone="America/New York" />);
 
-    const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(2);
-    for (const link of links) {
+    // Selected by href rather than by taking every link in the block: a third
+    // link added here later is somebody else's business, and failing on it
+    // would be a false alarm. The length check still earns its keep, because
+    // unlinking either credit to plain text drops the count to one, which is
+    // the one regression a per link loop alone would miss.
+    const credits = screen
+      .getAllByRole('link')
+      .filter((link) => CREDIT_HREFS.includes(link.getAttribute('href') ?? ''));
+
+    expect(credits).toHaveLength(2);
+    for (const link of credits) {
       expect(link.getAttribute('target')).toBe('_blank');
       expect(link.getAttribute('rel')).toBe('noopener noreferrer');
     }
@@ -59,19 +73,42 @@ describe('DataSources', () => {
     expect(
       screen.getByText(/should be used to make decisions about water/i),
     ).toBeTruthy();
+    expect(screen.getByText(/subject to revision/i)).toBeTruthy();
   });
 
-  it('drops the decorative arrow from each link accessible name', () => {
-    // The glyph is decoration: without aria-hidden a screen reader reads the
+  it('leads with the disclaimer rather than trailing it', () => {
+    // The component's own header comment claims this and the audit record
+    // repeats it, so it is asserted rather than left as prose: moving the
+    // paragraph to the end of the block used to pass.
+    const { container } = render(<DataSources timeZone="America/New York" />);
+
+    expect(container.querySelector('p')?.textContent).toMatch(
+      /not a flood forecast/i,
+    );
+  });
+
+  it('keeps the decorative arrow out of each link accessible name', () => {
+    // The glyph is decoration: left in the name, a screen reader reads the
     // licence link as "CC BY 4.0 north east arrow".
+    //
+    // Asserted as an EXACT accessible name, which is the property itself
+    // rather than a proxy for it. The first version of this test checked that
+    // a `span[aria-hidden]` holding the arrow existed, and the pre deploy
+    // audit broke it on 2026-08-31: markup carrying a bare arrow AND the
+    // hidden span passed, while computing to the name `Open-Meteo ↗`. Roles
+    // are matched here through testing library's own accessible name
+    // computation, so aria-hidden subtrees drop out the way they do for a
+    // screen reader, and an exact string is what fails if the arrow returns.
     render(<DataSources timeZone="America/New York" />);
 
-    for (const link of screen.getAllByRole('link')) {
-      expect(link.textContent).toContain('↗');
+    expect(screen.getByRole('link', { name: 'Open-Meteo' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'CC BY 4.0' })).toBeTruthy();
+
+    // And it is still on screen for everyone who is not using one.
+    for (const href of CREDIT_HREFS) {
       expect(
-        (link as HTMLElement).getAttribute('aria-label') ??
-          link.querySelector('span[aria-hidden="true"]')?.textContent,
-      ).toBe('↗');
+        document.querySelector(`a[href="${href}"]`)?.textContent,
+      ).toContain('↗');
     }
   });
 
@@ -148,7 +185,11 @@ vi.mock('@/lib/streamflow-db', () => ({
     },
     pipelineRun: {
       findFirst: async () => ({
-        job: 'USGS_INGEST' as const,
+        // Deliberately the one PipelineJob member carrying two underscores.
+        // It is the only value that tells `replace` from `replaceAll`, and
+        // the page renders this label through that call, so the fixture is
+        // what gives the underscore fix a regression guard at all.
+        job: 'OPEN_METEO_INGEST' as const,
         status: 'OK' as const,
         startedAt: new Date('2026-08-31T12:00:00.000Z'),
         rowsWritten: 96,
@@ -162,7 +203,21 @@ vi.mock('@/lib/streamflow-db', () => ({
 vi.mock('@portfolio/streamflow', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@portfolio/streamflow')>()),
   observationsAsOf: async () => [],
-  publicPredictions: async () => [],
+  // One current forecast, so the forecast table renders. Without it the
+  // table is absent and the disclaimer beside it cannot be asserted.
+  publicPredictions: async () => [
+    {
+      id: 'pred-1',
+      horizonHours: 24,
+      targetTime: new Date('2026-09-01T12:00:00.000Z'),
+      centralCfs: 150,
+      lowerCfs: 110,
+      upperCfs: 230,
+      intervalSeeded: true,
+      bucketSize: 240,
+      modelVersion: { name: 'persistence', kind: 'BASELINE' },
+    },
+  ],
   publicScoredErrors: async () => [],
   gradedIntervals: async () => [],
 }));
@@ -217,5 +272,43 @@ describe('the dashboard page', () => {
 
     expect(hrefs).toContain('https://open-meteo.com/');
     expect(hrefs).toContain('https://creativecommons.org/licenses/by/4.0/');
+  });
+
+  it('spaces every underscore in the job label, not only the first', async () => {
+    // Reverting `page.tsx` to `replace` renders `open meteo_ingest`. Nothing
+    // asserted on this label before, so the audit found the fix could be
+    // reverted or lost in a merge with the whole suite green.
+    const { default: StreamflowPage } = await import('./page');
+
+    render(await StreamflowPage());
+
+    expect(screen.getByText('open meteo ingest')).toBeTruthy();
+  });
+
+  it('repeats the safety line beside the numbers, not only in the footer', async () => {
+    // The whole point of the audit finding: roughly 3,400px separates the
+    // forecast table from the footer, so a footer only disclaimer is one a
+    // visitor who acts on a number plausibly never reaches. Three occurrences
+    // means the latest reading and the forecast table each carry it as well.
+    const { default: StreamflowPage } = await import('./page');
+
+    render(await StreamflowPage());
+
+    expect(screen.getAllByText(/not a flood forecast/i)).toHaveLength(3);
+  });
+
+  it('points at an authority instead of only saying what not to trust', async () => {
+    const { default: StreamflowPage } = await import('./page');
+
+    render(await StreamflowPage());
+
+    const hrefs = screen
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
+
+    expect(hrefs).toContain(
+      'https://waterdata.usgs.gov/monitoring-location/03230500/',
+    );
+    expect(hrefs).toContain('https://water.noaa.gov/');
   });
 });
