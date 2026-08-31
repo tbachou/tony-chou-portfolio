@@ -161,12 +161,6 @@
       "skillPath": "plugins/terraform/skills/terraform-style-guide/SKILL.md",
       "computedHash": "381763131997a8706ba7d34707ee739ba2099ca9a0964a474c51af93a340d49b"
     },
-    "upstash": {
-      "source": "upstash/skills",
-      "sourceType": "github",
-      "skillPath": "skills/upstash/SKILL.md",
-      "computedHash": "8a5ed82e02c2b052df7a394d43e0ad71f97fc0498d15cf92c418f59785681cae"
-    },
     "vercel-react-best-practices": {
       "kind": "registry",
       "source": "vercel-labs/agent-skills",

@@ -142,6 +142,78 @@ Build the same machinery, but over documents Tony writes about the Mailchimp, Pr
 
 Retrieval is exposed as a tool the Tony persona calls on demand, backed by an Upstash Vector index built from Tony's committed specs, findings, and eval writeups, with the corpus hashed and recorded so every measurement stays reproducible.
 
+**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `javascript-typescript-jest` (`github/awesome-copilot`, `.claude/skills/javascript-typescript-jest/`)
+
+The `upstash` skill was installed for the first build slice and then removed, which is worth recording because the reasoning generalises. It earned its place twice, catching that a text upsert uses `/upsert-data` rather than `/upsert` and that a query needs `includeData` alongside `includeMetadata`. Both facts are now permanently captured in `vector-store.ts` and in this spec, so the skill had already delivered everything it was going to.
+
+What it cost was out of proportion: 504 KB across 78 files covering eleven Upstash products when this build uses one, in a public repository, against a standard (spec 0007) whose cost was weighed at roughly 425 KB for all skills combined. One install exceeded the basis the whole decision was costed against. Whether that standard needs a size or scope rule is its own decision, raised separately rather than settled here.
+
+Four general RAG skills were found during discovery and declined (`langchain-ai/langchain-skills@langchain-rag`, plus `embedding-strategies`, `rag-implementation`, `similarity-search-patterns` and `hybrid-search-implementation` from `wshobson/agents`): they describe LangChain loaders, OpenAI embeddings, choosing an embedding model, and hybrid keyword search, none of which this design uses.
+
+## Options considered
+
+### Option 1: Always inject a relevant document section into the prompt
+
+Search on the current story and question before generation, put the best match in the context, no tool call.
+
+**Pros**:
+- One model call per turn, so no extra latency or cost from a second generation.
+- Deterministic: the same question always retrieves the same material, which is easier to measure.
+
+**Cons**:
+- Pays retrieval on every turn whether the question needs it or not, and most turns do not.
+- The model cannot follow up on what it finds, which is the main thing retrieval is for.
+- Diverges from the course lesson this phase exists to apply, which builds retrieval as a tool.
+
+### Option 2: A model called tool over a hosted vector index (chosen)
+
+`searchKnowledge` is offered to the Tony generation. The model decides when to search, gets three heading sized chunks with their sources, and cites the document it used.
+
+**Pros**:
+- The decision to search is observable in the eval record, so it can be measured rather than assumed.
+- Costs nothing on turns that do not need it.
+- Matches the course's lesson 08 shape exactly, which is the point of the phase.
+- Source paths come back with the chunks, which is what makes attribution possible at all.
+
+**Cons**:
+- A tool call is a second generation, which is the real cost, and it adds latency to a streamed turn.
+- The model may not call the tool when it should, which is a failure mode injection does not have.
+- For a corpus this small, the technical case over Option 1 is not overwhelming. Said plainly: the tool shape is chosen partly because exercising the tool call pattern is the point of the course ladder, and the umbrella's product is the measured progression itself. That is a legitimate reason here, and it should be stated rather than dressed up as a purely technical win.
+
+### Option 2a: the same design, but anchored on a git commit rather than a corpus hash
+
+Everything in Option 2, except that reproducibility is tracked by recording the commit the docs tree was at when the embed script ran, instead of hashing the corpus.
+
+**Pros**:
+- Reaches for a primitive that already exists rather than building a second hash pipeline, which is the standing preference in this repo and the instinct that deleted 355 lines of home grown path handling the same week.
+- Nothing to keep in step between two implementations, since git computes it.
+
+**Cons**:
+- A commit says when, not what. Embedding from a tree with uncommitted edits, which is the normal state mid work, records a commit that does not describe the corpus that was actually indexed. That is precisely the failure this project spent 2026-08-31 correcting on the baseline.
+- It cannot name which document changed, so AC-12's refusal would say the corpus moved without saying where, which is the difference between an actionable refusal and an annoying one.
+- The eval already hashes its other input the same way, so a commit here would make the two inputs to one comparison decision use two different mechanisms.
+
+Rejected, but only after weighing it: the deciding fact is that a commit cannot describe an uncommitted tree, and the embed script is run by hand mid work exactly when that is true.
+
+### Option 3: Retrieval over authored writeups of the employment work
+
+Build the same machinery, but over documents Tony writes about the Mailchimp, Product Forge, and Topstep work, so it can ground the existing eval stories.
+
+**Pros**:
+- The only option that can move the two grounding cases the umbrella pointed this phase at.
+- Grounds the majority of the corpus, since almost every story is employment work.
+
+**Cons**:
+- It is a writing project, which Tony declined, and the writing is the whole cost.
+- Every document needs a judgement about what is his to publish rather than the client's, which is a slow and error prone gate on a public repo.
+- Nothing can be built until the writing exists, so the phase would stall on an unrelated task.
+
+## Decision
+
+**Chosen option**: Option 2: a model called tool over a hosted vector index of the decision documents
+
+Retrieval is exposed as a tool the Tony persona calls on demand, backed by an Upstash Vector index built from Tony's committed specs, findings, and eval writeups, with the corpus hashed and recorded so every measurement stays reproducible.
+
 **Implementation skills**: `upstash` (`upstash/skills`, `.claude/skills/upstash/`) · `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `javascript-typescript-jest` (`github/awesome-copilot`, `.claude/skills/javascript-typescript-jest/`)
 
 The `upstash` skill was installed for this phase and covers the Vector SDK, including the behaviour that is easiest to get wrong from memory: with a hosted embedding model, `upsert` and `query` take raw text rather than vectors. Four general RAG skills were found and deliberately declined (`langchain-ai/langchain-skills@langchain-rag`, and `embedding-strategies`, `rag-implementation`, `similarity-search-patterns`, `hybrid-search-implementation` from `wshobson/agents`): they describe LangChain loaders, OpenAI embeddings, choosing an embedding model, and hybrid keyword search, none of which this design uses.
