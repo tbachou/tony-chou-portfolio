@@ -34,6 +34,15 @@ jobs:
       - name: Check skill layout
         run: npm run check:skills
 
+      # The site build refuses to render an inconsistent eval record, but a
+      # build failure names a page, not a manifest. Running the same loader
+      # as its own check means a mistyped `published.json` fails here, with
+      # the offending path in the message, before a deploy is attempted
+      # (spec 0012 phase two). No network, no API key: it reads committed
+      # files only.
+      - name: Check published evals record
+        run: npm run check:evals
+
       - name: Typecheck API
         run: npx tsc --noEmit -p apps/api/tsconfig.json
 
