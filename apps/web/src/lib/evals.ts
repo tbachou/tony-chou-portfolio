@@ -300,6 +300,10 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
   const manifest = parsed.data;
 
   const repoRoot = path.resolve(evalsDir, '..', '..', '..');
+  // Read once, not once per measured entry: the baseline cannot change while
+  // this loop runs, and re reading it made the cost grow with the number of
+  // published phases for no gain.
+  const baseline = loadBaselineSummary(evalsDir);
   for (const entry of manifest.publishedRuns) {
     const label = `publishedRuns phase ${entry.phase}`;
 
@@ -326,10 +330,28 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
           'A dirty run is never published; re run it on a committed tree.'
       );
     }
-    checkRecordedDelta(entry, summarise(run), evalsDir);
+    checkRecordedDelta(entry, summarise(run), baseline);
   }
 
   return manifest;
+}
+
+/**
+ * Reads the current baseline once per manifest load. Returns null when there
+ * is no baseline file at all, which is not an error: a repo can publish runs
+ * before it has a baseline. A baseline that exists but is malformed still
+ * throws, because that is a broken file rather than an absent one.
+ */
+function loadBaselineSummary(evalsDir: string): RunSummary | null {
+  const baselinePath = path.join(evalsDir, 'baseline.json');
+  if (!existsSync(baselinePath)) return null;
+  const parsed = baselineFileSchema.safeParse(readJson(baselinePath, 'The baseline'));
+  if (!parsed.success) {
+    throw new Error(
+      `The baseline is malformed: ${baselinePath}\n${z.prettifyError(parsed.error)}`
+    );
+  }
+  return summarise(parsed.data.run);
 }
 
 /**
@@ -338,16 +360,12 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
  * it was compared to is gone and the recorded value has to stand on its own,
  * which is why it is recorded at all.
  */
-function checkRecordedDelta(entry: PublishedRun, run: RunSummary, evalsDir: string): void {
-  const baselinePath = path.join(evalsDir, 'baseline.json');
-  if (!existsSync(baselinePath)) return;
-  const baselineParsed = baselineFileSchema.safeParse(readJson(baselinePath, 'The baseline'));
-  if (!baselineParsed.success) {
-    throw new Error(
-      `The baseline is malformed: ${baselinePath}\n${z.prettifyError(baselineParsed.error)}`
-    );
-  }
-  const baseline = summarise(baselineParsed.data.run);
+function checkRecordedDelta(
+  entry: PublishedRun,
+  run: RunSummary,
+  baseline: RunSummary | null
+): void {
+  if (baseline === null) return;
   if (baseline.datasetHash !== run.datasetHash) return;
 
   for (const dimension of DIMENSIONS) {

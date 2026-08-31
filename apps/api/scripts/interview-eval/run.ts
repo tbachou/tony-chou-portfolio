@@ -36,6 +36,7 @@ import {
 } from '../../src/modules/conversation/eval/pricing';
 import { aggregate } from '../../src/modules/conversation/eval/aggregate';
 import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
+import { classifyDirtyFiles, isInert } from '../../src/modules/conversation/eval/dirty-tree';
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
 import {
   RESULTS_PROVENANCE,
@@ -89,33 +90,6 @@ function readJsonFile<T>(filePath: string, label: string): T {
   }
 }
 
-/**
- * Paths a dirty working tree can differ in WITHOUT changing what this suite
- * measures. Everything not listed here is treated as material, so a new area
- * nobody thought about fails safe rather than silently passing.
- *
- * `docs/evals/` is here because every run rewrites its own outputs. The rest
- * are surfaces the eval never loads: the site, the forecasting pipeline, CI
- * config, agent skill manifests, and prose.
- */
-const INERT_PREFIXES = [
-  'docs/',
-  '.claude/',
-  '.agents/',
-  '.github/',
-  'apps/web/',
-  'apps/streamflow/',
-  'infra/',
-  'skills-lock.json',
-  'README.md',
-];
-
-function isInert(filePath: string): boolean {
-  return INERT_PREFIXES.some((prefix) =>
-    prefix.endsWith('/') ? filePath.startsWith(prefix) : filePath === prefix,
-  );
-}
-
 type GitInfo = {
   commit: string;
   dirty: boolean;
@@ -146,7 +120,7 @@ function gitInfo(): GitInfo {
       commit,
       dirty: dirtyFiles.length > 0,
       dirtyFiles,
-      materialFiles: dirtyFiles.filter((f) => !isInert(f)),
+      materialFiles: classifyDirtyFiles(dirtyFiles).material,
       root,
     };
   } catch {
