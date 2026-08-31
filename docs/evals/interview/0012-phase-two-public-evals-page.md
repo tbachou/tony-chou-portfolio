@@ -8,11 +8,15 @@ Spec: [0012 child, public evals page](../../specs/_root/0012-grounded-portfolio-
 
 The umbrella spec's AC-1 requires a full eval run before and after every phase. This phase does not take one, and that exemption is written into the umbrella rather than left as a silent gap.
 
-The reason is mechanical. This phase changes no model facing code. No prompt moved, no skill file changed, no context was added or removed, no model or provider was swapped, and nothing in the generation path was touched. The suite measures what the conversation engine produces; a page that reads committed files at build time cannot change that output. A run here would cost real money to report the same numbers back, and a scoreboard that publishes an unchanged row as though it were evidence of something is exactly the laundering this page exists to argue against.
+The reason is mechanical. Nothing this phase changes can move a score. No prompt moved, no skill file changed, no context was added or removed, no model or provider was swapped, and nothing in the generation path was touched. The guard tooling it grew along the way sits under watched paths but is not in that path either: a preflight that runs before any model call, and a list of pathspecs. The suite measures what the conversation engine produces; a page that reads committed files at build time cannot change that output. A run here would cost real money to report the same numbers back, and a scoreboard that publishes an unchanged row as though it were evidence of something is exactly the laundering this page exists to argue against.
 
 So the honest record is: no run, stated plainly, with the reason. That is what `measured: false` means in `published.json`, and it is why the run history table shows this phase with no scores rather than with a flat row that could be mistaken for a measurement.
 
-**This phase's pull request carries the `skip-evals` label** (child spec AC-13). The label is what stops CI spending real budget on a capped run that cannot move the scores. Two things about it are easy to get wrong: labels are read when the event fires, so labelling an already open PR takes effect from the next push rather than retroactively, and the label must go on before the first push if it is to save anything at all.
+**This phase's pull request carries the `skip-evals` label** (child spec AC-13), which stops CI spending budget re running a suite this phase cannot move.
+
+One correction to what this writeup first said, since getting it wrong is the sort of thing this page exists to not do. The label cannot be applied before the first CI run. GitHub's create pull request API takes no labels, so every tool including `gh pr create --label` creates the pull request and then labels it, and the `opened` event fires in between. The first capped run therefore happens no matter how the pull request is made; the label suppresses every run after it.
+
+That first run is worth having here anyway. The phase started out touching no model facing code, and by the end it had grown a preflight guard and a dirty tree classifier under `apps/api/scripts/interview-eval/` and `apps/api/src/modules/conversation/eval/`, which are watched paths. Neither can move a score, one runs before any model call and the other is a list of pathspecs. But after three rounds of guard surgery in one day, one eight case run is cheap evidence that the harness still executes end to end, which is a better reason to spend ten cents than a rule saying not to.
 
 ## What changed
 
@@ -38,7 +42,7 @@ The rule the eval suite should keep from this: verify the outcome, do not follow
 
 ## Course principles applied, and skipped
 
-This phase applies none of the model facing lessons, because it touches no model facing code. Its discipline is a different one, and worth naming since it is the discipline the page argues for.
+This phase applies none of the model facing lessons, because nothing it changes reaches a prompt. Its discipline is a different one, and worth naming since it is the discipline the page argues for.
 
 **Applied:**
 
