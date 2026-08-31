@@ -1,5 +1,7 @@
 # Review, feat/public-evals-page, 2026-08-31
 
+> **Later note (2026-08-31).** The `check-worktrees.mjs` finding below was fixed twice and the script was then deleted outright: nothing in it was repo specific, and `git branch --merged origin/main | grep '^+'` plus `git -C <path> status --porcelain --ignored=matching` answer the same question. File paths and line numbers in that finding no longer exist. The rest of this review stands as written.
+
 **Reviewed by**: Claude Sonnet 5 (author on Claude Sonnet 5)
 **Scope**: 29 files, branch vs `origin/main`
 **Verdict**: Approve with nits
