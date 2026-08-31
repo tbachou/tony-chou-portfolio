@@ -12,9 +12,10 @@ const HOUR_MS = 60 * 60 * 1000;
  *
  * The start is the newest `validTime` already stored, pulled back by a fixed
  * overlap so a reading that settled just after we first saw it gets compared
- * again. On an empty table it is the backfill start, which is where the
- * weather archive begins and therefore the earliest date a reading can ever be
- * matched with the rain that explains it.
+ * again. On an empty table it is the backfill start, which sits a little before
+ * the weather archive rather than on it. `config.ts` carries why the two are
+ * not the same date, and names the read that measures what the archive holds
+ * instead of pinning it.
  *
  * Gap recovery (AC-6) falls out of this rather than being a separate branch:
  * because the start is anchored to what is stored and not to the schedule, a

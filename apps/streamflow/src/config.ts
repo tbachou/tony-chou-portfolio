@@ -39,9 +39,31 @@ export const USGS_NO_DATA_VALUE = -999999;
 export const INGEST_OVERLAP_HOURS = 2;
 
 /**
- * Where ingestion starts on an empty table. This is where the Open-Meteo
- * archive begins, so it is the earliest date at which a row can ever be
- * matched with the rainfall that explains it.
+ * Where anything that walks from the beginning starts: the observation ingest
+ * window, the forecast month walk, the seeding hindcast, and the full history
+ * reads in `predict.ts` and `score.ts`. Five callers, so this date is load
+ * bearing in more places than its name suggests.
+ *
+ * It is not where the Open-Meteo archive begins. This comment said that it was
+ * until the rain child measured it, and the claim was wrong by about three
+ * weeks and wrong by a different amount for each lead, because a lead of N days
+ * needs N days of prior runs behind it.
+ *
+ * The date stays where it is, and the weeks before the archive are not free.
+ * The forecast walk requests those months and they come back short, which is
+ * expected and recorded as PARTIAL rather than failed (AC-R14). The hindcast
+ * issues predictions across them too, so the record holds slots no forecast
+ * rain could ever be matched with. Both are cheap and neither is wrong.
+ * Nothing is skipped over that stretch today, because no forecaster reads rain
+ * yet: `BaselineModel.central` takes no weather argument and AC-R10 is unbuilt.
+ * When one does, it will be skipped there, and its scored population will stop
+ * matching a baseline's.
+ *
+ * What is never pinned here is where the archive actually starts.
+ * `earliestStoredForecastValidTimes` reads the earliest row held per lead out
+ * of the store, and stays true as Open-Meteo extends or trims what it serves
+ * (AC-R6). Note that even that is the earliest row, not the first date a
+ * prediction can use; the function's own docstring carries the difference.
  */
 export const BACKFILL_START = new Date('2024-01-01T00:00:00.000Z');
 
