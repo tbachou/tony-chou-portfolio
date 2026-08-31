@@ -24,6 +24,13 @@ import type { KnowabilityAxis, StoredForecast } from '../src/types';
  * must sum that hour once in both, which catches a query that reduces for the
  * count but aggregates over the raw rows.
  *
+ * The last four cases carry AC-R9, the leakage rule, onto the query. Each
+ * shadows every hour of a knowable window with a row the prediction could not
+ * have seen, once on each axis, and reads the fixture again on the other axis
+ * where that shadow is legitimately visible and does dominate. The unit suite
+ * in `src/forecast/leakage.spec.ts` holds the reference rule to the same
+ * property; these are what hold Postgres to it.
+ *
  * It writes, so it refuses to run anywhere but a local database. Point
  * PIPELINE_DATABASE_URL at a throwaway container, run it, destroy the
  * container.
@@ -46,6 +53,13 @@ interface RowSpec {
   leadHours?: number;
   /** Hours after the issue instant. Defaults to the row's own issue time. */
   recordedAtOffsetHours?: number;
+  /**
+   * Hours after the issue instant. Defaults to `validTime` minus the lead,
+   * which is how the writer derives it and the only thing a real row ever
+   * holds. Only the archive leakage case sets this, and it sets it to a value
+   * no writer here can produce. See that scenario for why.
+   */
+  issuedAtOffsetHours?: number;
 }
 
 interface Scenario {
@@ -63,6 +77,33 @@ function fullWindow(count: number, precipMm = 1): RowSpec[] {
   return Array.from({ length: count }, (_, i) => ({
     offsetHours: i + 1,
     precipMm,
+  }));
+}
+
+/**
+ * The same 24 hours, fetched an hour before the prediction.
+ *
+ * The explicit `recordedAt` matters: left to default, the last hour of the
+ * window is recorded at the issue instant exactly, and a shadow row placed
+ * there would tie with it rather than beat it. The reduction breaks ties by
+ * keeping the row it saw first, so the leakage cases below would then depend
+ * on insertion order instead of on the rule.
+ */
+function knowableWindow(): RowSpec[] {
+  return fullWindow(24).map((row) => ({ ...row, recordedAtOffsetHours: -1 }));
+}
+
+/**
+ * A shadow over every hour of a knowable window, at a thousand millimetres and
+ * a newer `recordedAt`, so a visible shadow replaces its hour rather than
+ * merely joining it. One leaking shadow moves the total by three orders of
+ * magnitude; all of them leaking is the total.
+ */
+function shadowWindow(over: Omit<RowSpec, 'offsetHours' | 'precipMm'>): RowSpec[] {
+  return Array.from({ length: 24 }, (_, index) => ({
+    offsetHours: index + 1,
+    precipMm: 1000,
+    ...over,
   }));
 }
 
@@ -164,6 +205,59 @@ const SCENARIOS: Scenario[] = [
     rows: fullWindow(24).map((row) => ({ ...row, recordedAtOffsetHours: 24 })),
     expected: 24,
   },
+  {
+    // AC-R9 on the live axis, against the query rather than the rule. Every
+    // hour is shadowed by a refetch that landed an hour after the prediction,
+    // which is the commonest way a row that must not be seen turns up in a
+    // real store. A query missing its visibility bound, or carrying it on the
+    // wrong column, reports 24024 or 24000 here rather than 24.
+    label: 'a row fetched after the issue instant never reaches the live window',
+    slot: 10,
+    horizonHours: 24,
+    rows: [...knowableWindow(), ...shadowWindow({ recordedAtOffsetHours: 1 })],
+    expected: 24,
+  },
+  {
+    // The control, and the reason the case above means anything. Read on the
+    // axis where those same shadows are legitimately visible, they dominate
+    // every hour. So the 24 above is the bound doing work, not the window
+    // bounds or the lead rule having already dropped them for another reason.
+    label: 'the same shadows do dominate on the archive axis, where they were issued in time',
+    slot: 10,
+    horizonHours: 24,
+    axis: 'validTime',
+    rows: [...knowableWindow(), ...shadowWindow({ recordedAtOffsetHours: 1 })],
+    expected: 24000,
+  },
+  {
+    // AC-R9 on the archive axis. `issuedAt` is forged an hour past the
+    // prediction, and no writer in this pipeline can produce such a row:
+    // leadHours is canonical, issuedAt is derived from it, and a lead of 24 on
+    // an hour inside a 24 hour window always lands the issue time at or before
+    // T. That is exactly why it is written by hand. The bound has to be
+    // enforced by reading the column, not inferred from the lead rule
+    // happening to hold, or it stops being a guard the moment that rule
+    // loosens.
+    label: 'a row issued after the issue instant never reaches the archive window',
+    slot: 11,
+    horizonHours: 24,
+    axis: 'validTime',
+    rows: [
+      ...knowableWindow(),
+      ...shadowWindow({ issuedAtOffsetHours: 1, recordedAtOffsetHours: 0 }),
+    ],
+    expected: 24,
+  },
+  {
+    label: 'the same shadows do dominate on the live axis, where they were fetched in time',
+    slot: 11,
+    horizonHours: 24,
+    rows: [
+      ...knowableWindow(),
+      ...shadowWindow({ issuedAtOffsetHours: 1, recordedAtOffsetHours: 0 }),
+    ],
+    expected: 24000,
+  },
 ];
 
 function issueInstant(slot: number): Date {
@@ -185,8 +279,12 @@ function materialize(scenario: Scenario): MaterialRow[] {
     const leadHours = spec.leadHours ?? scenario.horizonHours;
     const validTime = new Date(issuedAt.getTime() + spec.offsetHours * HOUR);
     // Derived exactly as the writer derives it, so the fixture cannot drift
-    // from the invariant that leadHours is canonical.
-    const rowIssuedAt = new Date(validTime.getTime() - leadHours * HOUR);
+    // from the invariant that leadHours is canonical, unless a scenario forges
+    // it on purpose to put the archive bound under load.
+    const rowIssuedAt =
+      spec.issuedAtOffsetHours === undefined
+        ? new Date(validTime.getTime() - leadHours * HOUR)
+        : new Date(issuedAt.getTime() + spec.issuedAtOffsetHours * HOUR);
 
     return {
       validTime,
