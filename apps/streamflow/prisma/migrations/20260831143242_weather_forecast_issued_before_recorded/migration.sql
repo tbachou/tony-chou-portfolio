@@ -1,0 +1,33 @@
+-- A row whose nominal issue time is later than the instant we recorded it is
+-- rain from the future wearing a forecast's clothes: the model would be told
+-- about weather that had not been forecast when the prediction was made. It is
+-- the worst defect available in this pipeline, and until now nothing in the
+-- database refused it.
+--
+-- The code used to refuse it structurally. `clampWindowTo` never asked for an
+-- hour after `now`, so every stored row sat at least its own lead behind the
+-- fetch, a margin of 24 hours at the shortest. The live ingest (AC-R13)
+-- deliberately gives that up: it reaches to `now` plus the lead, because a
+-- prediction issued now needs the hours it has not lived through yet. The last
+-- hour of a live window is issued at exactly the instant the run started, so
+-- the margin is no longer 24 hours. It is zero.
+--
+-- Zero margin means any backward movement of the wall clock between computing
+-- the window and stamping the rows inverts the two axes, and the run still
+-- records OK because nothing checks. This is that check. It costs nothing, it
+-- holds against every writer rather than the one we happen to have, and it
+-- turns a silent leak into a failed run, which is the direction this pipeline
+-- should always fail in.
+--
+-- The same reasoning AC-R2 already applied to `leadHours`: the code guards the
+-- ingest path, the constraint guards the table. They catch different mistakes.
+-- Equality is allowed, because a row issued at the very instant it was recorded
+-- was genuinely knowable then, matching the inclusive bound every as of read
+-- uses.
+--
+-- Prisma's schema language cannot express a CHECK, so this migration is hand
+-- written. It is created with `migrate dev --create-only` and then applied by
+-- `migrate dev` so the SQL actually executes before it ships.
+ALTER TABLE "weather_forecasts"
+    ADD CONSTRAINT "weather_forecasts_issued_before_recorded"
+    CHECK ("issuedAt" <= "recordedAt");
