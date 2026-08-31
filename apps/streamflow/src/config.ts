@@ -39,20 +39,27 @@ export const USGS_NO_DATA_VALUE = -999999;
 export const INGEST_OVERLAP_HOURS = 2;
 
 /**
- * Where observation ingestion starts on an empty table.
+ * Where every walk over history starts on an empty store: observation ingest,
+ * the forecast month walk, and the seeding hindcast alike.
  *
  * It is not where the Open-Meteo archive begins. This comment said that it was
  * until the rain child measured it, and the claim was wrong by about three
- * weeks and wrong by a different amount for each lead: a lead of N days needs N
- * days of prior runs behind it, so the longest horizon becomes usable last.
+ * weeks and wrong by a different amount for each lead, because a lead of N days
+ * needs N days of prior runs behind it.
  *
- * The date stays where it is. The few extra weeks of discharge it buys cannot
- * be matched with forecast rain, which costs a little storage and nothing else,
- * and moving it would trade that for re-fetching the whole observation archive.
+ * The date stays where it is, and the weeks before the archive are not free.
+ * The forecast walk requests those months and they come back short, which is
+ * expected and recorded as PARTIAL rather than failed (AC-R14). The hindcast
+ * issues predictions across them too, so the record holds slots no forecast
+ * rain could ever be matched with. Both are cheap and neither is wrong; a
+ * rain aware forecaster is simply skipped there under AC-R10, which does mean
+ * its scored population will not match a baseline's over that stretch.
  *
- * The archive's real boundary is not a constant anywhere. `firstForecastValidTimes`
- * reads it per lead out of the store, which is the only place it is ever true,
- * and it stays true as Open-Meteo extends or trims what it serves (AC-R6).
+ * What is never pinned here is where the archive actually starts.
+ * `earliestStoredForecastValidTimes` reads the earliest row held per lead out
+ * of the store, and stays true as Open-Meteo extends or trims what it serves
+ * (AC-R6). Note that even that is the earliest row, not the first date a
+ * prediction can use; the function's own docstring carries the difference.
  */
 export const BACKFILL_START = new Date('2024-01-01T00:00:00.000Z');
 

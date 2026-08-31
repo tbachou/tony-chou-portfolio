@@ -1,12 +1,11 @@
 import { config as loadEnvFile } from 'dotenv';
 
-import { BACKFILL_START, HORIZON_HOURS, OPEN_METEO_MODEL } from '../config';
-import { firstForecastValidTimes } from '../asof/forecasts.repository';
+import { BACKFILL_START, GAUGE, HORIZON_HOURS, OPEN_METEO_MODEL } from '../config';
+import { earliestStoredForecastValidTimes } from '../asof/forecasts.repository';
 import { createPrismaClient } from '../db';
 import { sanitizeError } from '../errors';
 import type { PrismaClient, RunStatus } from '../generated/prisma/client';
 import { monthWindow, nextMonthWindow } from './forecast-window';
-import { ensureGauge } from './ingest-observations';
 import {
   ingestForecastMonth,
   type ForecastIngestDeps,
@@ -182,29 +181,48 @@ if (require.main === module) {
           `OK ${summary.byStatus.OK} PARTIAL ${summary.byStatus.PARTIAL}`,
       );
 
-      // What the archive actually turned out to cover, measured rather than
-      // assumed (AC-R6). The boundary is staggered per lead and it is not
-      // BACKFILL_START, so an operator who has just spent ninety requests
-      // finding that out should be told, and told from the store.
+      // What the archive actually turned out to cover, read from the store
+      // rather than assumed (AC-R6). Deliberately labelled as the earliest row
+      // held, not the first usable date: the ramp in scatters early rows, so
+      // the first complete window a prediction could use (AC-R10) can be weeks
+      // later than this, and can order differently across leads.
       //
       // Reported inside its own catch because it is a courtesy read after the
       // work is already done and recorded. Letting it reach the outer handler
       // would print `backfill failed` over a walk that succeeded and exit 1,
       // which on a scheduled run invites a retry of every chunk it just did.
       try {
-        const gauge = await ensureGauge(prisma);
-        const first = await firstForecastValidTimes(prisma, gauge.id, OPEN_METEO_MODEL);
+        // findUnique, not ensureGauge: this is a report, and a report must not
+        // write. When every chunk was skipped the upsert would otherwise be the
+        // only write the run makes, creating a gauge row nothing asked for.
+        const gauge = await prisma.gauge.findUnique({
+          where: { usgsSiteId: GAUGE.usgsSiteId },
+          select: { id: true },
+        });
+
+        if (!gauge) {
+          console.log('earliest stored row: none, the gauge is not in the store');
+          return;
+        }
+
+        const first = await earliestStoredForecastValidTimes(
+          prisma,
+          gauge.id,
+          OPEN_METEO_MODEL,
+        );
 
         if (first.size === 0) {
-          console.log('first usable date: none, the store holds no forecast rows');
+          console.log('earliest stored row: none, the store holds no forecast rows');
           return;
         }
 
         for (const [leadHours, validTime] of [...first].sort(([a], [b]) => a - b)) {
-          console.log(`first usable at lead ${leadHours}h: ${validTime.toISOString()}`);
+          console.log(
+            `earliest row held at lead ${leadHours}h: ${validTime.toISOString()}`,
+          );
         }
       } catch (cause: unknown) {
-        console.error(`first usable date unavailable: ${sanitizeError(cause)}`);
+        console.error(`earliest stored row unavailable: ${sanitizeError(cause)}`);
       }
     })
     .catch((cause: unknown) => {
