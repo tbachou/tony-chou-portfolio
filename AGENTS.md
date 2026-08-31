@@ -40,6 +40,8 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 
 `docs/specs/_root/NNNN-<slug>/` (index.md + rationale.md, verify.md when saved). CI runs typecheck, lint, and tests on every push (`.github/workflows/ci.yml`).
 
+**There is no `docs/scope/` in this repo, deliberately.** Specs are the whole tracking surface: a feature's state is its spec's `**Status**:` line (`Proposed` → `In Progress` → `Accepted`), its tasks are the spec's `## Build plan`, and its acceptance criteria are `## Requirements`. Scope would hold feature status too, and the same fact in two files is how the two come to disagree; this repo has been bitten by that shape of drift more than once. So workflow skills should not offer to create a scope, ask about linking a feature to one, or treat a missing scope row as a gap: say in one line that this repo tracks features in specs, and move on. Nothing needs ticking. If an at a glance view of every feature is ever wanted, generate it from the spec `Status` lines rather than maintaining a second copy by hand.
+
 ## Rules
 
 - Always Node 22+ (`nvm use 22`) before any npm/npx command.
