@@ -19,7 +19,7 @@ import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 loadEnv({ path: path.resolve(__dirname, '..', '..', '.env') });
 
@@ -36,6 +36,7 @@ import {
 } from '../../src/modules/conversation/eval/pricing';
 import { aggregate } from '../../src/modules/conversation/eval/aggregate';
 import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
+import { STATUS_ARGS } from '../../src/modules/conversation/eval/dirty-tree';
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
 import {
   RESULTS_PROVENANCE,
@@ -89,22 +90,93 @@ function readJsonFile<T>(filePath: string, label: string): T {
   }
 }
 
-function gitInfo(): { commit: string; dirty: boolean } {
+type GitInfo = {
+  commit: string;
+  /** False when git could not answer, so nothing below it is known. */
+  verified: boolean;
+  /** git's own status output, verbatim. Empty means nothing is uncommitted. */
+  dirtyText: string;
+  root: string;
+};
+
+function gitInfo(): GitInfo {
   try {
     const commit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-    // The dirty flag answers "did the code that ran differ from this
-    // commit?" — so it counts tracked modifications only, and ignores the
-    // suite's own outputs under docs/evals (results, scoreboard, baseline),
-    // which every run rewrites but which cannot change behavior.
-    const dirty = execSync('git status --porcelain --untracked-files=no', {
+    const root = execSync('git rev-parse --show-toplevel', {
       encoding: 'utf8',
-    })
-      .split('\n')
-      .some((line) => line.trim().length > 0 && !line.includes('docs/evals/'));
-    return { commit, dirty };
-  } catch {
-    return { commit: 'unknown', dirty: false };
+    }).trim();
+    return {
+      commit,
+      verified: true,
+      dirtyText: execFileSync('git', STATUS_ARGS, { encoding: 'utf8' }).trimEnd(),
+      root,
+    };
+  } catch (error) {
+    // Fail CLOSED. Empty output means "nothing uncommitted" downstream, so a
+    // git that cannot answer used to hand back a clean bill of health and the
+    // run spent money unguarded. A guard that cannot check must refuse.
+    console.error('❌ git could not answer whether this run is reproducible:');
+    console.error(`   ${error instanceof Error ? error.message.trim() : String(error)}`);
+    if (process.argv.includes('--allow-dirty')) {
+      console.warn(
+        '\n\u26a0 Continuing because --allow-dirty was passed. Reproducibility is ' +
+          'unverified, so this run cannot be baselined.\n',
+      );
+      return { commit: 'unknown', verified: false, dirtyText: '', root: process.cwd() };
+    }
+    console.error(
+      '   Refusing before spending anything. Run from inside the repository, or pass\n' +
+        '   --allow-dirty to spend anyway on a run that cannot be baselined.',
+    );
+    process.exit(1);
   }
+}
+
+/**
+ * Runs BEFORE the first model call, because this command spends real money
+ * and the two ways it gets wasted are both invisible until afterwards: being
+ * in a stale worktree, and measuring uncommitted code.
+ *
+ * The rule is flat: commit before you run. A results file records the commit
+ * it ran at, and that is only true if the tree matched it. An earlier version
+ * classified each changed file as one the suite loads or one it does not, so
+ * that a run with only a doc edited was allowed; it worked, and it cost more
+ * than it saved. See the comment on STATUS_ARGS.
+ */
+function preflight(info: GitInfo): void {
+  const dirty = info.dirtyText.length > 0;
+  const state = !info.verified
+    ? ' (UNVERIFIED: git could not answer)'
+    : dirty
+      ? ' (uncommitted changes)'
+      : ' (clean)';
+  console.log(`Worktree: ${info.root}`);
+  console.log(`Commit:   ${info.commit.slice(0, 7)}${state}`);
+
+  if (!dirty) {
+    console.log('');
+    return;
+  }
+
+  console.log('Uncommitted:');
+  console.log(info.dirtyText);
+
+  if (process.argv.includes('--allow-dirty')) {
+    console.warn(
+      '\n\u26a0 Continuing because --allow-dirty was passed. This run cannot be ' +
+        'baselined: its commit does not reproduce it.\n',
+    );
+    return;
+  }
+
+  console.error(
+    `\n\u274c Commit before you run. The files above differ from ${info.commit.slice(0, 7)}, ` +
+      'so that commit would not reproduce this run.\n' +
+      '   Refusing before spending anything. Commit them, or pass --allow-dirty for a\n' +
+      '   deliberately exploratory run (a reverted-module control run, for example).\n' +
+      '   Check the worktree path above too: a stale one is the other way this gets wasted.',
+  );
+  process.exit(1);
 }
 
 function resultsFileName(commit: string, dirty: boolean, dir: string): string {
@@ -134,6 +206,20 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Before anything is spent: say where this is running and refuse if the
+  // tree differs in a way that could change the result.
+  const git = gitInfo();
+  preflight(git);
+  if (process.argv.includes('--preflight-only')) {
+    console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
+    return;
+  }
+  const commit = git.commit;
+  // An unverified run is recorded as dirty on purpose. Writing gitDirty:false
+  // for a tree nobody could check would let the publish rule in
+  // apps/web/src/lib/evals.ts accept it as a clean, publishable run.
+  const dirty = !git.verified || git.dirtyText.length > 0;
+
   const caseCap = numFlag('cases', GOLDEN_CASES.length);
   const concurrency = Math.max(1, numFlag('concurrency', 2));
   const maxCostUsd = numFlag('max-cost', 2);
@@ -161,7 +247,6 @@ async function main(): Promise<void> {
       : new AnthropicService();
 
   const datasetHash = hashDataset(datasetHashPayload(GOLDEN_CASES));
-  const { commit, dirty } = gitInfo();
 
   console.log(
     `Running ${cases.length}/${GOLDEN_CASES.length} case(s) · generator ${providerName}/${generatorModel} · judge ${JUDGE_MODEL} · concurrency ${concurrency} · max cost $${maxCostUsd}\n`,
