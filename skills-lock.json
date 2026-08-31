@@ -106,6 +106,12 @@
       "skillPath": "prisma-postgres/SKILL.md",
       "computedHash": "bd29d626f40b079ba41273b4cee241b8ca5cecf81342abc20dd0747acbfbdb30"
     },
+    "react-markdown": {
+      "source": "mikkelkrogsholm/dev-skills",
+      "sourceType": "github",
+      "skillPath": "react-markdown/SKILL.md",
+      "computedHash": "47756f9a6ec27fcc771dbda12722ad95ddfa05b9afca903ea8777dbc9641dec9"
+    },
     "tailwindcss-advanced-layouts": {
       "kind": "registry",
       "source": "josiahsiegel/claude-plugin-marketplace",
