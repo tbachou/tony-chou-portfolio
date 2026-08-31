@@ -137,3 +137,60 @@ export async function earliestStoredForecastValidTimes(
 
   return new Map(rows.map((row) => [row.leadHours, row.firstValidTime]));
 }
+
+/**
+ * The latest `validTime` the store holds for each lead, at one gauge and model.
+ *
+ * This is what anchors the live ingest window (AC-R13). The window starts at
+ * this value less the ingest overlap, so gap recovery falls out of the store
+ * rather than out of the schedule: a job that has not run for two days asks for
+ * two days, because nothing here consults the cron at all.
+ *
+ * Per lead, not one value for the whole table, because the three leads run to
+ * different edges. A lead of 72 hours reaches three days further into the
+ * future than a lead of 24 does, so a single maximum would drag the shorter
+ * leads' windows forward past rows they never fetched and leave a permanent
+ * hole behind them.
+ *
+ * The value is routinely in the future, which is correct and is worth saying
+ * plainly because it looks wrong. A row's nominal `issuedAt` is `validTime`
+ * minus `leadHours`, so a row at lead 24 whose `validTime` is a day ahead was
+ * issued now, and the live ingest deliberately reaches that far to give a
+ * prediction issued now a complete window (AC-R10). What it must never do is
+ * reach further, which is a property of the window, not of this read.
+ *
+ * **Not knowability bounded**, exactly like `earliestStoredForecastValidTimes`
+ * and unlike everything else in this module. It sees every row in the store
+ * however recently it was fetched. That is right for deciding what to fetch
+ * next and wrong for anything a prediction touches: at issue time `T` it
+ * answers with rows recorded long after `T`. Never call it from a prediction or
+ * a hindcast path.
+ *
+ * Grouped rather than asked once per lead, so the whole answer costs one
+ * statement in the spirit of AC-R16. A lead with no rows is absent from the map
+ * rather than carrying a fallback date, so the caller can tell "nothing stored
+ * yet" from "stored up to here" instead of meeting an invented floor.
+ *
+ * `MAX` is safe over this append only table without a reduction first, for the
+ * same reason `MIN` is: the reduction in AC-R7 exists because summing revisions
+ * double counts, and an extreme is indifferent to how many rows share the hour
+ * it picks.
+ */
+export async function latestStoredForecastValidTimes(
+  prisma: ForecastReader,
+  gaugeId: string,
+  model: string,
+): Promise<ReadonlyMap<number, Date>> {
+  const rows = await prisma.$queryRaw<{ leadHours: number; lastValidTime: Date }[]>(
+    Prisma.sql`
+      SELECT "leadHours", MAX("validTime") AS "lastValidTime"
+      FROM "weather_forecasts"
+      WHERE "gaugeId" = ${gaugeId}
+        AND "model" = ${model}
+      GROUP BY "leadHours"
+      ORDER BY "leadHours"
+    `,
+  );
+
+  return new Map(rows.map((row) => [row.leadHours, row.lastValidTime]));
+}
