@@ -33,6 +33,7 @@ npm run lint --workspace=apps/web            # ESLint (root flat config)
 
 ## Agent skills
 
+- [react-markdown](../../.claude/skills/react-markdown/): `mikkelkrogsholm/dev-skills`, rendering markdown as React elements (remark/rehype plugins, component overrides). Governs one module, `src/app/projects/interview-simulator/evals/Markdown.tsx`, which is why it is listed here and not at the root
 - [vercel-react-best-practices](../../.claude/skills/vercel-react-best-practices/): `vercel-labs/agent-skills`, React/Next performance patterns
 - tailwindcss-* (6 skills, e.g. [tailwindcss-advanced-layouts](../../.claude/skills/tailwindcss-advanced-layouts/)): `josiahsiegel/claude-plugin-marketplace`, layout/animation/mobile patterns
 
