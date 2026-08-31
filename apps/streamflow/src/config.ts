@@ -39,8 +39,10 @@ export const USGS_NO_DATA_VALUE = -999999;
 export const INGEST_OVERLAP_HOURS = 2;
 
 /**
- * Where every walk over history starts on an empty store: observation ingest,
- * the forecast month walk, and the seeding hindcast alike.
+ * Where anything that walks from the beginning starts: the observation ingest
+ * window, the forecast month walk, the seeding hindcast, and the full history
+ * reads in `predict.ts` and `score.ts`. Five callers, so this date is load
+ * bearing in more places than its name suggests.
  *
  * It is not where the Open-Meteo archive begins. This comment said that it was
  * until the rain child measured it, and the claim was wrong by about three
@@ -51,9 +53,11 @@ export const INGEST_OVERLAP_HOURS = 2;
  * The forecast walk requests those months and they come back short, which is
  * expected and recorded as PARTIAL rather than failed (AC-R14). The hindcast
  * issues predictions across them too, so the record holds slots no forecast
- * rain could ever be matched with. Both are cheap and neither is wrong; a
- * rain aware forecaster is simply skipped there under AC-R10, which does mean
- * its scored population will not match a baseline's over that stretch.
+ * rain could ever be matched with. Both are cheap and neither is wrong.
+ * Nothing is skipped over that stretch today, because no forecaster reads rain
+ * yet: `BaselineModel.central` takes no weather argument and AC-R10 is unbuilt.
+ * When one does, it will be skipped there, and its scored population will stop
+ * matching a baseline's.
  *
  * What is never pinned here is where the archive actually starts.
  * `earliestStoredForecastValidTimes` reads the earliest row held per lead out

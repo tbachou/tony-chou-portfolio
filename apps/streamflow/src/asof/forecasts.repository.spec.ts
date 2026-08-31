@@ -196,8 +196,9 @@ describe('earliestStoredForecastValidTimes', () => {
   // The earliest row held is not the first usable date, and it does not even
   // order across leads. The archive ramps in and `parse.ts` drops null hours,
   // so a stray early row at one lead can sit before a later lead's first row.
-  // Reporting that faithfully is the contract; a future "helpful" sort or
-  // clamp here would hide the ramp in rather than fix it.
+  // Reporting that faithfully is the contract; a future "helpful" clamp or
+  // repair here would hide the ramp in rather than fix it. (A plain reorder is
+  // harmless and this does not catch one: the return value is keyed by lead.)
   it('reports a stray early row even when it makes leads non-monotonic', async () => {
     const STRAY_48 = new Date('2024-01-02T07:00:00.000Z');
     const { prisma } = reader([
