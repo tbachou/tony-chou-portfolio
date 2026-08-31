@@ -18,8 +18,6 @@
     "lint": "eslint . --max-warnings 25",
     "check:skills": "node scripts/check-skills.mjs",
     "check:evals": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-evals.mjs",
-    "check:worktrees": "node scripts/check-worktrees.mjs",
-    "test:scripts": "vitest run",
     "build:shared": "npm run build --workspace=@portfolio/shared",
     "postinstall": "npm run build:shared && npm run build:streamflow",
     "build:streamflow": "npm run build --workspace=@portfolio/streamflow"
