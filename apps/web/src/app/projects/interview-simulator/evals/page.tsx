@@ -420,9 +420,10 @@ export default function InterviewSimulatorEvalsPage() {
             </h2>
             <p className="mt-3 max-w-[42rem] text-term-xs leading-relaxed text-term-muted">
               The baseline is the run every delta is measured against. It moves only by a
-              deliberate local run on a committed tree, and every move is recorded here with its
-              reason, because a baseline that moves quietly makes every number above it
-              meaningless.
+              deliberate local run that its own commit can reproduce, and every move is recorded
+              here with its reason, because a baseline that moves quietly makes every number above
+              it meaningless. Where a run differs from its commit, the entry says what differed and
+              why it cannot have changed the result.
             </p>
 
             <ol className="mt-5 space-y-6">
