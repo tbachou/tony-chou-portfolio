@@ -36,10 +36,7 @@ import {
 } from '../../src/modules/conversation/eval/pricing';
 import { aggregate } from '../../src/modules/conversation/eval/aggregate';
 import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
-import {
-  ALL_STATUS_ARGS,
-  MATERIAL_STATUS_ARGS,
-} from '../../src/modules/conversation/eval/dirty-tree';
+import { STATUS_ARGS } from '../../src/modules/conversation/eval/dirty-tree';
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
 import {
   RESULTS_PROVENANCE,
@@ -97,10 +94,8 @@ type GitInfo = {
   commit: string;
   /** False when git could not answer, so nothing below it is known. */
   verified: boolean;
-  /** git's own status output for everything that differs, verbatim. */
+  /** git's own status output, verbatim. Empty means nothing is uncommitted. */
   dirtyText: string;
-  /** The same, narrowed to what this suite loads. Empty means reproducible. */
-  materialText: string;
   root: string;
 };
 
@@ -110,38 +105,24 @@ function gitInfo(): GitInfo {
     const root = execSync('git rev-parse --show-toplevel', {
       encoding: 'utf8',
     }).trim();
-    // Two questions, both answered by git. Nothing here parses a path, which
-    // is the whole point: the parser was the bug.
-    const status = (args: string[]): string =>
-      execFileSync('git', args, { encoding: 'utf8' }).trimEnd();
     return {
       commit,
       verified: true,
-      dirtyText: status(ALL_STATUS_ARGS),
-      materialText: status(MATERIAL_STATUS_ARGS),
+      dirtyText: execFileSync('git', STATUS_ARGS, { encoding: 'utf8' }).trimEnd(),
       root,
     };
   } catch (error) {
-    // Fail CLOSED. Returning empty strings here reads as "nothing material
-    // changed" downstream, so a git that cannot answer used to hand back a
-    // clean bill of health and the run spent money unguarded. Reproduced
-    // outside a repository and with a corrupted .git/index while a material
-    // file had live edits: the preflight printed `unknown (clean)` and
-    // proceeded. A guard that cannot check must refuse, not wave through.
+    // Fail CLOSED. Empty output means "nothing uncommitted" downstream, so a
+    // git that cannot answer used to hand back a clean bill of health and the
+    // run spent money unguarded. A guard that cannot check must refuse.
     console.error('❌ git could not answer whether this run is reproducible:');
     console.error(`   ${error instanceof Error ? error.message.trim() : String(error)}`);
     if (process.argv.includes('--allow-dirty')) {
       console.warn(
-        '\n⚠ Continuing because --allow-dirty was passed. Reproducibility is ' +
+        '\n\u26a0 Continuing because --allow-dirty was passed. Reproducibility is ' +
           'unverified, so this run cannot be baselined.\n',
       );
-      return {
-        commit: 'unknown',
-        verified: false,
-        dirtyText: '',
-        materialText: '',
-        root: process.cwd(),
-      };
+      return { commit: 'unknown', verified: false, dirtyText: '', root: process.cwd() };
     }
     console.error(
       '   Refusing before spending anything. Run from inside the repository, or pass\n' +
@@ -156,56 +137,41 @@ function gitInfo(): GitInfo {
  * and the two ways it gets wasted are both invisible until afterwards: being
  * in a stale worktree, and measuring uncommitted code.
  *
- * It refuses only when the difference could have changed the result. That
- * distinction is the lesson of the 2026-08-31 re baseline (spec 0012 phase
- * two, AC-15): `gitDirty` answers "can this run be tied to a named commit?",
- * not "are these scores right?", and treating the flag as the defect cost a
- * paid run for nothing. A dirty tree whose only diff is a spec markdown is
- * fine and says so; a dirty tree touching the prompts is not.
+ * The rule is flat: commit before you run. A results file records the commit
+ * it ran at, and that is only true if the tree matched it. An earlier version
+ * classified each changed file as one the suite loads or one it does not, so
+ * that a run with only a doc edited was allowed; it worked, and it cost more
+ * than it saved. See the comment on STATUS_ARGS.
  */
 function preflight(info: GitInfo): void {
   const dirty = info.dirtyText.length > 0;
-  // Three states, not two. Saying "clean" when git could not answer is a
-  // claim with nothing behind it, and this banner is the only thing telling
-  // the operator whether to trust what follows.
   const state = !info.verified
     ? ' (UNVERIFIED: git could not answer)'
     : dirty
-      ? ' (tree differs)'
+      ? ' (uncommitted changes)'
       : ' (clean)';
   console.log(`Worktree: ${info.root}`);
   console.log(`Commit:   ${info.commit.slice(0, 7)}${state}`);
 
-  if (dirty) {
-    console.log('Uncommitted:');
-    console.log(info.dirtyText);
-  }
-
-  if (info.materialText.length === 0) {
-    if (dirty) {
-      console.log(
-        'None of it is loaded by this suite, so the run is reproducible from the commit above.',
-      );
-    }
+  if (!dirty) {
     console.log('');
     return;
   }
 
-  console.log('\nOf that, loaded by this suite:');
-  console.log(info.materialText);
+  console.log('Uncommitted:');
+  console.log(info.dirtyText);
 
   if (process.argv.includes('--allow-dirty')) {
     console.warn(
-      '\n\u26a0 The files above are loaded by this suite. Continuing because ' +
-        '--allow-dirty was passed. This run cannot be baselined: its commit ' +
-        'does not reproduce it.\n',
+      '\n\u26a0 Continuing because --allow-dirty was passed. This run cannot be ' +
+        'baselined: its commit does not reproduce it.\n',
     );
     return;
   }
 
   console.error(
-    `\n\u274c The files above are loaded by this suite, so commit ${info.commit.slice(0, 7)} ` +
-      'would not reproduce this run.\n' +
+    `\n\u274c Commit before you run. The files above differ from ${info.commit.slice(0, 7)}, ` +
+      'so that commit would not reproduce this run.\n' +
       '   Refusing before spending anything. Commit them, or pass --allow-dirty for a\n' +
       '   deliberately exploratory run (a reverted-module control run, for example).\n' +
       '   Check the worktree path above too: a stale one is the other way this gets wasted.',
