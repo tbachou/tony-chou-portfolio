@@ -1,8 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DataSources } from './DataSources';
 
@@ -70,62 +67,73 @@ describe('DataSources', () => {
 });
 
 /**
- * That the dashboard page still renders this at all.
+ * That the dashboard page actually renders this, which the suite above does
+ * not prove.
  *
- * Everything above proves the component is correct. None of it proves the
- * page uses it, because every test above renders `DataSources` directly. The
- * pre deploy audit on 2026-08-31 confirmed the hole by deleting the import
- * and the JSX call from `page.tsx`: 87 tests passed, `tsc` exited 0, and lint
- * was byte for byte identical to baseline. The site would have gone out of
- * licence with the whole gate green, which is the exact failure the block
- * comment at the top of `DataSources.tsx` claims this suite prevents.
+ * Every test above renders `DataSources` directly, so all of them pass with
+ * the component orphaned. The pre deploy audit on 2026-08-31 confirmed that
+ * by deleting the import and the JSX call from `page.tsx`: 87 tests passed,
+ * `tsc` exited 0, and lint was byte for byte identical to baseline, so the
+ * site could have gone out of licence with the whole gate green.
  *
- * This reads the page source rather than rendering it, and that is a
- * deliberate trade. Rendering `page.tsx` means mocking four Prisma methods,
- * six package functions and the fetch driven client panels, which would tie a
- * licence assertion to the entire data layer: it would then fail for reasons
- * that have nothing to do with the licence, and the first person to hit that
- * would delete it as flaky. A narrow assertion that survives is worth more
- * than a thorough one that gets removed.
+ * The first attempt at closing it asserted against the page SOURCE TEXT, and
+ * the adversarial re run took it apart, which is why this renders instead.
+ * Text matching could not tell the difference between a render and a mention:
+ * an aliased import (`DataSources as _Legacy`) rebinding the JSX to a stub
+ * module passed, and so did a bare string containing `<DataSources />` in a
+ * comment about restoring the credit. It also FAILED when the credit was
+ * correctly wired, because a `/*` inside an ordinary line comment opened a
+ * phantom block comment that swallowed the import. A guard that cries wolf is
+ * worse than none, because it is the one that gets deleted.
  *
- * What it therefore does NOT catch, stated so nobody mistakes its reach: a
- * render that is present but unreachable, `{false && <DataSources />}` or a
- * branch that never runs. It catches deletion, which is the realistic edit.
+ * Rendering costs three module mocks and three panel stubs, and in exchange
+ * it cannot be fooled by any of that: only markup that really reaches the
+ * screen satisfies it.
  */
-const PAGE = resolve(process.cwd(), 'src/app/streamflow/page.tsx');
+vi.mock('@/lib/streamflow-db', () => ({
+  streamflowDb: () => ({
+    gauge: {
+      findFirst: async () => ({
+        id: 'gauge-1',
+        usgsSiteId: '03230500',
+        name: 'Big Darby Creek at Darbyville OH',
+        lat: 39.7006,
+        lon: -83.1102,
+        timezone: 'America/New_York',
+        active: true,
+      }),
+    },
+    observation: { count: async () => 0, findFirst: async () => null },
+    pipelineRun: { findFirst: async () => null },
+  }),
+}));
 
-/**
- * The page source with comments stripped, so a commented out render cannot
- * satisfy these. The line comment rule skips `://` so a URL in the source is
- * not mistaken for the start of a comment.
- *
- * `import.meta.url` is not a `file:` URL under jsdom, so the path is resolved
- * from the vitest root (`apps/web`) instead. A wrong path would make every
- * assertion below vacuous, so the marker check fails loudly rather than
- * letting the licence guard quietly test an empty string.
- */
-function pageSource(): string {
-  const source = readFileSync(PAGE, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(?<!:)\/\/.*$/gm, '');
+// Partial: the constants stay real, so the timezone the page passes down is
+// the one production uses rather than one invented here.
+vi.mock('@portfolio/streamflow', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@portfolio/streamflow')>()),
+  observationsAsOf: async () => [],
+  publicPredictions: async () => [],
+  publicScoredErrors: async () => [],
+  gradedIntervals: async () => [],
+}));
 
-  if (!source.includes('export default async function StreamflowPage')) {
-    throw new Error(`Read the wrong file, or the page was renamed: ${PAGE}`);
-  }
+// The charting and fetching panels are not what this is testing.
+vi.mock('./HydrographPanel', () => ({ HydrographPanel: () => null }));
+vi.mock('./SkillChart', () => ({ SkillChart: () => null }));
+vi.mock('./CalibrationPanel', () => ({ CalibrationPanel: () => null }));
 
-  return source;
-}
+describe('the dashboard page', () => {
+  it('renders the Open-Meteo credit and its licence link', async () => {
+    const { default: StreamflowPage } = await import('./page');
 
-describe('the dashboard page wiring', () => {
-  it('imports DataSources', () => {
-    expect(pageSource()).toMatch(
-      /import\s*\{[^}]*\bDataSources\b[^}]*\}\s*from\s*'\.\/DataSources'/,
-    );
-  });
+    render(await StreamflowPage());
 
-  it('renders DataSources, which is what actually carries the licence', () => {
-    // The assertion the audit's failing input demanded: deleting the JSX call
-    // must not leave the suite green.
-    expect(pageSource()).toMatch(/<DataSources[\s/>]/);
+    expect(
+      screen.getByRole('link', { name: /open-meteo/i }).getAttribute('href'),
+    ).toBe('https://open-meteo.com/');
+    expect(
+      screen.getByRole('link', { name: /cc by 4\.0/i }).getAttribute('href'),
+    ).toBe('https://creativecommons.org/licenses/by/4.0/');
   });
 });
