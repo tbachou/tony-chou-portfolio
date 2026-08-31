@@ -12,8 +12,8 @@ This turns the interview simulator into the vehicle for a phased, measured build
 Child specs, one per phase, written when that phase is decided:
 
 - [0012-context-engineering-pass.md](0012-context-engineering-pass.md): phase one, decided and specced now. Restructures the interviewer and Tony prompts, puts a story catalog in the interviewer context, and rebuilds history server side, measured against the 0011 baseline.
-- Phase two, public evals page: a small site page rendering the scoreboard history and per phase writeups from `docs/evals/interview/`. Own `/architect` run. **Repo visibility, resolved**: this page's value depends on a reader being able to follow a claim from the page back into the committed record, which needs a readable repo. The repo went public on 2026-08-29, so that dependency is met. It stays worth naming because it is load bearing: if the repo ever returns to private, this page degrades to an unverifiable claim.
-- Phase three, `searchPortfolio` retrieval: the corpus pipeline (curated documents from the portfolio repo, Panel, Carryover, and Streamflow) plus a retrieval tool the interviewer and Tony generation can draw on. Own `/architect` run; the vector store choice is that run's stack walk.
+- [0012-public-evals-page.md](0012-public-evals-page.md): phase two, decided and specced. A public page at `/projects/interview-simulator/evals` rendering the published run history, the baseline history, and the per phase writeups from `docs/evals/interview/`, read at build time over a committed `published.json` manifest. **Repo visibility, resolved**: this page's value depends on a reader being able to follow a claim from the page back into the committed record, which needs a readable repo. The repo went public on 2026-08-29, so that dependency is met. It stays worth naming because it is load bearing: if the repo ever returns to private, this page degrades to an unverifiable claim.
+- Phase three, `searchPortfolio` retrieval: the corpus pipeline (curated documents from the portfolio repo, Panel, Carryover, and Streamflow) plus a retrieval tool the interviewer and Tony generation can draw on. Own `/architect` run; the vector store choice is that run's stack walk. **It now has a measured problem to aim at**: [2026-08-31, the model invents technical rationale it was never given](findings/2026-08-31-grounding-embellishment.md), seen twice on the thinnest story in the corpus. Retrieval is one of the three candidate remedies that finding names, and the only one this phase was already going to build, so phase three should measure against those two cases rather than against a general hope that more context helps.
 - Phase four, guided steering: suggested next questions the visitor clicks. Its design interview is already complete and recorded in [rationale.md](rationale.md) under "Settled steering decisions"; the child spec is written when the phase starts, after a re check against the retrieval design.
 - Phase five, free text visitor questions plus screening: separately decided, only if Tony chooses to build and showcase the screening machinery. Until that child spec exists, no free text visitor input ships.
 
@@ -29,7 +29,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - As a visitor, I want the conversation to stay honest and grounded while it gains capabilities, so that nothing generated ever claims more than the verified record supports.
 
 **Acceptance criteria** (umbrella level; each phase's child carries its own build criteria):
-- **AC-1**: Every phase lands with a full eval run before and after its change, compared against the committed baseline per spec 0011's rules; a dataset change re baselines per 0011 AC-9.
+- **AC-1**: Every phase that changes model facing code lands with a full eval run before and after its change, compared against the committed baseline per spec 0011's rules; a dataset change re baselines per 0011 AC-9. A phase that changes no model facing code takes no run, and its child spec must say so explicitly and set `measured: false` in the publish manifest, so the absence is recorded rather than silent. Phase two is the first such phase.
 - **AC-2**: Every phase's child spec names which course principles (from `~/source/ai-engineering-fundamentals` and `~/source/agents-v2`) it applied and which it deliberately skipped, with one line why per skip.
 - **AC-3**: The grounding corpus only ever contains content Tony authored or owns (his repos, specs, stories, writeups). No third party licensed material enters it (the spec 0008 licence lesson).
 - **AC-4**: No visitor typed content is persisted or logged in any phase before the phase five child spec deliberately decides its screening machinery. Guided phases accept clicks on server known option ids only.
@@ -61,7 +61,7 @@ The existing interview simulator becomes the subject of a phased build following
 
 ## Follow-up
 
-- [ ] Phase two child (`/architect` run): the public evals page.
+- [x] Phase two child: the public evals page, [0012-public-evals-page.md](0012-public-evals-page.md).
 - [ ] Phase three child (`/architect` run): `searchPortfolio` retrieval and the corpus pipeline; its stack walk picks the vector store.
 - [ ] Phase four child (`/architect` run): guided steering, seeded from the settled decisions in rationale.md.
 - [ ] Phase five decision (`/architect` run, optional): free text visitor questions and the screening machinery.
