@@ -52,6 +52,16 @@ const FORBIDDEN = [
   'observation.delete',
   'observation.deleteMany',
   'observation.upsert',
+  // `WeatherForecast` carries the same rule (AC-R3), and the store is meant to
+  // have one rule rather than one rule and an exception. `upsert` is forbidden
+  // as much as the mutations are: it is how an append only table quietly
+  // acquires an update, and a fixture that wants to be re-runnable should say
+  // `createMany` with `skipDuplicates` instead.
+  'weatherForecast.update',
+  'weatherForecast.updateMany',
+  'weatherForecast.delete',
+  'weatherForecast.deleteMany',
+  'weatherForecast.upsert',
 ];
 
 describe('the observation store is append only', () => {
@@ -81,6 +91,15 @@ describe('the observation store is append only', () => {
     const offenders = files.filter((file) => {
       const source = readFileSync(file, 'utf8');
       return /\b(update|delete)\s+(from\s+)?"?observations"?/i.test(source);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('never issues UPDATE or DELETE against the weather forecasts table', () => {
+    const offenders = files.filter((file) => {
+      const source = readFileSync(file, 'utf8');
+      return /\b(update|delete)\s+(from\s+)?"?weather_forecasts"?/i.test(source);
     });
 
     expect(offenders).toEqual([]);
