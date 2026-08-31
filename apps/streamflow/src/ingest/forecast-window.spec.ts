@@ -1,8 +1,11 @@
 import {
   clampWindowTo,
   expectedHourCount,
+  isCalendarMonth,
   isWindowElapsed,
   judgeForecastCompleteness,
+  judgeWindowCompleteness,
+  liveForecastWindow,
   monthWindow,
   nextMonthWindow,
 } from './forecast-window';
@@ -124,5 +127,218 @@ describe('judgeForecastCompleteness', () => {
     expect(judgeForecastCompleteness(expectedHourCount(clamped), clamped, false)).toBe(
       'PARTIAL',
     );
+  });
+});
+
+describe('judgeWindowCompleteness', () => {
+  const window = {
+    start: new Date('2024-02-14T00:00:00.000Z'),
+    end: new Date('2024-02-14T23:00:00.000Z'),
+  };
+
+  it('is OK when every hour the window implies came back', () => {
+    expect(judgeWindowCompleteness(expectedHourCount(window), window)).toBe('OK');
+  });
+
+  it('is PARTIAL when the response fell short', () => {
+    expect(judgeWindowCompleteness(expectedHourCount(window) - 1, window)).toBe(
+      'PARTIAL',
+    );
+  });
+
+  // A run that asked for nothing has not verified that everything is fine.
+  // Without the zero branch this reads `0 < 0`, which is false, and an empty
+  // window records OK having stored nothing.
+  it('is PARTIAL on a window that implies no hours at all', () => {
+    const collapsed = {
+      start: new Date('2026-09-02T06:17:43.221Z'),
+      end: new Date('2026-09-02T06:17:43.221Z'),
+    };
+
+    expect(expectedHourCount(collapsed)).toBe(0);
+    expect(judgeWindowCompleteness(0, collapsed)).toBe('PARTIAL');
+  });
+
+  // The same empty window used to record OK or PARTIAL depending on whether the
+  // clock happened to land on an exact hour, which is a fact about the clock
+  // and not about the data. Both collapse to the same answer now.
+  it('gives an empty window the same answer on and off the hour', () => {
+    const onTheHour = {
+      start: new Date('2026-09-02T06:00:00.000Z'),
+      end: new Date('2026-09-02T06:00:00.000Z'),
+    };
+    const offTheHour = {
+      start: new Date('2026-09-02T06:17:43.221Z'),
+      end: new Date('2026-09-02T06:17:43.221Z'),
+    };
+
+    // The two windows genuinely disagree about how many hours they imply.
+    expect(expectedHourCount(onTheHour)).toBe(1);
+    expect(expectedHourCount(offTheHour)).toBe(0);
+    // The status must not.
+    expect(judgeWindowCompleteness(0, onTheHour)).toBe(
+      judgeWindowCompleteness(0, offTheHour),
+    );
+  });
+
+  // The live job reaches an empty window only by collapsing an inverted one.
+  it('is PARTIAL on the window a collapsed live run produces', () => {
+    const now = new Date('2026-09-01T06:17:43.221Z');
+    const edgeFarAhead = new Date('2026-09-20T00:00:00.000Z');
+    const collapsed = liveForecastWindow(edgeFarAhead, 24, now);
+
+    expect(collapsed.start).toEqual(collapsed.end);
+    expect(judgeWindowCompleteness(0, collapsed)).toBe('PARTIAL');
+  });
+
+  // The difference that matters against `judgeForecastCompleteness`. A live
+  // window always ends in the future, so a month rule would call every live run
+  // PARTIAL for ever and the status would stop meaning anything.
+  it('does not care whether the window has elapsed', () => {
+    const ahead = {
+      start: new Date('2024-02-14T00:00:00.000Z'),
+      end: new Date('2024-02-16T00:00:00.000Z'),
+    };
+
+    expect(judgeWindowCompleteness(expectedHourCount(ahead), ahead)).toBe('OK');
+    expect(judgeForecastCompleteness(expectedHourCount(ahead), ahead, false)).toBe(
+      'PARTIAL',
+    );
+  });
+});
+
+describe('isCalendarMonth', () => {
+  const midFebruary = new Date('2024-02-14T00:00:00.000Z');
+
+  it('recognises a window the backfill produced', () => {
+    expect(isCalendarMonth(monthWindow(midFebruary))).toBe(true);
+    expect(isCalendarMonth(monthWindow(new Date('2024-12-11T00:00:00.000Z')))).toBe(
+      true,
+    );
+  });
+
+  // The reachable collision. A live window can start exactly on a month
+  // boundary, and keying the backfill's resume set on the start alone would
+  // then read the live run as a finished month.
+  it('rejects a live shaped window that starts on a month boundary', () => {
+    const live = {
+      start: new Date('2026-09-01T00:00:00.000Z'),
+      end: new Date('2026-09-02T02:00:00.000Z'),
+    };
+
+    expect(live.start).toEqual(monthWindow(live.start).start);
+    expect(isCalendarMonth(live)).toBe(false);
+  });
+
+  // The guard narrows this hazard, it does not close it, and that is recorded
+  // here so the docstring cannot quietly become a guarantee. Both ends can line
+  // up at once; what saves it is the exact millisecond, not this function.
+  it('can still be fooled when both ends land on a month exactly', () => {
+    const edge = new Date('2026-09-01T02:00:00.000Z');
+    const now = new Date('2026-09-29T23:00:00.000Z');
+    const live = liveForecastWindow(edge, 24, now);
+
+    expect(isCalendarMonth(live)).toBe(true);
+
+    // One millisecond either side and it is not a month any more, which is the
+    // whole of the protection.
+    for (const drift of [1, -1, 1000, 60_000]) {
+      const near = liveForecastWindow(edge, 24, new Date(now.getTime() + drift));
+      expect(isCalendarMonth(near)).toBe(false);
+    }
+  });
+
+  it('rejects a window that ends on a month boundary but starts inside', () => {
+    const partial = {
+      start: new Date('2024-02-14T00:00:00.000Z'),
+      end: monthWindow(midFebruary).end,
+    };
+
+    expect(isCalendarMonth(partial)).toBe(false);
+  });
+
+  // What the backfill's own clamp produces for the month in progress. It is
+  // recorded against the whole month, not this, which is why the resume read
+  // still recognises it; a window shaped like this is not a covered chunk.
+  it('rejects a month clamped short at the live edge', () => {
+    const clamped = clampWindowTo(monthWindow(midFebruary), midFebruary);
+
+    expect(isCalendarMonth(clamped)).toBe(false);
+  });
+});
+
+describe('liveForecastWindow', () => {
+  const NOW = new Date('2026-08-31T06:07:23.000Z');
+  const STORED_24 = new Date('2026-09-01T00:00:00.000Z');
+
+  // AC-R13's whole shape: the start is read off the store, not the clock.
+  it('starts at the greatest stored validTime less the ingest overlap', () => {
+    const window = liveForecastWindow(STORED_24, 24, NOW);
+
+    expect(window.start).toEqual(new Date('2026-08-31T22:00:00.000Z'));
+  });
+
+  // The boundary the job exists for. A prediction issued now at horizon 24
+  // needs every hour up to now plus 24, and the last of them was issued now.
+  it('ends one lead ahead of now, so the last hour was issued exactly now', () => {
+    const window = liveForecastWindow(STORED_24, 24, NOW);
+
+    expect(window.end).toEqual(new Date('2026-09-01T06:07:23.000Z'));
+  });
+
+  // One hour further and the nominal issuedAt would postdate the recordedAt we
+  // would write it with, which is the axis inversion the whole child refuses.
+  it('never reaches an hour whose nominal issue time is after now', () => {
+    const HOUR_MS = 3_600_000;
+
+    for (const leadHours of [24, 48, 72]) {
+      const window = liveForecastWindow(STORED_24, leadHours, NOW);
+      // The last hourly slot the fetch can keep, since it trims on validTime.
+      const lastHour = Math.floor(window.end.getTime() / HOUR_MS) * HOUR_MS;
+      const issuedAt = lastHour - leadHours * HOUR_MS;
+
+      expect(issuedAt).toBeLessThanOrEqual(NOW.getTime());
+      // And the very next hour would break it, so this is the boundary rather
+      // than a cautious margin.
+      expect(lastHour + HOUR_MS - leadHours * HOUR_MS).toBeGreaterThan(NOW.getTime());
+    }
+  });
+
+  it('reaches further ahead at a longer lead', () => {
+    const short = liveForecastWindow(STORED_24, 24, NOW);
+    const long = liveForecastWindow(STORED_24, 72, NOW);
+
+    expect(long.end.getTime() - short.end.getTime()).toBe(48 * 3_600_000);
+  });
+
+  // Gap recovery (AC-R13), the same property AC-6 asks of the observation
+  // ingest. Nothing here consults the schedule, so a missed run is not a
+  // special case.
+  it('asks for the whole gap when a run was missed', () => {
+    const stale = new Date('2026-08-29T00:00:00.000Z');
+    const window = liveForecastWindow(stale, 24, NOW);
+
+    expect(window.start).toEqual(new Date('2026-08-28T22:00:00.000Z'));
+    expect(window.end.getTime() - window.start.getTime()).toBeGreaterThan(
+      3 * 24 * 3_600_000,
+    );
+  });
+
+  // History is the backfill's job, chunked by month for the cost reason
+  // AC-R16 sets out. A live job falling back to the archive's beginning would
+  // ask for two and a half years, every six hours.
+  it('starts at the live edge when the store holds nothing for the lead', () => {
+    const window = liveForecastWindow(null, 48, NOW);
+
+    expect(window.start).toEqual(new Date('2026-08-31T04:07:23.000Z'));
+    expect(window.end).toEqual(new Date('2026-09-02T06:07:23.000Z'));
+  });
+
+  it('collapses to an empty window rather than inverting under clock skew', () => {
+    const skewed = new Date('2026-09-30T00:00:00.000Z');
+    const window = liveForecastWindow(skewed, 24, NOW);
+
+    expect(window.start).toEqual(window.end);
+    expect(expectedHourCount(window)).toBe(0);
   });
 });

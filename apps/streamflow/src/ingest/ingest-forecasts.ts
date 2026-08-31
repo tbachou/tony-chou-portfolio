@@ -27,34 +27,61 @@ export interface ForecastIngestDeps {
   now?: () => Date;
 }
 
-export interface ForecastIngestResult {
+export interface ForecastWindowResult {
   runId: string;
   status: RunStatus;
   rowsWritten: number;
   hoursReturned: number;
   hoursExpected: number;
   leadHours: number;
-  /** The hours actually requested, clamped to exclude the future. */
+  /** The hours actually requested. */
   window: IngestWindow;
+  /** What the run row says it covered, which is not always what was asked for. */
+  recorded: IngestWindow;
+}
+
+export interface ForecastIngestResult extends Omit<ForecastWindowResult, 'recorded'> {
   /** The calendar month the chunk stands for, recorded on the run. */
   month: IngestWindow;
 }
 
+/** One unit of forecast ingest: what to ask for, what to record, how to judge it. */
+export interface ForecastIngestPlan {
+  /** The hours to request. */
+  requested: IngestWindow;
+  /**
+   * What the `PipelineRun` row says it covered. The backfill records the whole
+   * calendar month even when the request was clamped short at the live edge,
+   * because the month is the resume key and a clamped window is not one.
+   */
+  recorded: IngestWindow;
+  /** Turns the hours that came back into the run's status. */
+  judge: (hoursReturned: number, requested: IngestWindow) => RunStatus;
+}
+
 /**
- * Ingests one calendar month of one lead into the forecast store.
+ * Ingests one window of one lead into the forecast store.
  *
- * This is the backfill's atomic chunk (AC-R5): one request, one `PipelineRun`
- * carrying the month's boundaries, one lead. The caller walks months and leads;
- * nothing here loops over either.
+ * The shared core behind both callers: the backfill's month chunk and the live
+ * job's rolling window. They differ only in which hours they ask for, what the
+ * run row says they covered, and how a short response is judged, so all three
+ * arrive as the plan and nothing else is duplicated. Keeping one core matters
+ * more than it looks: the run row lifecycle below is subtle in three separate
+ * places, and two copies of it would drift.
+ *
+ * The plan arrives as a function of the run's start rather than as a value, so
+ * that both callers derive their window from the same instant this run records
+ * as `startedAt`. Reading the clock twice would let the window and the run row
+ * disagree, which is the sort of skew that shows up as one missing hour a year.
  *
  * The run row is created before anything is fetched and it is created already
  * saying FAILED, so a process killed halfway leaves a row that tells the truth.
  * Only a run that reached the end gets to call itself OK. Same contract as
  * `ingestObservations`.
  *
- * The whole chunk costs a bounded handful of statements (AC-R16): one gauge
+ * The whole unit costs a bounded handful of statements (AC-R16): one gauge
  * upsert, one run insert, one read of everything already held for this
- * (month, lead), one insert per thousand changed rows, one run update. The
+ * (window, lead), one insert per thousand changed rows, one run update. The
  * comparison happens in memory. Nothing here issues a statement per hour, and a
  * change that makes it do so is a defect even if the rows come out right, since
  * the store bills by operation.
@@ -62,11 +89,11 @@ export interface ForecastIngestResult {
  * Nothing updates or deletes a forecast row. A revised value is a new row with
  * a later `recordedAt`, and that is the only way this store ever changes.
  */
-export async function ingestForecastMonth(
+export async function ingestForecastWindow(
   deps: ForecastIngestDeps,
-  within: Date,
   leadHours: number,
-): Promise<ForecastIngestResult> {
+  planFor: (startedAt: Date) => ForecastIngestPlan,
+): Promise<ForecastWindowResult> {
   assertStorableLead(leadHours);
 
   const { prisma } = deps;
@@ -74,12 +101,7 @@ export async function ingestForecastMonth(
   const fetchForecasts = deps.fetchForecasts ?? fetchPreviousRuns;
 
   const startedAt = clock();
-  const month = monthWindow(within);
-  // Never ask for an hour that has not happened yet: Open-Meteo either rejects
-  // the request outright or answers with future hours that are not the fixed
-  // lead they claim to be.
-  const window = clampWindowTo(month, startedAt);
-  const monthElapsed = isWindowElapsed(month, startedAt);
+  const { requested, recorded, judge } = planFor(startedAt);
   const gauge = await ensureGauge(prisma);
 
   const run = await prisma.pipelineRun.create({
@@ -88,8 +110,8 @@ export async function ingestForecastMonth(
       startedAt,
       status: 'FAILED',
       rowsWritten: 0,
-      windowStart: month.start,
-      windowEnd: month.end,
+      windowStart: recorded.start,
+      windowEnd: recorded.end,
       // What makes a resumed backfill able to tell two runs for the same month
       // apart. Without it, this month at lead 24 and at lead 48 are identical
       // rows and AC-R5's skip has nothing to key on.
@@ -100,7 +122,7 @@ export async function ingestForecastMonth(
   let rowsWritten = 0;
 
   try {
-    const values = await fetchForecasts(window, leadHours);
+    const values = await fetchForecasts(requested, leadHours);
 
     // Captured after the fetch, not at run start. Every row a run writes shares
     // this one instant, and it has to be a time by which we genuinely held the
@@ -108,24 +130,20 @@ export async function ingestForecastMonth(
     // the request came back, which is the direction that leaks.
     const recordedAt = clock();
 
-    // One query for the whole chunk. The diff below runs against this set in
+    // One query for the whole window. The diff below runs against this set in
     // memory (AC-R16).
     const known = await forecastsAsOf(
       prisma,
       gauge.id,
       OPEN_METEO_MODEL,
       leadHours,
-      window.start,
-      window.end,
+      requested.start,
+      requested.end,
       recordedAt,
     );
 
     const changed = selectChangedForecasts(values, known);
-    const status: RunStatus = judgeForecastCompleteness(
-      values.length,
-      window,
-      monthElapsed,
-    );
+    const status = judge(values.length, requested);
 
     await writeForecasts(
       prisma,
@@ -149,10 +167,10 @@ export async function ingestForecastMonth(
       status,
       rowsWritten,
       hoursReturned: values.length,
-      hoursExpected: expectedHourCount(window),
+      hoursExpected: expectedHourCount(requested),
       leadHours,
-      window,
-      month,
+      window: requested,
+      recorded,
     };
   } catch (cause) {
     // rowsWritten carries whatever landed before the failure, so the run row
@@ -168,6 +186,41 @@ export async function ingestForecastMonth(
     });
     throw cause;
   }
+}
+
+/**
+ * Ingests one calendar month of one lead into the forecast store.
+ *
+ * This is the backfill's atomic chunk (AC-R5): one request, one `PipelineRun`
+ * carrying the month's boundaries, one lead. The caller walks months and leads;
+ * nothing here loops over either.
+ *
+ * The run records the whole month even when the request was clamped short,
+ * because the month is the resume key and recording the clamped window would
+ * make the chunk unrecognisable to the next run.
+ */
+export async function ingestForecastMonth(
+  deps: ForecastIngestDeps,
+  within: Date,
+  leadHours: number,
+): Promise<ForecastIngestResult> {
+  const month = monthWindow(within);
+
+  const { recorded, ...result } = await ingestForecastWindow(
+    deps,
+    leadHours,
+    (startedAt) => ({
+      // Never ask for an hour that has not happened yet: Open-Meteo either
+      // rejects the request outright or answers with future hours that are not
+      // the fixed lead they claim to be.
+      requested: clampWindowTo(month, startedAt),
+      recorded: month,
+      judge: (hoursReturned, window) =>
+        judgeForecastCompleteness(hoursReturned, window, isWindowElapsed(month, startedAt)),
+    }),
+  );
+
+  return { ...result, month: recorded };
 }
 
 /* istanbul ignore next -- CLI entry, exercised by the workflow rather than tests */

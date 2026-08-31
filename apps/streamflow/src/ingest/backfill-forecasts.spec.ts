@@ -24,13 +24,24 @@ interface RunRow {
  * thing under test and it reads rows this fake writes, so faking the ingest
  * would test nothing.
  */
+/**
+ * A seeded run stands for a real recorded backfill chunk, so a seed naming a
+ * `windowStart` and no end gets the rest of that month, which is what
+ * `ingestForecastMonth` writes. Left null, every seed would look like a run
+ * over some other shape of window and `completedForecastChunks` would rightly
+ * refuse to read it as a covered month. A seed may still state an end of its
+ * own, which is how the live shaped runs below are built.
+ */
 function fakeStore(seed: Partial<RunRow>[] = []) {
   const runs: RunRow[] = seed.map((row, index) => ({
     id: `seed${index}`,
     job: 'OPEN_METEO_INGEST',
     status: 'OK',
     windowStart: null,
-    windowEnd: null,
+    windowEnd:
+      row.windowStart && row.windowEnd === undefined
+        ? monthWindow(row.windowStart).end
+        : null,
     leadHours: null,
     rowsWritten: 0,
     ...row,
@@ -146,6 +157,41 @@ describe('completedForecastChunks', () => {
     ]);
 
     expect(await completedForecastChunks(prisma)).toEqual(new Set());
+  });
+
+  // The live ingest writes runs of this same job carrying this same lead, over
+  // windows that are not months. This one starts exactly on a month boundary,
+  // which happens whenever the greatest stored validTime lands two hours into
+  // the first of a month, so keying on the start alone would read it as a
+  // finished January and leave a hole nothing ever fills.
+  it('ignores a live run whose window happens to start on a month boundary', async () => {
+    const { prisma } = fakeStore([
+      {
+        windowStart: monthWindow(JAN).start,
+        windowEnd: new Date('2024-01-02T04:00:00.000Z'),
+        leadHours: 24,
+      },
+    ]);
+
+    expect(await completedForecastChunks(prisma)).toEqual(new Set());
+  });
+
+  it('still runs the month a live run only appeared to cover', async () => {
+    const { prisma } = fakeStore([
+      {
+        windowStart: monthWindow(JAN).start,
+        windowEnd: new Date('2024-01-02T04:00:00.000Z'),
+        leadHours: 24,
+      },
+    ]);
+
+    const summary = await backfillForecasts(
+      { prisma, fetchForecasts: fullMonths() as never } as never,
+      { from: JAN, to: JAN, leads: [24] },
+    );
+
+    expect(summary.chunksSkipped).toBe(0);
+    expect(summary.chunksRun).toBe(1);
   });
 });
 

@@ -1,6 +1,6 @@
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaClient } from '../generated/prisma/client';
-import type { StoredForecast } from '../types';
+import type { KnowabilityAxis, StoredForecast } from '../types';
 
 /**
  * The reads this module needs, named structurally so tests can supply a plain
@@ -29,11 +29,30 @@ export type ForecastReader = Pick<PrismaClient, '$queryRaw'>;
  * the store bills by operation, so a loop that works correctly can still be a
  * defect.
  *
- * The `asOf` bound is on `recordedAt` here, the strict axis every live read
- * uses. Spec task 7 adds the `KnowabilityAxis` parameter, and per AC-R8a it
- * maps the archive axis onto `issuedAt` by a hand written branch rather than a
- * `row[axis]` lookup, because for weather the archive column is `issuedAt` and
- * not the `validTime` the axis name spells.
+ * `axis` moves the `asOf` bound and nothing else, exactly as it does in
+ * `observationsAsOf`. The default `recordedAt` is the strict rule every live
+ * read takes, and passing nothing leaves it in place so the live pipeline
+ * cannot acquire the looser one by accident. Only the hindcast passes the
+ * archive axis; a second caller on it is a review failure (AC-R8).
+ *
+ * **On the archive axis the bound is `issuedAt`, not the `validTime` the axis
+ * name spells.** `KnowabilityAxis` names the knowability mode, not a column,
+ * and for weather the archive mode column is when the forecast was issued. The
+ * branch below is written out by hand for that reason (AC-R8a): the generic
+ * `row[axis]` idiom `reconstructAsOf` uses would compile here, because a
+ * weather row carries a `validTime` too, and would then bound on the wrong
+ * clock. `forecastKnowableAt` in `forecast-as-of.ts` states the same mapping
+ * in TypeScript and is the tested oracle for it.
+ *
+ * The window bounds stay on `validTime` under both axes. They ask which hours
+ * the caller wants, which is a different question from which rows it may see,
+ * and moving them with the axis would silently change the window instead of
+ * the visibility.
+ *
+ * The index ends on `validTime` and so does not cover the archive bound, which
+ * is filtered afterwards. That is cheap here because the four equality and
+ * range clauses ahead of it have already narrowed the scan to one gauge, model
+ * and lead over one window, and no path calls this per slot.
  */
 export async function forecastsAsOf(
   prisma: ForecastReader,
@@ -43,7 +62,16 @@ export async function forecastsAsOf(
   from: Date,
   to: Date,
   asOf: Date,
+  axis: KnowabilityAxis = 'recordedAt',
 ): Promise<StoredForecast[]> {
+  // Written as one interchangeable clause in the position the strict bound
+  // already occupied, so the parameters keep their order and the default still
+  // produces the statement this query has always produced.
+  const knowableBy =
+    axis === 'validTime'
+      ? Prisma.sql`AND "issuedAt" <= ${asOf}`
+      : Prisma.sql`AND "recordedAt" <= ${asOf}`;
+
   return prisma.$queryRaw<StoredForecast[]>(Prisma.sql`
     SELECT DISTINCT ON ("gaugeId", "validTime", "leadHours", "model")
       "gaugeId", "validTime", "leadHours", "issuedAt", "recordedAt",
@@ -52,7 +80,7 @@ export async function forecastsAsOf(
     WHERE "gaugeId" = ${gaugeId}
       AND "model" = ${model}
       AND "leadHours" = ${leadHours}
-      AND "recordedAt" <= ${asOf}
+      ${knowableBy}
       AND "validTime" >= ${from}
       AND "validTime" <= ${to}
     ORDER BY "gaugeId", "validTime", "leadHours", "model", "recordedAt" DESC
@@ -108,4 +136,61 @@ export async function earliestStoredForecastValidTimes(
   );
 
   return new Map(rows.map((row) => [row.leadHours, row.firstValidTime]));
+}
+
+/**
+ * The latest `validTime` the store holds for each lead, at one gauge and model.
+ *
+ * This is what anchors the live ingest window (AC-R13). The window starts at
+ * this value less the ingest overlap, so gap recovery falls out of the store
+ * rather than out of the schedule: a job that has not run for two days asks for
+ * two days, because nothing here consults the cron at all.
+ *
+ * Per lead, not one value for the whole table, because the three leads run to
+ * different edges. A lead of 72 hours reaches three days further into the
+ * future than a lead of 24 does, so a single maximum would drag the shorter
+ * leads' windows forward past rows they never fetched and leave a permanent
+ * hole behind them.
+ *
+ * The value is routinely in the future, which is correct and is worth saying
+ * plainly because it looks wrong. A row's nominal `issuedAt` is `validTime`
+ * minus `leadHours`, so a row at lead 24 whose `validTime` is a day ahead was
+ * issued now, and the live ingest deliberately reaches that far to give a
+ * prediction issued now a complete window (AC-R10). What it must never do is
+ * reach further, which is a property of the window, not of this read.
+ *
+ * **Not knowability bounded**, exactly like `earliestStoredForecastValidTimes`
+ * and unlike everything else in this module. It sees every row in the store
+ * however recently it was fetched. That is right for deciding what to fetch
+ * next and wrong for anything a prediction touches: at issue time `T` it
+ * answers with rows recorded long after `T`. Never call it from a prediction or
+ * a hindcast path.
+ *
+ * Grouped rather than asked once per lead, so the whole answer costs one
+ * statement in the spirit of AC-R16. A lead with no rows is absent from the map
+ * rather than carrying a fallback date, so the caller can tell "nothing stored
+ * yet" from "stored up to here" instead of meeting an invented floor.
+ *
+ * `MAX` is safe over this append only table without a reduction first, for the
+ * same reason `MIN` is: the reduction in AC-R7 exists because summing revisions
+ * double counts, and an extreme is indifferent to how many rows share the hour
+ * it picks.
+ */
+export async function latestStoredForecastValidTimes(
+  prisma: ForecastReader,
+  gaugeId: string,
+  model: string,
+): Promise<ReadonlyMap<number, Date>> {
+  const rows = await prisma.$queryRaw<{ leadHours: number; lastValidTime: Date }[]>(
+    Prisma.sql`
+      SELECT "leadHours", MAX("validTime") AS "lastValidTime"
+      FROM "weather_forecasts"
+      WHERE "gaugeId" = ${gaugeId}
+        AND "model" = ${model}
+      GROUP BY "leadHours"
+      ORDER BY "leadHours"
+    `,
+  );
+
+  return new Map(rows.map((row) => [row.leadHours, row.lastValidTime]));
 }

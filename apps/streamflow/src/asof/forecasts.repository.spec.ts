@@ -1,6 +1,7 @@
 import {
   earliestStoredForecastValidTimes,
   forecastsAsOf,
+  latestStoredForecastValidTimes,
 } from './forecasts.repository';
 import type { ForecastReader } from './forecasts.repository';
 
@@ -121,6 +122,74 @@ describe('forecastsAsOf', () => {
     );
     expect(orderBy?.startsWith(distinctOn as string)).toBe(true);
   });
+
+  // AC-R8. The default has to keep meaning the strict rule, or every live
+  // caller acquires the looser one by having been written before the parameter
+  // existed. The first test in this block pins the default statement; this one
+  // pins that naming the strict axis out loud changes nothing.
+  it('sends the same statement for an explicit recordedAt axis', async () => {
+    const strict = reader();
+    const explicit = reader();
+
+    await forecastsAsOf(strict.prisma, 'g', 'gfs_seamless', 24, FROM, TO, AS_OF);
+    await forecastsAsOf(
+      explicit.prisma,
+      'g',
+      'gfs_seamless',
+      24,
+      FROM,
+      TO,
+      AS_OF,
+      'recordedAt',
+    );
+
+    expect(explicit.statement()).toEqual(strict.statement());
+  });
+
+  // AC-R8a, on the query half. The axis is named `validTime` and the column it
+  // must bound on is `issuedAt`, which is the whole wart this criterion exists
+  // to contain.
+  it('bounds on issuedAt, not validTime, when the archive axis is asked for', async () => {
+    const { prisma, statement } = reader();
+
+    await forecastsAsOf(prisma, 'g', 'gfs_seamless', 48, FROM, TO, AS_OF, 'validTime');
+    const sent = statement();
+
+    expect(sent.text).toBe(STATEMENT.replace('"recordedAt" <= $4', '"issuedAt" <= $4'));
+    // The parameters keep their order, so the bound moved and nothing else did.
+    expect(sent.values).toEqual(['g', 'gfs_seamless', 48, AS_OF, FROM, TO]);
+  });
+
+  // The mistake a blanket rename would make. The window bounds are also on
+  // `validTime`, and they answer a different question: which hours the caller
+  // asked for, not which rows it may see. Moving them with the axis would
+  // quietly return a different window rather than a different visibility.
+  it('leaves the window bounds on validTime under the archive axis', async () => {
+    const { prisma, statement } = reader();
+
+    await forecastsAsOf(prisma, 'g', 'gfs_seamless', 48, FROM, TO, AS_OF, 'validTime');
+    const { text } = statement();
+
+    expect(text).toContain('AND "validTime" >= $5 AND "validTime" <= $6');
+    expect(text).toContain('AND "issuedAt" <= $4');
+    expect(text).not.toContain('"issuedAt" >= ');
+  });
+
+  // Visibility and reduction are two separate steps (AC-R8). The axis picks
+  // which rows may be seen; the newest revision among them still wins, so the
+  // DISTINCT ON must not follow the axis onto `issuedAt`. It cannot: within one
+  // lead every row shares a fixed offset between the two, so ordering by
+  // `issuedAt` would tie on every revision of an hour and pick arbitrarily.
+  it('keeps the reduction on recordedAt under the archive axis', async () => {
+    const { prisma, statement } = reader();
+
+    await forecastsAsOf(prisma, 'g', 'gfs_seamless', 48, FROM, TO, AS_OF, 'validTime');
+    const { text } = statement();
+
+    expect(text).toContain(
+      'ORDER BY "gaugeId", "validTime", "leadHours", "model", "recordedAt" DESC',
+    );
+  });
 });
 
 const FIRST_LEAD_STATEMENT =
@@ -224,6 +293,105 @@ describe('earliestStoredForecastValidTimes', () => {
     ]);
 
     await earliestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(count()).toBe(1);
+  });
+});
+
+const LAST_LEAD_STATEMENT =
+  'SELECT "leadHours", MAX("validTime") AS "lastValidTime" ' +
+  'FROM "weather_forecasts" ' +
+  'WHERE "gaugeId" = $1 AND "model" = $2 ' +
+  'GROUP BY "leadHours" ' +
+  'ORDER BY "leadHours"';
+
+const LEAD_24_TO = new Date('2026-08-31T06:00:00.000Z');
+const LEAD_72_TO = new Date('2026-09-02T06:00:00.000Z');
+
+describe('latestStoredForecastValidTimes', () => {
+  it('asks for the greatest validTime per lead, at one gauge and model', async () => {
+    const { prisma, statement } = reader();
+
+    await latestStoredForecastValidTimes(prisma, 'gauge-darby', 'gfs_seamless');
+
+    expect(statement()).toEqual({
+      text: LAST_LEAD_STATEMENT,
+      values: ['gauge-darby', 'gfs_seamless'],
+    });
+  });
+
+  // The mirror of the earliest read's floor test, and the reason AC-R13 says
+  // the window comes from what is stored: a bound date here would be the
+  // schedule sneaking back in through a constant.
+  it('binds no date at all, so no literal can slip in as an edge', async () => {
+    const { prisma, statement } = reader();
+
+    await latestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
+    const { values } = statement();
+
+    expect(values).toHaveLength(2);
+    expect(values.some((value) => value instanceof Date)).toBe(false);
+  });
+
+  // MAX, not MIN. The two functions differ in one word and swapping them
+  // compiles, returns a map of the right shape, and would make the live ingest
+  // re-request the whole archive every six hours.
+  it('takes the maximum, so the window advances rather than resetting', async () => {
+    const { prisma, statement } = reader();
+
+    await latestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(statement().text).toContain('MAX("validTime")');
+    expect(statement().text).not.toContain('MIN("validTime")');
+  });
+
+  it('keys the answer by lead, so each lead advances its own edge', async () => {
+    const { prisma } = reader([
+      { leadHours: 24, lastValidTime: LEAD_24_TO },
+      { leadHours: 72, lastValidTime: LEAD_72_TO },
+    ]);
+
+    const last = await latestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(last.get(24)).toEqual(LEAD_24_TO);
+    expect(last.get(72)).toEqual(LEAD_72_TO);
+    // A longer lead reaches further ahead, which is the whole reason this is
+    // per lead: one shared maximum would drag lead 24's window past rows it
+    // never fetched.
+    expect(last.get(72)?.getTime()).toBeGreaterThan(last.get(24)?.getTime() as number);
+  });
+
+  // Absent, never a fallback date, exactly as the earliest read is. The window
+  // builder decides what "nothing stored" means; this read must not decide it
+  // by handing back an invented edge.
+  it('omits a lead the store holds nothing for', async () => {
+    const { prisma } = reader([{ leadHours: 24, lastValidTime: LEAD_24_TO }]);
+
+    const last = await latestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(last.has(48)).toBe(false);
+    expect(last.get(48)).toBeUndefined();
+    expect([...last.keys()]).toEqual([24]);
+  });
+
+  it('reports nothing at all on an empty store, rather than an edge', async () => {
+    const { prisma } = reader();
+
+    const last = await latestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(last.size).toBe(0);
+  });
+
+  // One grouped statement for every lead, in the spirit of AC-R16. This read
+  // runs four times a day forever, so a per lead loop is a standing cost.
+  it('issues one statement for every lead, not one per lead', async () => {
+    const { prisma, count } = reader([
+      { leadHours: 24, lastValidTime: LEAD_24_TO },
+      { leadHours: 48, lastValidTime: LEAD_24_TO },
+      { leadHours: 72, lastValidTime: LEAD_72_TO },
+    ]);
+
+    await latestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
 
     expect(count()).toBe(1);
   });
