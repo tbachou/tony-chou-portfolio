@@ -45,6 +45,36 @@ describe('DataSources', () => {
     }
   });
 
+  it('says this is not a flood forecast, on the page that shows forecasts', () => {
+    // `/streamflow` was the only one of the three streamflow pages carrying no
+    // such line, and it is the one showing live predictions for a real river.
+    // The wording is shared with `/projects/streamflow` and the walkthrough on
+    // purpose, so this asserts the load bearing half of it rather than a
+    // paraphrase.
+    render(<DataSources timeZone="America/New York" />);
+
+    expect(
+      screen.getByText(/not a flood forecast/i),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/should be used to make decisions about water/i),
+    ).toBeTruthy();
+  });
+
+  it('drops the decorative arrow from each link accessible name', () => {
+    // The glyph is decoration: without aria-hidden a screen reader reads the
+    // licence link as "CC BY 4.0 north east arrow".
+    render(<DataSources timeZone="America/New York" />);
+
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.textContent).toContain('↗');
+      expect(
+        (link as HTMLElement).getAttribute('aria-label') ??
+          link.querySelector('span[aria-hidden="true"]')?.textContent,
+      ).toBe('↗');
+    }
+  });
+
   it('keeps the USGS credit the discharge data already carried', () => {
     render(<DataSources timeZone="America/New York" />);
 
