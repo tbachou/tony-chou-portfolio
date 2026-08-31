@@ -308,6 +308,11 @@ const REFERENCES = [
     href: 'https://open-meteo.com/en/docs/previous-runs-api',
     name: 'Open-Meteo Previous Runs API',
     what: 'The archive of past weather forecasts the rain stage will train on, served at fixed lead times of one to seven days. Chosen over the Historical Forecast API, which stitches the first hours of each run into one series and is therefore nearly as accurate as measurement rather than a fair test of a forecast. Free for non-commercial use, CC BY 4.0.'
+  },
+  {
+    href: 'https://creativecommons.org/licenses/by/4.0/',
+    name: 'CC BY 4.0',
+    what: 'The licence the Open-Meteo data above is published under. It is listed here as a link rather than named in passing because attribution under CC BY means pointing at the licence, not only mentioning it, and the dashboard already does so where the data is shown.'
   }
 ];
 
@@ -1207,7 +1212,7 @@ export default function StreamflowWalkthroughPage() {
                     rel="noopener noreferrer"
                     className="terminal-select text-term-sm text-term-ink"
                   >
-                    {ref.name} ↗
+                    {ref.name} <span aria-hidden="true">↗</span>
                   </a>
                   <p className="mt-1 max-w-[39rem] text-term-base leading-relaxed text-term-muted">
                     {ref.what}
