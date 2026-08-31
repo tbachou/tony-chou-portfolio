@@ -89,22 +89,127 @@ function readJsonFile<T>(filePath: string, label: string): T {
   }
 }
 
-function gitInfo(): { commit: string; dirty: boolean } {
+/**
+ * Paths a dirty working tree can differ in WITHOUT changing what this suite
+ * measures. Everything not listed here is treated as material, so a new area
+ * nobody thought about fails safe rather than silently passing.
+ *
+ * `docs/evals/` is here because every run rewrites its own outputs. The rest
+ * are surfaces the eval never loads: the site, the forecasting pipeline, CI
+ * config, agent skill manifests, and prose.
+ */
+const INERT_PREFIXES = [
+  'docs/',
+  '.claude/',
+  '.agents/',
+  '.github/',
+  'apps/web/',
+  'apps/streamflow/',
+  'infra/',
+  'skills-lock.json',
+  'README.md',
+];
+
+function isInert(filePath: string): boolean {
+  return INERT_PREFIXES.some((prefix) =>
+    prefix.endsWith('/') ? filePath.startsWith(prefix) : filePath === prefix,
+  );
+}
+
+type GitInfo = {
+  commit: string;
+  dirty: boolean;
+  /** Tracked, non-output files that differ from the recorded commit. */
+  dirtyFiles: string[];
+  /** The subset of those that this suite actually loads. */
+  materialFiles: string[];
+  root: string;
+};
+
+function gitInfo(): GitInfo {
   try {
     const commit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+    const root = execSync('git rev-parse --show-toplevel', {
+      encoding: 'utf8',
+    }).trim();
     // The dirty flag answers "did the code that ran differ from this
     // commit?" — so it counts tracked modifications only, and ignores the
     // suite's own outputs under docs/evals (results, scoreboard, baseline),
     // which every run rewrites but which cannot change behavior.
-    const dirty = execSync('git status --porcelain --untracked-files=no', {
+    const dirtyFiles = execSync('git status --porcelain --untracked-files=no', {
       encoding: 'utf8',
     })
       .split('\n')
-      .some((line) => line.trim().length > 0 && !line.includes('docs/evals/'));
-    return { commit, dirty };
+      .map((line) => line.slice(3).trim())
+      .filter((f) => f.length > 0 && !f.startsWith('docs/evals/'));
+    return {
+      commit,
+      dirty: dirtyFiles.length > 0,
+      dirtyFiles,
+      materialFiles: dirtyFiles.filter((f) => !isInert(f)),
+      root,
+    };
   } catch {
-    return { commit: 'unknown', dirty: false };
+    return {
+      commit: 'unknown',
+      dirty: false,
+      dirtyFiles: [],
+      materialFiles: [],
+      root: process.cwd(),
+    };
   }
+}
+
+/**
+ * Runs BEFORE the first model call, because this command spends real money
+ * and the two ways it gets wasted are both invisible until afterwards: being
+ * in a stale worktree, and measuring uncommitted code.
+ *
+ * It refuses only when the difference could have changed the result. That
+ * distinction is the lesson of the 2026-08-31 re baseline (spec 0012 phase
+ * two, AC-15): `gitDirty` answers "can this run be tied to a named commit?",
+ * not "are these scores right?", and treating the flag as the defect cost a
+ * paid run for nothing. A dirty tree whose only diff is a spec markdown is
+ * fine and says so; a dirty tree touching the prompts is not.
+ */
+function preflight(info: GitInfo): void {
+  console.log(`Worktree: ${info.root}`);
+  console.log(`Commit:   ${info.commit.slice(0, 7)}${info.dirty ? ' (tree differs)' : ' (clean)'}`);
+
+  if (info.dirtyFiles.length > 0) {
+    console.log(`Uncommitted (${info.dirtyFiles.length}):`);
+    for (const f of info.dirtyFiles) {
+      console.log(`  ${isInert(f) ? '·' : '!'} ${f}`);
+    }
+  }
+
+  if (info.materialFiles.length === 0) {
+    if (info.dirty) {
+      console.log(
+        'None of it is loaded by this suite, so the run is reproducible from the commit above.',
+      );
+    }
+    console.log('');
+    return;
+  }
+
+  if (process.argv.includes('--allow-dirty')) {
+    console.warn(
+      `\n⚠ ${info.materialFiles.length} uncommitted file(s) MARKED ! are loaded by this suite. ` +
+        'Continuing because --allow-dirty was passed. This run cannot be baselined: ' +
+        'its commit does not reproduce it.\n',
+    );
+    return;
+  }
+
+  console.error(
+    `\n❌ ${info.materialFiles.length} uncommitted file(s) MARKED ! above are loaded by this suite, ` +
+      `so commit ${info.commit.slice(0, 7)} would not reproduce this run.\n` +
+      '   Refusing before spending anything. Commit them, or pass --allow-dirty for a\n' +
+      '   deliberately exploratory run (a reverted-module control run, for example).\n' +
+      '   Check the worktree path above too: a stale one is the other way this gets wasted.',
+  );
+  process.exit(1);
 }
 
 function resultsFileName(commit: string, dirty: boolean, dir: string): string {
@@ -134,6 +239,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Before anything is spent: say where this is running and refuse if the
+  // tree differs in a way that could change the result.
+  const git = gitInfo();
+  preflight(git);
+  const { commit, dirty } = git;
+
   const caseCap = numFlag('cases', GOLDEN_CASES.length);
   const concurrency = Math.max(1, numFlag('concurrency', 2));
   const maxCostUsd = numFlag('max-cost', 2);
@@ -161,7 +272,6 @@ async function main(): Promise<void> {
       : new AnthropicService();
 
   const datasetHash = hashDataset(datasetHashPayload(GOLDEN_CASES));
-  const { commit, dirty } = gitInfo();
 
   console.log(
     `Running ${cases.length}/${GOLDEN_CASES.length} case(s) · generator ${providerName}/${generatorModel} · judge ${JUDGE_MODEL} · concurrency ${concurrency} · max cost $${maxCostUsd}\n`,

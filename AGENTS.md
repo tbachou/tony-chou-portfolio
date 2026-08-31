@@ -20,6 +20,8 @@ npm run dev:web                              # Next.js on :3000 (or launch.json 
 npm run lint                                 # ESLint flat config, whole repo
 npx tsc --noEmit -p apps/api/tsconfig.json   # typecheck api (same for apps/web)
 npm test --workspace=apps/api                # Jest (all mocked, no DB/network)
+npm run check:worktrees                      # stale/trap worktrees, before anything expensive
+npm run check:evals                          # validate docs/evals/interview/published.json
 cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotchas first)
 ```
 
@@ -30,6 +32,8 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 - push/deploy: only on an explicit ask — a push to main deploys web (Vercel) and api (Render, which runs `prisma migrate deploy`)
 - main is protected by a ruleset (since 2026-08-30): no force push, no deletion, a PR is required (zero approvals, so you merge your own), and the `verify` check must pass. A repo admin can bypass, so a direct push to main is possible but is a deliberate act, not the default path. Work on a branch and open a PR.
 - gate: run `/predeploy-audit` before any push that ships user-facing changes
+- **worktrees: delete one the moment its branch merges.** Run `npm run check:worktrees` to see every worktree with its unmerged commit count and its uncommitted file count. A worktree with 0 unmerged commits is residue; a worktree with 0 unmerged commits AND uncommitted files is a trap, because it looks disposable while holding the only copy of something. On 2026-08-31 an eval run was started by accident in exactly such a directory: it cost real budget and produced a result no commit could reproduce. Never run anything that spends money from a worktree you have not just checked.
+- **seeding a worktree from another one's uncommitted work: move, never copy.** Copying leaves the same change uncommitted in the old worktree and committed in the new one, which is how the two drift apart. Commit it in the new worktree, then delete it from the old one, then remove the old worktree.
 - **this repo is PUBLIC (since 2026-08-29), so every push is publication.** Audit every commit, push, and PR before the action: read the staged diff rather than trusting `git add -A`; check for real credential patterns (`sk-ant-`, `AKIA`, `BETTER_AUTH_SECRET=`, `postgres://`, any `.env` that is not `.env.example`) and confirm each hit is a placeholder; and check for personal or operational content that is not product work (job search state, client or employer detail beyond the verified story corpus, generated model text in `docs/evals/`). For a PR, audit the whole branch against `origin/main`, since merging publishes every commit on it. Deleting later does not unpublish: clones, forks, and caches keep it. When something must be in git but not in public history, use a local branch with no upstream plus a copy outside the repo, and never `git push --all` or `--mirror`.
 
 ## Specs
