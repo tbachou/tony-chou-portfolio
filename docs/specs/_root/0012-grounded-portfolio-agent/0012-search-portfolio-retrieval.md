@@ -34,7 +34,9 @@ The measurement design carries one thing the course does not need. The eval alre
   - `docs/specs/**/findings/*.md`
   - `docs/evals/interview/*.md`, excluding `README.md`
 
-  It excludes every `rationale.md` (rejected options must never be retrievable as decisions), `README.md` (it is instructions for running the suite, not a record of thinking), and everything under `docs/evals/interview/results/` plus the `.json` files there, which are data rather than writing. The manifest records, per document, its repo relative path and a content hash, plus a single `corpusHash` over the whole set, the chunk count, and the date the embed script last ran. The per document hash exists for exactly one purpose, so AC-12's refusal can name which documents changed; comparability is carried by `corpusHash` alone.
+  It excludes every `rationale.md` (rejected options must never be retrievable as decisions), `README.md` (it is instructions for running the suite, not a record of thinking), `scoreboard.md`, and everything under `docs/evals/interview/results/` plus the `.json` files there, which are data rather than writing.
+
+  `scoreboard.md` is named explicitly because leaving it in is worse than noise, and the first build caught it. Every eval run regenerates that file, so its content would change the corpus hash on every run, and AC-12's staleness refusal would fire constantly for a file nobody wrote. A check that cries wolf is a check people learn to bypass, which would cost more than the corpus gains. The manifest records, per document, its repo relative path and a content hash, plus a single `corpusHash` over the whole set, the chunk count, and the date the embed script last ran. The per document hash exists for exactly one purpose, so AC-12's refusal can name which documents changed; comparability is carried by `corpusHash` alone.
 
   Note one consequence, named rather than discovered later: `findings/2026-08-31-grounding-embellishment.md` is in the corpus, so the persona can retrieve and cite the finding that says retrieval does not fix embellishment. That is correct and is left in.
 - **AC-2**: Documents are split into chunks at markdown heading boundaries. A chunk carries its own heading text, its `headingPath` (the chain of parent headings above it, joined, so a chunk under `## Requirements` in a spec reads with that context), and the source document's repo relative path. Text appearing before the first heading in a file becomes its own chunk with the document title as its heading.
@@ -48,7 +50,9 @@ The measurement design carries one thing the course does not need. The eval alre
 - **AC-4**: `searchKnowledge` is exposed to the Tony persona generation as a model callable tool, wired inside `ConversationService.generateTurnPair` so the eval harness exercises the same path production does. The interviewer generation does not receive it.
 - **AC-5**: One call returns at most three chunks. Each result carries the chunk text, its heading, and its source document path. The text is already bounded by AC-2's 2000 character chunk cap and is returned whole; there is no second truncation. Nothing else about the index reaches the model.
 
-  A result whose similarity score is below **0.7** is dropped before returning, so a query with no real match returns fewer than three results or none at all rather than the three least bad vectors in the index. That threshold is a starting value to calibrate against the real corpus during build, and the calibrated number replaces it here.
+  A result whose similarity score is below **0.62** is dropped before returning, so a query with no real match returns fewer than three results or none at all rather than the three least bad vectors in the index.
+
+  This is the calibrated number, measured against the real 566 chunk corpus on 2026-08-31 and replacing the 0.7 this criterion first carried. Signal sits at 0.66 to 0.74 and noise at 0.57, so 0.7 cut through the middle of the signal band: it silently dropped "what do you do when a guard keeps breaking" at 0.663, which is one of the questions this phase exists to answer. The value favours recall over precision on purpose, because a retrieved chunk the model ignores costs little and is visible through attribution, while a dropped chunk makes the capability quietly not work.
 - **AC-6**: When the answer uses a retrieved chunk, it names the source document in natural language (for example, "that is written up in my spec on the eval suite"). The persona never presents retrieved material as recalled from memory. The prompt does the path to name mapping; code passes the raw `sourcePath` and does not prettify it.
 
   When an answer draws on chunks from more than one document, attribution is **per claim**, not one blended citation for the whole answer. The eval scorer expectation added in the build plan checks that specifically: an answer using two sources and citing one is a failure, not a partial pass.
@@ -265,7 +269,6 @@ Ordered as a Tracer Bullet, a thin thread through every layer first, then thicke
 
 ## Follow-up
 
-- [ ] Calibrate the AC-5 similarity threshold against the real corpus during build and replace the 0.7 starting value in this spec with the measured one.
 - [ ] Correct the umbrella's phase three line: retrieval cannot ground the employment stories, and the embellishment finding needs its own remedy.
 - [ ] Take the finding's cheaper remedy separately: a prompt rule against unsourced technical rationale, measured against `edge-bait-profile-momentum` and `hard-profile-data-model`.
 - [ ] No build approach is recorded in `AGENTS.md`; this plan assumes Tracer Bullet. Record the project default or correct this ordering.
