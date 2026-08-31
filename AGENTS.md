@@ -20,6 +20,7 @@ npm run dev:web                              # Next.js on :3000 (or launch.json 
 npm run lint                                 # ESLint flat config, whole repo
 npx tsc --noEmit -p apps/api/tsconfig.json   # typecheck api (same for apps/web)
 npm test --workspace=apps/api                # Jest (all mocked, no DB/network)
+npm run check:evals                          # validate docs/evals/interview/published.json
 cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotchas first)
 ```
 
@@ -30,11 +31,14 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 - push/deploy: only on an explicit ask — a push to main deploys web (Vercel) and api (Render, which runs `prisma migrate deploy`)
 - main is protected by a ruleset (since 2026-08-30): no force push, no deletion, a PR is required (zero approvals, so you merge your own), and the `verify` check must pass. A repo admin can bypass, so a direct push to main is possible but is a deliberate act, not the default path. Work on a branch and open a PR.
 - gate: run `/predeploy-audit` before any push that ships user-facing changes
+- **never run the eval suite from a worktree you have not just looked at.** On 2026-08-31 a run was started by accident in a merged worktree that still held uncommitted files: it cost real budget and produced a result no commit could reproduce. `git branch --merged origin/main | grep '^+'` lists the branches that are finished AND still held by a worktree; `git -C <path> status --porcelain --ignored=matching` says what one of them holds, including the ignored files a plain status hides. The runner's own preflight refuses a run whose commit could not reproduce it, but it cannot tell you that you are in the wrong directory. General worktree hygiene is not a repo rule and lives in the user level `CLAUDE.md`.
 - **this repo is PUBLIC (since 2026-08-29), so every push is publication.** Audit every commit, push, and PR before the action: read the staged diff rather than trusting `git add -A`; check for real credential patterns (`sk-ant-`, `AKIA`, `BETTER_AUTH_SECRET=`, `postgres://`, any `.env` that is not `.env.example`) and confirm each hit is a placeholder; and check for personal or operational content that is not product work (job search state, client or employer detail beyond the verified story corpus, generated model text in `docs/evals/`). For a PR, audit the whole branch against `origin/main`, since merging publishes every commit on it. Deleting later does not unpublish: clones, forks, and caches keep it. When something must be in git but not in public history, use a local branch with no upstream plus a copy outside the repo, and never `git push --all` or `--mirror`.
 
 ## Specs
 
 `docs/specs/_root/NNNN-<slug>/` (index.md + rationale.md, verify.md when saved). CI runs typecheck, lint, and tests on every push (`.github/workflows/ci.yml`).
+
+**There is no `docs/scope/` in this repo, deliberately.** Specs are the whole tracking surface: a feature's state is its spec's `**Status**:` line (`Proposed` → `In Progress` → `Accepted`), its tasks are the spec's `## Build plan`, and its acceptance criteria are `## Requirements`. Scope would hold feature status too, and the same fact in two files is how the two come to disagree; this repo has been bitten by that shape of drift more than once. So workflow skills should not offer to create a scope, ask about linking a feature to one, or treat a missing scope row as a gap: say in one line that this repo tracks features in specs, and move on. Nothing needs ticking. If an at a glance view of every feature is ever wanted, generate it from the spec `Status` lines rather than maintaining a second copy by hand.
 
 ## Rules
 
