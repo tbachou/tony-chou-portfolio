@@ -18,21 +18,52 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     groups:
-      # Majors stay out of the groups so a breaking change always arrives as
-      # its own pull request with its own changelog to read. The known one
-      # today is Next 16, which the sharp/libvips advisories require and which
-      # `npm audit fix` will not do without --force.
+      # PRODUCTION majors stay out of the groups, so a breaking change to
+      # something that actually ships always arrives as its own pull request
+      # with its own changelog to read. The known one today is Next 16, which
+      # the sharp/libvips advisories require and which `npm audit fix` will
+      # not do without --force.
       production-minor-and-patch:
         dependency-type: production
         update-types:
           - minor
           - patch
-      development-minor-and-patch:
+      # DEVELOPMENT majors are grouped, which reverses the rule above on
+      # purpose. Measured 2026-08-31: seventeen Dependabot pull requests had
+      # been opened in this repo's life, two merged and eight closed, and the
+      # open set had grown to seven against a config whose stated goal was one
+      # to read on a Monday. Four of the seven were dev-dependency majors
+      # arriving one per package (tailwindcss 4, @types/node 26, archiver 8,
+      # @nestjs/schematics 12), none of which this project intends to take.
+      # @types/node had already been closed once as #5 and came straight back
+      # as #43, because closing a pull request records no decision anywhere.
+      #
+      # A dev-dependency major does not need its changelog read the way a
+      # shipped one does: it either builds and passes the suites or it does
+      # not, and that verdict is the same whether it arrives alone or with
+      # three others. Grouping them trades "which of the four broke it" for
+      # one pull request a week instead of four, which is the trade this repo
+      # wants. Split a package back out with its own `ignore` entry, the way
+      # eslint is handled below, when its verdict is durable.
+      development:
         dependency-type: development
         update-types:
           - minor
           - patch
+          - major
     ignore:
+      # NOTE: `ignore` cannot filter by dependency-type, and it applies to
+      # security updates as well as routine ones. So every entry here is a
+      # deliberate decision to not hear about a package, including when the
+      # reason would be a vulnerability. Keep the list short and named; never
+      # reach for a `dependency-name: "*"` major rule, which would silence the
+      # Next 16 upgrade the sharp/libvips advisories need.
+      #
+      # This entry now does a second job. With development majors grouped
+      # above, an eslint 10 bump would land inside that group and fail it as a
+      # whole, so removing this would not just re-open a known-bad upgrade, it
+      # would break every grouped dev pull request until someone noticed why.
+      #
       # eslint 10 does not work here yet. The visible symptom is the peer
       # range on eslint-config-next@15, which stops at eslint ^9 and is what
       # killed Vercel's `npm install` on PR #4. eslint-config-next@16 widens
