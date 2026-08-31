@@ -16,6 +16,7 @@ Child specs, added when the decision they settle is reached:
 3. [0010-falling-regime.md](0010-falling-regime.md): a fourth regime for a river on its way down, and the threshold that decides when a fall counts. Settles the gap AC-12's three class rule leaves over a recession, where persistence is biased in a way the peak and baseflow buckets both hide.
 4. [0010-falling-denominator.md](0010-falling-denominator.md): revises the falling threshold's denominator from `max(v, m)` to `v` alone, after measurement showed the median floor holds recession like scores in baseflow. Supersedes only the denominator of the child above; everything else in it stands.
 5. [0010-forecast-rain.md](0010-forecast-rain.md): the `WeatherForecast` table, the Open-Meteo Previous Runs backfill, and the lead matched rain feature. Settles what AC-4 and the Value sourcing rain rule leave open, and amends AC-4's unique key. Its subject is the second leakage trap: rain must be stored as it was forecast, at a stated lead, never as it was later observed.
+6. [0010-staleness-disclosure.md](0010-staleness-disclosure.md): the age at which the dashboard stops presenting its numbers as current, and what it says instead. Settles the two display findings the public safety audit raised against `/streamflow` on 2026-08-31, both of which the rain child logged and neither of which it owned. Display only: the pipeline's deliberate choice to keep issuing from stale inputs is left exactly as it is, because the defect was the silence, not the issuing.
 
 ## Requirements
 
