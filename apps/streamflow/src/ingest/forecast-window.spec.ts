@@ -146,6 +146,51 @@ describe('judgeWindowCompleteness', () => {
     );
   });
 
+  // A run that asked for nothing has not verified that everything is fine.
+  // Without the zero branch this reads `0 < 0`, which is false, and an empty
+  // window records OK having stored nothing.
+  it('is PARTIAL on a window that implies no hours at all', () => {
+    const collapsed = {
+      start: new Date('2026-09-02T06:17:43.221Z'),
+      end: new Date('2026-09-02T06:17:43.221Z'),
+    };
+
+    expect(expectedHourCount(collapsed)).toBe(0);
+    expect(judgeWindowCompleteness(0, collapsed)).toBe('PARTIAL');
+  });
+
+  // The same empty window used to record OK or PARTIAL depending on whether the
+  // clock happened to land on an exact hour, which is a fact about the clock
+  // and not about the data. Both collapse to the same answer now.
+  it('gives an empty window the same answer on and off the hour', () => {
+    const onTheHour = {
+      start: new Date('2026-09-02T06:00:00.000Z'),
+      end: new Date('2026-09-02T06:00:00.000Z'),
+    };
+    const offTheHour = {
+      start: new Date('2026-09-02T06:17:43.221Z'),
+      end: new Date('2026-09-02T06:17:43.221Z'),
+    };
+
+    // The two windows genuinely disagree about how many hours they imply.
+    expect(expectedHourCount(onTheHour)).toBe(1);
+    expect(expectedHourCount(offTheHour)).toBe(0);
+    // The status must not.
+    expect(judgeWindowCompleteness(0, onTheHour)).toBe(
+      judgeWindowCompleteness(0, offTheHour),
+    );
+  });
+
+  // The live job reaches an empty window only by collapsing an inverted one.
+  it('is PARTIAL on the window a collapsed live run produces', () => {
+    const now = new Date('2026-09-01T06:17:43.221Z');
+    const edgeFarAhead = new Date('2026-09-20T00:00:00.000Z');
+    const collapsed = liveForecastWindow(edgeFarAhead, 24, now);
+
+    expect(collapsed.start).toEqual(collapsed.end);
+    expect(judgeWindowCompleteness(0, collapsed)).toBe('PARTIAL');
+  });
+
   // The difference that matters against `judgeForecastCompleteness`. A live
   // window always ends in the future, so a month rule would call every live run
   // PARTIAL for ever and the status would stop meaning anything.
@@ -183,6 +228,24 @@ describe('isCalendarMonth', () => {
 
     expect(live.start).toEqual(monthWindow(live.start).start);
     expect(isCalendarMonth(live)).toBe(false);
+  });
+
+  // The guard narrows this hazard, it does not close it, and that is recorded
+  // here so the docstring cannot quietly become a guarantee. Both ends can line
+  // up at once; what saves it is the exact millisecond, not this function.
+  it('can still be fooled when both ends land on a month exactly', () => {
+    const edge = new Date('2026-09-01T02:00:00.000Z');
+    const now = new Date('2026-09-29T23:00:00.000Z');
+    const live = liveForecastWindow(edge, 24, now);
+
+    expect(isCalendarMonth(live)).toBe(true);
+
+    // One millisecond either side and it is not a month any more, which is the
+    // whole of the protection.
+    for (const drift of [1, -1, 1000, 60_000]) {
+      const near = liveForecastWindow(edge, 24, new Date(now.getTime() + drift));
+      expect(isCalendarMonth(near)).toBe(false);
+    }
   });
 
   it('rejects a window that ends on a month boundary but starts inside', () => {
