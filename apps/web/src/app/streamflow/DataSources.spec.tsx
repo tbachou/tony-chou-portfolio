@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -63,5 +66,66 @@ describe('DataSources', () => {
     render(<DataSources timeZone="Australia/Perth" />);
 
     expect(screen.getByText(/Australia\/Perth/)).toBeTruthy();
+  });
+});
+
+/**
+ * That the dashboard page still renders this at all.
+ *
+ * Everything above proves the component is correct. None of it proves the
+ * page uses it, because every test above renders `DataSources` directly. The
+ * pre deploy audit on 2026-08-31 confirmed the hole by deleting the import
+ * and the JSX call from `page.tsx`: 87 tests passed, `tsc` exited 0, and lint
+ * was byte for byte identical to baseline. The site would have gone out of
+ * licence with the whole gate green, which is the exact failure the block
+ * comment at the top of `DataSources.tsx` claims this suite prevents.
+ *
+ * This reads the page source rather than rendering it, and that is a
+ * deliberate trade. Rendering `page.tsx` means mocking four Prisma methods,
+ * six package functions and the fetch driven client panels, which would tie a
+ * licence assertion to the entire data layer: it would then fail for reasons
+ * that have nothing to do with the licence, and the first person to hit that
+ * would delete it as flaky. A narrow assertion that survives is worth more
+ * than a thorough one that gets removed.
+ *
+ * What it therefore does NOT catch, stated so nobody mistakes its reach: a
+ * render that is present but unreachable, `{false && <DataSources />}` or a
+ * branch that never runs. It catches deletion, which is the realistic edit.
+ */
+const PAGE = resolve(process.cwd(), 'src/app/streamflow/page.tsx');
+
+/**
+ * The page source with comments stripped, so a commented out render cannot
+ * satisfy these. The line comment rule skips `://` so a URL in the source is
+ * not mistaken for the start of a comment.
+ *
+ * `import.meta.url` is not a `file:` URL under jsdom, so the path is resolved
+ * from the vitest root (`apps/web`) instead. A wrong path would make every
+ * assertion below vacuous, so the marker check fails loudly rather than
+ * letting the licence guard quietly test an empty string.
+ */
+function pageSource(): string {
+  const source = readFileSync(PAGE, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(?<!:)\/\/.*$/gm, '');
+
+  if (!source.includes('export default async function StreamflowPage')) {
+    throw new Error(`Read the wrong file, or the page was renamed: ${PAGE}`);
+  }
+
+  return source;
+}
+
+describe('the dashboard page wiring', () => {
+  it('imports DataSources', () => {
+    expect(pageSource()).toMatch(
+      /import\s*\{[^}]*\bDataSources\b[^}]*\}\s*from\s*'\.\/DataSources'/,
+    );
+  });
+
+  it('renders DataSources, which is what actually carries the licence', () => {
+    // The assertion the audit's failing input demanded: deleting the JSX call
+    // must not leave the suite green.
+    expect(pageSource()).toMatch(/<DataSources[\s/>]/);
   });
 });
