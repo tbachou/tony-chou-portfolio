@@ -14,8 +14,8 @@ const HOUR_MS = 60 * 60 * 1000;
  * overlap so a reading that settled just after we first saw it gets compared
  * again. On an empty table it is the backfill start, which sits a little before
  * the weather archive rather than on it. `config.ts` carries why the two are
- * not the same date, and names the read that measures the archive's real
- * boundary per lead instead of pinning it.
+ * not the same date, and names the read that measures what the archive holds
+ * instead of pinning it.
  *
  * Gap recovery (AC-6) falls out of this rather than being a separate branch:
  * because the start is anchored to what is stored and not to the schedule, a

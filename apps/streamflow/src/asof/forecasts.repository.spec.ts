@@ -1,5 +1,5 @@
 import {
-  firstForecastValidTimes,
+  earliestStoredForecastValidTimes,
   forecastsAsOf,
 } from './forecasts.repository';
 import type { ForecastReader } from './forecasts.repository';
@@ -133,11 +133,11 @@ const FIRST_LEAD_STATEMENT =
 const LEAD_24_FROM = new Date('2024-01-20T00:00:00.000Z');
 const LEAD_72_FROM = new Date('2024-01-22T00:00:00.000Z');
 
-describe('firstForecastValidTimes', () => {
+describe('earliestStoredForecastValidTimes', () => {
   it('asks for the least validTime per lead, at one gauge and model', async () => {
     const { prisma, statement } = reader();
 
-    await firstForecastValidTimes(prisma, 'gauge-darby', 'gfs_seamless');
+    await earliestStoredForecastValidTimes(prisma, 'gauge-darby', 'gfs_seamless');
 
     expect(statement()).toEqual({
       text: FIRST_LEAD_STATEMENT,
@@ -150,7 +150,7 @@ describe('firstForecastValidTimes', () => {
   it('binds no date at all, so no literal can slip in as a floor', async () => {
     const { prisma, statement } = reader();
 
-    await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+    await earliestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
     const { values } = statement();
 
     expect(values).toHaveLength(2);
@@ -163,12 +163,14 @@ describe('firstForecastValidTimes', () => {
       { leadHours: 72, firstValidTime: LEAD_72_FROM },
     ]);
 
-    const first = await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+    const first = await earliestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
 
     expect(first.get(24)).toEqual(LEAD_24_FROM);
     expect(first.get(72)).toEqual(LEAD_72_FROM);
-    // The two really do differ: a lead of N days needs N days of runs behind it.
-    expect(first.get(24)?.getTime()).toBeLessThan(first.get(72)?.getTime() as number);
+    // Each lead carries its own date rather than sharing one. These fixtures
+    // happen to run in lead order; the next test covers the case where they do
+    // not, because nothing here guarantees it.
+    expect(first.get(24)).not.toEqual(first.get(72));
   });
 
   // Absent, never a fallback date. A lead with no rows has nothing usable yet,
@@ -176,7 +178,7 @@ describe('firstForecastValidTimes', () => {
   it('omits a lead the store holds nothing for', async () => {
     const { prisma } = reader([{ leadHours: 24, firstValidTime: LEAD_24_FROM }]);
 
-    const first = await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+    const first = await earliestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
 
     expect(first.has(48)).toBe(false);
     expect(first.get(48)).toBeUndefined();
@@ -186,9 +188,28 @@ describe('firstForecastValidTimes', () => {
   it('reports nothing at all on an empty store, rather than a floor', async () => {
     const { prisma } = reader();
 
-    const first = await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+    const first = await earliestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
 
     expect(first.size).toBe(0);
+  });
+
+  // The earliest row held is not the first usable date, and it does not even
+  // order across leads. The archive ramps in and `parse.ts` drops null hours,
+  // so a stray early row at one lead can sit before a later lead's first row.
+  // Reporting that faithfully is the contract; a future "helpful" sort or
+  // clamp here would hide the ramp in rather than fix it.
+  it('reports a stray early row even when it makes leads non-monotonic', async () => {
+    const STRAY_48 = new Date('2024-01-02T07:00:00.000Z');
+    const { prisma } = reader([
+      { leadHours: 24, firstValidTime: LEAD_24_FROM },
+      { leadHours: 48, firstValidTime: STRAY_48 },
+    ]);
+
+    const first = await earliestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
+
+    expect(first.get(48)).toEqual(STRAY_48);
+    // Lead 48 earlier than lead 24, which no run cadence would imply.
+    expect(first.get(48)?.getTime()).toBeLessThan(first.get(24)?.getTime() as number);
   });
 
   // One grouped statement for every lead, in the spirit of AC-R16: the store
@@ -201,7 +222,7 @@ describe('firstForecastValidTimes', () => {
       { leadHours: 72, firstValidTime: LEAD_72_FROM },
     ]);
 
-    await firstForecastValidTimes(prisma, 'g', 'gfs_seamless');
+    await earliestStoredForecastValidTimes(prisma, 'g', 'gfs_seamless');
 
     expect(count()).toBe(1);
   });
