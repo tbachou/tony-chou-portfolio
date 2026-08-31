@@ -22,13 +22,46 @@
  * and neither a safety disclaimer nor a licence condition should sit under
  * it.
  */
+/**
+ * The one sentence, exported so it cannot drift.
+ *
+ * The pre deploy audit measured roughly 3,400px between the forecast table
+ * and this block, about three and a half screens on a desktop and six to
+ * eight on a phone, so a visitor who acts on a number plausibly never reaches
+ * it. `page.tsx` therefore repeats this beside the two places a reader could
+ * act on: the latest reading and the forecast table. One constant rather than
+ * three string literals, because three copies of a safety line is three
+ * chances for them to stop matching.
+ */
+export const NOT_A_FLOOD_FORECAST =
+  'This is an engineering demonstration, not a flood forecast, and nothing here should be used to make decisions about water.';
+
 export function DataSources({ timeZone }: { timeZone: string }) {
   return (
     <div className="mt-6 border-t border-term-border pt-5 text-term-sm text-term-muted">
       <p className="max-w-2xl">
-        This is an engineering demonstration, not a flood forecast, and nothing
-        here should be used to make decisions about water. Provisional readings
-        are subject to revision.
+        {NOT_A_FLOOD_FORECAST} Provisional readings are subject to revision.
+      </p>
+      <p className="mt-3 max-w-2xl">
+        For an official reading or an active flood warning, see the{' '}
+        <a
+          href="https://waterdata.usgs.gov/monitoring-location/03230500/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="terminal-select text-term-ink"
+        >
+          USGS gauge <span aria-hidden="true">↗</span>
+        </a>{' '}
+        and NOAA&rsquo;s{' '}
+        <a
+          href="https://water.noaa.gov/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="terminal-select text-term-ink"
+        >
+          National Water Prediction Service <span aria-hidden="true">↗</span>
+        </a>
+        . In an emergency, contact local emergency services.
       </p>
       <p className="mt-3 max-w-2xl">
         Discharge data courtesy of the U.S. Geological Survey, National Water
