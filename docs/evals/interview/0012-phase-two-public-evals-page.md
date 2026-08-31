@@ -12,6 +12,8 @@ The reason is mechanical. This phase changes no model facing code. No prompt mov
 
 So the honest record is: no run, stated plainly, with the reason. That is what `measured: false` means in `published.json`, and it is why the run history table shows this phase with no scores rather than with a flat row that could be mistaken for a measurement.
 
+**This phase's pull request carries the `skip-evals` label** (child spec AC-13). The label is what stops CI spending real budget on a capped run that cannot move the scores. Two things about it are easy to get wrong: labels are read when the event fires, so labelling an already open PR takes effect from the next push rather than retroactively, and the label must go on before the first push if it is to save anything at all.
+
 ## What changed
 
 1. **A public page at `/projects/interview-simulator/evals`**, statically generated, that reads this directory at build time: the latest scores, the run history, the baseline history, and the per phase writeups. Every number is either computed from a committed results file or recorded in the manifest, and every one of them links back to the exact file it came from, pinned to the commit the page was built from.
