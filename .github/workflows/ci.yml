@@ -43,6 +43,14 @@ jobs:
       - name: Check published evals record
         run: npm run check:evals
 
+      # Catches the drift the eval workflow structurally cannot: `evals.yml`
+      # does not trigger on `docs/specs/**`, but writing a spec is exactly what
+      # changes the retrieval corpus. Reads committed files only, contacts
+      # Upstash never, needs no credentials, so it runs on fork pull requests
+      # like everything else here.
+      - name: Check retrieval corpus is embedded
+        run: npm run check:corpus --workspace=apps/api
+
       - name: Typecheck API
         run: npx tsc --noEmit -p apps/api/tsconfig.json
 
