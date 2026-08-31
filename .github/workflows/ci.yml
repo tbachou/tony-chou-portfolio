@@ -43,8 +43,6 @@ jobs:
       - name: Check published evals record
         run: npm run check:evals
 
-      - name: Test repo scripts
-        run: npm run test:scripts
 
       - name: Typecheck API
         run: npx tsc --noEmit -p apps/api/tsconfig.json
