@@ -1,7 +1,7 @@
 {
-  "corpusHash": "67bfeaafb62cc0edb5409996db57ab7d1c5a8987ed33a0699c674ac6fe28cd6f",
+  "corpusHash": "200b46e4794452da75c481f4eb1e93be80269735b18ab49912f464e8a28dfc5f",
   "chunkCount": 567,
-  "embeddedAt": "2026-08-31T21:51:03.851Z",
+  "embeddedAt": "2026-08-31T21:56:25.146Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
@@ -133,7 +133,7 @@
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-search-portfolio-retrieval.md",
-      "hash": "4eb25b75b7762501134cfd92703b9809bd141178bdf124f227ec234cbcd7f7b9"
+      "hash": "c9e5f78f6a40abc6a8f313f6799316bef50920b0d307bee138c0879312140784"
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/findings/2026-08-31-grounding-embellishment.md",

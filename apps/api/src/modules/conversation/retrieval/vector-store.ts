@@ -37,23 +37,31 @@ export const TOP_K = 3;
  * Upstash normalises scores to 0 to 1 whatever the metric, so this number
  * means the same thing regardless of how the index was configured.
  *
- * Calibrated against the real 566 chunk corpus on 2026-08-31, replacing the
- * spec's 0.7 starting value. Measured on four probe queries:
+ * **This is a placeholder, not a calibration.** It replaced the spec's 0.7
+ * starting value on 2026-08-31 after four probe queries against the real 566
+ * chunk corpus:
  *
- *   0.736  "how do you approach testing"            -> the eval suite spec
- *   0.709  "what happens when a fix introduces the next bug" -> phase two writeup
- *   0.663  "what do you do when a guard keeps breaking"      -> Beta guardrails spec
- *   0.568  "what is your favourite colour"          -> noise, correctly nothing
+ *   0.736  "how do you approach testing"
+ *   0.709  "what happens when a fix introduces the next bug"
+ *   0.663  "what do you do when a guard keeps breaking"
+ *   0.568  "what is your favourite colour"
  *
- * Signal sits at 0.66 to 0.74 and noise at 0.57, so 0.7 cut through the middle
- * of the signal band and silently dropped a question the spec named as a target
- * capability. 0.62 clears the observed noise floor by 0.05 and admits every
- * genuine hit by at least 0.04.
+ * What that evidence actually supports is narrow: 0.7 was demonstrably wrong,
+ * because it dropped the third query, which is one of the questions this phase
+ * exists to answer. Where to land instead was a guess. The queries were written
+ * and graded by the same author as the chunker, there is one negative example
+ * and it is an absurd one rather than a near miss, and no winning chunk was
+ * read to check it answers the question rather than merely coming from a
+ * plausible file. Four points do not separate two distributions.
  *
- * Deliberately favours recall over precision at this stage: a retrieved chunk
- * the model ignores costs little and is visible through attribution, while a
- * dropped chunk makes the capability silently not work, which is the failure
- * that was actually observed.
+ * A real value needs a labelled set, and AC-14's golden cases are one: they are
+ * questions with known correct answers, written for this purpose. Measure
+ * precision and recall across thresholds when they land, and replace this.
+ *
+ * Until then it errs toward recall on purpose. A retrieved chunk the model
+ * ignores costs little and is visible through attribution; a dropped chunk
+ * makes the capability quietly not work, which is the failure actually
+ * observed here.
  */
 export const MINIMUM_SIMILARITY = 0.62;
 

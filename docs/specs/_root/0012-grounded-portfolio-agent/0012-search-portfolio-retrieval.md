@@ -52,7 +52,9 @@ The measurement design carries one thing the course does not need. The eval alre
 
   A result whose similarity score is below **0.62** is dropped before returning, so a query with no real match returns fewer than three results or none at all rather than the three least bad vectors in the index.
 
-  This is the calibrated number, measured against the real 566 chunk corpus on 2026-08-31 and replacing the 0.7 this criterion first carried. Signal sits at 0.66 to 0.74 and noise at 0.57, so 0.7 cut through the middle of the signal band: it silently dropped "what do you do when a guard keeps breaking" at 0.663, which is one of the questions this phase exists to answer. The value favours recall over precision on purpose, because a retrieved chunk the model ignores costs little and is visible through attribution, while a dropped chunk makes the capability quietly not work.
+  **0.62 is a placeholder, not a calibrated value, and the difference matters.** It replaced the 0.7 this criterion first carried after four probe queries against the real corpus during the first build slice. That evidence supports one narrow claim well: 0.7 was wrong, because it dropped "what do you do when a guard keeps breaking" at 0.663, which is one of the questions this phase exists to answer. Where to land instead was a judgement, not a measurement. The queries were written and graded by the same author as the chunker, there was a single negative example and it was absurdly off topic rather than a near miss, and no winning chunk was read to confirm it answered the question rather than merely coming from a plausible file.
+
+  The real value is set when AC-14's golden cases exist, because those are a labelled set: questions with known correct answers, written for this purpose. Measuring precision and recall across thresholds against them is a measurement; four self written probes are not. Until then the value errs toward recall deliberately, since a retrieved chunk the model ignores costs little and is visible through attribution, while a dropped one makes the capability quietly not work.
 - **AC-6**: When the answer uses a retrieved chunk, it names the source document in natural language (for example, "that is written up in my spec on the eval suite"). The persona never presents retrieved material as recalled from memory. The prompt does the path to name mapping; code passes the raw `sourcePath` and does not prettify it.
 
   When an answer draws on chunks from more than one document, attribution is **per claim**, not one blended citation for the whole answer. The eval scorer expectation added in the build plan checks that specifically: an answer using two sources and citing one is a failure, not a partial pass.
@@ -269,6 +271,7 @@ Ordered as a Tracer Bullet, a thin thread through every layer first, then thicke
 
 ## Follow-up
 
+- [ ] Set the AC-5 similarity threshold from AC-14's golden cases once they exist, measuring precision and recall across candidate values. The current 0.62 is a placeholder from four self written probes, not a calibration.
 - [ ] Correct the umbrella's phase three line: retrieval cannot ground the employment stories, and the embellishment finding needs its own remedy.
 - [ ] Take the finding's cheaper remedy separately: a prompt rule against unsourced technical rationale, measured against `edge-bait-profile-momentum` and `hard-profile-data-model`.
 - [ ] No build approach is recorded in `AGENTS.md`; this plan assumes Tracer Bullet. Record the project default or correct this ordering.
