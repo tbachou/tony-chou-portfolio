@@ -215,7 +215,11 @@ Prerequisite before coding: create the Upstash Vector index, since the embedding
 | Dimensions | 1536, the model's native size | Determined by the model and likely not editable once the hosted option is chosen. It supports truncation to smaller sizes, trading recall for storage and speed, which is pointless at roughly 32 documents |
 | Similarity metric | `COSINE` if selectable, otherwise whatever the hosted option presets | OpenAI embeddings are normalised, so cosine and dot product rank identically, and cosine is what the documentation for these models assumes. Euclidean is wrong for normalised text embeddings. Upstash normalises returned scores to 0 to 1 whatever the metric, so AC-5's threshold holds either way |
 
-One operational note the build should not rediscover: `reset()` followed by upsert is not atomic, so an embed run leaves a brief window where the index is empty. Production already handles it correctly, since AC-8 degrades an empty result to a story only answer, but the embed script should be run when traffic is not expected.
+Two operational notes the build should not rediscover.
+
+**Text goes to a different REST endpoint than vectors.** On an index with a hosted embedding model, `POST /upsert` with a `data` field is rejected with `422 This index requires dense vectors`; the text endpoint is `POST /upsert-data`, and the query equivalent is `/query-data`. The `@upstash/vector` SDK hides this, so `index.upsert({ id, data })` is correct and is what the build should use. It only matters for anything that reaches the REST API directly, and it was confirmed against the live index rather than read from documentation.
+
+**`reset()` followed by upsert is not atomic**, so an embed run leaves a brief window where the index is empty. Production already handles it correctly, since AC-8 degrades an empty result to a story only answer, but the embed script should be run when traffic is not expected.
 
 **Critical test scenarios**:
 - Happy path: a question about how Tony specs a decision triggers one `searchKnowledge` call, three chunks come back, and the answer names the source document, verifies AC-4, AC-5, AC-6.
