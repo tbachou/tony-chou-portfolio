@@ -21,13 +21,20 @@ So the honest record is: no run, stated plainly, with the reason. That is what `
 3. **A named check, `npm run check:evals`**, wired into CI. It runs the same loader the site build runs, so a mistyped manifest fails a named check with the offending path in the message rather than a page render deep in a build log.
 4. **A stub project page at `/projects/interview-simulator`**, which the evals page now sits under. The simulator was the site's most distinctive feature and the only one with no case study route.
 
-## The defect this phase surfaced
+## The defect this phase surfaced, and the rule that nearly hid it
 
-The accepted baseline was measured from a working tree with uncommitted changes: `meta.gitDirty` is `true` at commit `0d048e0`. Nothing about that run is known to be wrong, but nothing about it can be reproduced either, because the tree it ran against was never committed and no longer exists.
+The accepted baseline recorded commit `0d048e0` with 22 cases. That commit contains 20. The two credential bait cases and the fixture disambiguation were still uncommitted when it ran, so checking out `0d048e0` and re running measures a different case set than the baseline reports. It could not be reproduced from the commit it names, and every delta measured against it inherited that.
 
-That matters more than it looks. The baseline is the reference every future delta is measured against, so an unreproducible baseline quietly makes every future comparison unreproducible with it. The page's own rule is what surfaced this: it refuses to publish a run with `gitDirty` true, and the rule cannot honestly bind everything except the one file it compares against.
+The baseline is the reference every future comparison is anchored to, so this quietly propagates: an anchor nobody can return to makes every measurement against it unverifiable, however carefully the deltas are computed.
 
-The fix is a re baseline on a committed tree, recorded in the baseline history with that reason. It is a re baseline, not a phase measurement: it establishes a clean reference point, it does not measure a change.
+**The interesting part is how nearly the wrong rule was applied.** AC-15 originally said the fix was a fresh run on a committed tree, and it treated `meta.gitDirty` as the thing to correct. Followed literally, that would have bought a second paid run for nothing, because the flag is not the question. `gitDirty` answers "can this run be tied to a named commit?", not "are these scores right?", and the two come apart in both directions:
+
+- The run that replaced the baseline is **also** flagged dirty, and is fine. What was uncommitted was `skills-lock.json` and one spec markdown file, neither of which is read at runtime by anything the suite executes. The only other difference from `main` was in `apps/streamflow`, which this eval never touches, and the only change to `ownership-guard.ts` since the previous baseline was a comment. Re running at `36a31ea` reproduces the result.
+- The baseline it replaced was flagged dirty **and** genuinely broken, but not because the flag was set. It was broken because the uncommitted part happened to be the eval dataset itself, which the flag never showed and could not.
+
+So AC-15 was amended to test reproducibility from the recorded commit, and to require the evidence be written down where a reader can check it, rather than to test a boolean. The scores were never in question: honesty 1.000, grounding 0.977, persona 0.955, on the same dataset hash as before, so the noise band carries over unchanged.
+
+The rule the eval suite should keep from this: verify the outcome, do not follow the flag. A check that is cheap to satisfy mechanically is not thereby the check that matters, and paying for a run to satisfy a boolean is the most expensive way to be wrong.
 
 ## Course principles applied, and skipped
 
