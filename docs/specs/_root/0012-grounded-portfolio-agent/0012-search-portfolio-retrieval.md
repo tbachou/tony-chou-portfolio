@@ -199,8 +199,10 @@ Two things are worth naming. First, query text leaves the process and reaches Up
 
 **Configuration required**:
 - `UPSTASH_VECTOR_REST_URL`: the index endpoint. Present in the API environment and locally.
-- `UPSTASH_VECTOR_REST_TOKEN`: a **read only** token, used by the running API and by the eval harness.
-- `UPSTASH_VECTOR_REST_TOKEN_WRITE`: the write token, present only where the embed script runs (Tony's machine). Never set on Render.
+- `UPSTASH_VECTOR_REST_TOKEN`: the index's **read only** token. This is the variable name the Upstash SDK reads by default, and everything that runs continuously (the API, the eval harness) only ever queries, so the read only token belongs under the default name.
+- `UPSTASH_VECTOR_WRITE_TOKEN`: the read write token, read only by the embed script. Present on Tony's machine, never set on Render.
+
+  The naming is deliberate and was wrong in an earlier draft. Upstash's own convention is a single `UPSTASH_VECTOR_REST_TOKEN`, and the console issues a read write token by default with a separate read only token alongside it. There is no Upstash variable for a write token, so the write one carries a name that is plainly ours rather than one that looks like theirs.
 
 Prerequisite before coding: create the Upstash Vector index, since the embedding model is fixed at creation and changing it later means a new index rather than a setting change. The settled configuration:
 
