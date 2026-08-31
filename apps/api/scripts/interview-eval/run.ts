@@ -95,6 +95,8 @@ function readJsonFile<T>(filePath: string, label: string): T {
 
 type GitInfo = {
   commit: string;
+  /** False when git could not answer, so nothing below it is known. */
+  verified: boolean;
   /** git's own status output for everything that differs, verbatim. */
   dirtyText: string;
   /** The same, narrowed to what this suite loads. Empty means reproducible. */
@@ -114,6 +116,7 @@ function gitInfo(): GitInfo {
       execFileSync('git', args, { encoding: 'utf8' }).trimEnd();
     return {
       commit,
+      verified: true,
       dirtyText: status(ALL_STATUS_ARGS),
       materialText: status(MATERIAL_STATUS_ARGS),
       root,
@@ -132,7 +135,13 @@ function gitInfo(): GitInfo {
         '\n⚠ Continuing because --allow-dirty was passed. Reproducibility is ' +
           'unverified, so this run cannot be baselined.\n',
       );
-      return { commit: 'unknown', dirtyText: '', materialText: '', root: process.cwd() };
+      return {
+        commit: 'unknown',
+        verified: false,
+        dirtyText: '',
+        materialText: '',
+        root: process.cwd(),
+      };
     }
     console.error(
       '   Refusing before spending anything. Run from inside the repository, or pass\n' +
@@ -156,10 +165,16 @@ function gitInfo(): GitInfo {
  */
 function preflight(info: GitInfo): void {
   const dirty = info.dirtyText.length > 0;
+  // Three states, not two. Saying "clean" when git could not answer is a
+  // claim with nothing behind it, and this banner is the only thing telling
+  // the operator whether to trust what follows.
+  const state = !info.verified
+    ? ' (UNVERIFIED: git could not answer)'
+    : dirty
+      ? ' (tree differs)'
+      : ' (clean)';
   console.log(`Worktree: ${info.root}`);
-  console.log(
-    `Commit:   ${info.commit.slice(0, 7)}${dirty ? ' (tree differs)' : ' (clean)'}`,
-  );
+  console.log(`Commit:   ${info.commit.slice(0, 7)}${state}`);
 
   if (dirty) {
     console.log('Uncommitted:');
@@ -229,8 +244,15 @@ async function main(): Promise<void> {
   // tree differs in a way that could change the result.
   const git = gitInfo();
   preflight(git);
+  if (process.argv.includes('--preflight-only')) {
+    console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
+    return;
+  }
   const commit = git.commit;
-  const dirty = git.dirtyText.length > 0;
+  // An unverified run is recorded as dirty on purpose. Writing gitDirty:false
+  // for a tree nobody could check would let the publish rule in
+  // apps/web/src/lib/evals.ts accept it as a clean, publishable run.
+  const dirty = !git.verified || git.dirtyText.length > 0;
 
   const caseCap = numFlag('cases', GOLDEN_CASES.length);
   const concurrency = Math.max(1, numFlag('concurrency', 2));

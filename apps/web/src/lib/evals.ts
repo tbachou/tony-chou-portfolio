@@ -306,15 +306,23 @@ function assertInside(base: string, candidate: string, relative: string, label: 
 }
 
 function containedPath(base: string, relative: string, label: string): string {
-  const resolved = path.resolve(base, relative);
-  assertInside(base, resolved, relative, label);
+  // `path.resolve` always returns an absolute path, so the base has to be made
+  // absolute too or the comparison is between different kinds of thing and
+  // every legitimate file looks like an escape. A caller passing a relative
+  // directory got "resolves outside" for a file plainly inside it, which is
+  // the most alarming possible wording for the most benign input.
+  const absoluteBase = path.resolve(base);
+  const resolved = path.resolve(absoluteBase, relative);
+  assertInside(absoluteBase, resolved, relative, label);
   // A path that does not exist yet is the caller's problem to report, and
   // realpathSync would throw a worse error than "writeupFile does not exist".
+  // A broken symlink and a symlink loop both land here too: existsSync follows
+  // links and returns false for either, so neither reaches realpathSync.
   if (!existsSync(resolved)) return resolved;
-  // The base is resolved too: on macOS a temporary directory is itself a
+  // The base is resolved as well: on macOS a temporary directory is itself a
   // symlink (/var -> /private/var), so comparing a real path against a
   // symlinked base would reject every legitimate read.
-  assertInside(realpathSync(base), realpathSync(resolved), relative, label);
+  assertInside(realpathSync(absoluteBase), realpathSync(resolved), relative, label);
   return resolved;
 }
 

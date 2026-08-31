@@ -404,6 +404,20 @@ describe('path containment', () => {
     expect(() => loadPublished(fixture({}))).not.toThrow();
   });
 
+  it('accepts a RELATIVE evals directory, which is not an escape', () => {
+    // path.resolve always returns an absolute path, so a relative base made
+    // every legitimate file compare as outside and threw "resolves outside"
+    // for a file plainly inside the record.
+    const dir = fixture({});
+    const previous = process.cwd();
+    try {
+      process.chdir(path.resolve(dir, '..', '..', '..'));
+      expect(() => loadPublished(path.join('docs', 'evals', 'interview'))).not.toThrow();
+    } finally {
+      process.chdir(previous);
+    }
+  });
+
   it('refuses a SYMLINK inside the record whose target is outside it', () => {
     // The string check passes: the link's own path is contained. Only the
     // target escapes, and readFileSync follows targets. Git stores symlinks
