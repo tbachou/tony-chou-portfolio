@@ -20,11 +20,26 @@ export interface LiveForecastOptions {
   onLead?: (result: ForecastWindowResult) => void;
 }
 
+/** One lead that did not finish, with its error already made safe to print. */
+export interface LeadFailure {
+  leadHours: number;
+  /** Sanitised, so a caller may log it. Never carries the connection string. */
+  error: string;
+}
+
 export interface LiveForecastSummary {
   leadsRun: number;
   leadsFailed: number;
   rowsWritten: number;
   byStatus: Record<RunStatus, number>;
+  /**
+   * The leads that failed and why, carried out rather than logged here.
+   *
+   * Nothing in this workspace logs from a library function; the CLI entry does
+   * the printing. Returning the reason keeps that split and makes the failure
+   * path testable without spying on the console.
+   */
+  failures: LeadFailure[];
 }
 
 /**
@@ -90,6 +105,7 @@ export async function ingestLiveForecasts(
     leadsFailed: 0,
     rowsWritten: 0,
     byStatus: { OK: 0, PARTIAL: 0, FAILED: 0 },
+    failures: [],
   };
 
   for (const leadHours of leads) {
@@ -120,12 +136,17 @@ export async function ingestLiveForecasts(
       summary.rowsWritten += result.rowsWritten;
       summary.byStatus[result.status] += 1;
       options.onLead?.(result);
-    } catch {
-      // The run row already says FAILED and carries the sanitised error, which
-      // is the durable record. Swallowed here only so the remaining leads still
-      // run; the caller sees the count and exits non zero on it.
+    } catch (cause) {
+      // Caught only so the remaining leads still run. The reason is carried out
+      // in the summary rather than dropped, because the run row cannot be
+      // relied on to hold it: `ingestForecastWindow` creates that row after it
+      // has already upserted the gauge and read the clock, so a failure in
+      // those first steps leaves no row at all. That is the narrow case where
+      // swallowing the error bare would have left a red CI step with nothing in
+      // it to diagnose from.
       summary.leadsFailed += 1;
       summary.byStatus.FAILED += 1;
+      summary.failures.push({ leadHours, error: sanitizeError(cause) });
     }
   }
 
@@ -154,8 +175,15 @@ if (require.main === module) {
           `PARTIAL ${summary.byStatus.PARTIAL} FAILED ${summary.byStatus.FAILED}`,
       );
 
-      // A lead that failed recorded itself and the others still ran, but the
-      // job as a whole did not do what it was asked to.
+      // Named per lead, so a red step says which lead failed and why. Already
+      // sanitised, so this cannot carry the connection string into a public
+      // build log.
+      for (const failure of summary.failures) {
+        console.error(`lead ${failure.leadHours}h failed: ${failure.error}`);
+      }
+
+      // The other leads still ran, but the job as a whole did not do what it
+      // was asked to.
       if (summary.leadsFailed > 0) process.exitCode = 1;
     })
     .catch((cause: unknown) => {

@@ -215,6 +215,64 @@ describe('ingestLiveForecasts', () => {
     expect(summary.byStatus.OK).toBe(2);
   });
 
+  it('says which lead failed and why, rather than only counting it', async () => {
+    const { prisma } = countingPrisma();
+    const { fetchForecasts } = fullWindows();
+    const flaky = jest.fn(async (window: never, leadHours: number) => {
+      if (leadHours === 48) throw new Error('open-meteo said no');
+      return fetchForecasts(window, leadHours);
+    });
+
+    const summary = await ingestLiveForecasts(deps(prisma, flaky), {
+      leads: [24, 48, 72],
+    });
+
+    expect(summary.failures).toEqual([
+      { leadHours: 48, error: 'open-meteo said no' },
+    ]);
+  });
+
+  // The case the run row cannot cover. `ingestForecastWindow` upserts the gauge
+  // and creates the row before its own try block, so a failure in those first
+  // steps leaves nothing in the database to read the reason off. Without the
+  // reason carried out here, a red CI step would name no lead and no cause.
+  it('reports a failure that happened before the run row existed', async () => {
+    const { prisma, runs } = countingPrisma();
+    const { fetchForecasts } = fullWindows();
+    (prisma.pipelineRun.create as unknown as jest.Mock).mockImplementationOnce(
+      async () => {
+        throw new Error('could not reach postgres://user:pw@host/db');
+      },
+    );
+
+    const summary = await ingestLiveForecasts(deps(prisma, fetchForecasts), {
+      leads: [24, 48],
+    });
+
+    // No run row for the lead that failed, which is the whole point.
+    expect(runs.filter((run) => run.leadHours === 24)).toHaveLength(0);
+    expect(summary.leadsFailed).toBe(1);
+    expect(summary.failures).toHaveLength(1);
+    expect(summary.failures[0].leadHours).toBe(24);
+    // Sanitised on the way out, so a public build log cannot carry the
+    // connection string this job holds.
+    expect(summary.failures[0].error).toContain('[redacted connection string]');
+    expect(summary.failures[0].error).not.toContain('user:pw');
+    // And the other lead still ran.
+    expect(summary.leadsRun).toBe(1);
+  });
+
+  it('reports no failures on a clean cycle', async () => {
+    const { prisma } = countingPrisma();
+    const { fetchForecasts } = fullWindows();
+
+    const summary = await ingestLiveForecasts(deps(prisma, fetchForecasts), {
+      leads: [24, 48, 72],
+    });
+
+    expect(summary.failures).toEqual([]);
+  });
+
   it('defaults to the horizons the forecasters issue at', async () => {
     const { prisma } = countingPrisma();
     const { fetchForecasts, asked } = fullWindows();
