@@ -1,0 +1,50 @@
+{
+  "_readMeFirst": "Which eval runs are published on the public evals page, and what each phase was measured against at the time. Hand edited, one entry per phase, validated at build by apps/web/src/lib/evals.ts and by `npm run check:evals`. Scores are deliberately absent: they are computed from the results file so there is nothing to transcribe and nothing to drift. See spec 0012 phase two.",
+  "publishedRuns": [
+    {
+      "phase": 1,
+      "phaseTitle": "Context engineering pass",
+      "date": "2026-08-30",
+      "measured": true,
+      "resultsFile": "results/2026-08-30-bf4c88e.json",
+      "writeupFile": "0012-phase-one-context-engineering.md",
+      "specPath": "docs/specs/_root/0012-grounded-portfolio-agent/0012-context-engineering-pass.md",
+      "delta": {
+        "honesty": 0,
+        "grounding": 0,
+        "persona": 0.025
+      },
+      "noiseBand": {
+        "honesty": 0.05,
+        "grounding": 0,
+        "persona": 0.05
+      },
+      "verdict": {
+        "honesty": "not-significant",
+        "grounding": "not-significant",
+        "persona": "not-significant"
+      }
+    },
+    {
+      "phase": 2,
+      "phaseTitle": "Public evals page",
+      "date": "2026-08-30",
+      "measured": false,
+      "writeupFile": "0012-phase-two-public-evals-page.md",
+      "specPath": "docs/specs/_root/0012-grounded-portfolio-agent/0012-public-evals-page.md"
+    }
+  ],
+  "baselineHistory": [
+    {
+      "date": "2026-08-29",
+      "cases": 20,
+      "reason": "The original baseline (spec 0011)."
+    },
+    {
+      "date": "2026-08-30",
+      "cases": 22,
+      "reason": "Added two `credential-bait` cases and disambiguated one fixture summary; both change the dataset hash.",
+      "detail": "**Two credential bait cases were added**, `edge-bait-ot-licence-current` and `edge-bait-ot-could-treat`. The rule forbidding claims of current occupational therapy licensure is the only never claim item that misrepresents a real regulated qualification, and it had no eval coverage at all. They lead the edge tier deliberately: `selectCases` samples round robin from the front of each tier, so a capped CI run exercises them on every prompt change. Their questions bridge back to the topic on purpose, because the persona judge scores coherence against the topic label and a bare off topic question is penalised by construction.\n\n**One fixture summary was disambiguated.** `Three-layer state management architecture` read `10/10 commits Tony; TanStack Query layer: 8/9 commits; reducer pattern: 13/15 commits`. The attribution was stated once and elided twice, and the honesty judge read the elided ones as commits by other people, contradicting the story's SOLO ownership. It swung a case between 1 and 0 across two identical runs and inflated the honesty noise band to 0.07. Adding `Tony` to the two elided clauses changes no claim; it removes an ambiguity. The honesty band went to 0.00."
+    }
+  ]
+}

@@ -18,6 +18,7 @@ The simulator has an AI answer questions as Tony. That is a resume that can hall
 |---|---|
 | `scoreboard.md` | The human read: latest scores per dimension, a per difficulty breakdown, and the delta against the baseline. A projection, regenerated from the files below, never hand edited. |
 | `baseline.json` | The accepted reference run plus the noise band. Moves only by a deliberate local run and a commit; CI never writes it. |
+| `published.json` | Which runs are published on the public evals page, what each phase was measured against at the time, and the baseline history. The only hand edited file here; validated by `npm run check:evals` and again at site build. Carries no scores, on purpose: those are computed from the results file so there is nothing to transcribe. |
 | `results/<date>-<sha>.json` | One run: per case scores, judge reasons, the generated turns, and run metadata (models, token counts, cost, dataset hash). |
 | `NNNN-<phase>.md` | A per phase writeup for spec 0012: what changed, the delta against the baseline (or its absence), and the course principles applied and skipped. |
 
@@ -44,18 +45,11 @@ Needs `ANTHROPIC_API_KEY`. Runs cost real money and are bounded by `--max-cost`,
 
 ## Baseline history
 
-The baseline moves only by a deliberate local run, and each move is recorded here with its reason.
+The baseline moves only by a deliberate local run, and each move is recorded with its reason.
 
-| Date | Cases | Why it moved |
-|---|---|---|
-| 2026-08-29 | 20 | The original baseline (spec 0011). |
-| 2026-08-30 | 22 | Added two `credential-bait` cases and disambiguated one fixture summary; both change the dataset hash. |
+That history used to be a table here. It now lives in [`published.json`](published.json), under `baselineHistory`, because two places holding the same list is how they come to disagree. The structured source is that file; the rendered one is the public evals page at `/projects/interview-simulator/evals`, which reads it at build time and shows each move with its reason and its longer explanation.
 
-The 2026-08-30 move did two things:
-
-**Two credential bait cases were added**, `edge-bait-ot-licence-current` and `edge-bait-ot-could-treat`. The rule forbidding claims of current occupational therapy licensure is the only never claim item that misrepresents a real regulated qualification, and it had no eval coverage at all. They lead the edge tier deliberately: `selectCases` samples round robin from the front of each tier, so a capped CI run exercises them on every prompt change. Their questions bridge back to the topic on purpose, because the persona judge scores coherence against the topic label and a bare off topic question is penalised by construction.
-
-**One fixture summary was disambiguated.** `Three-layer state management architecture` read `10/10 commits Tony; TanStack Query layer: 8/9 commits; reducer pattern: 13/15 commits`. The attribution was stated once and elided twice, and the honesty judge read the elided ones as commits by other people, contradicting the story's SOLO ownership. It swung a case between 1 and 0 across two identical runs and inflated the honesty noise band to 0.07. Adding `Tony` to the two elided clauses changes no claim; it removes an ambiguity. The honesty band went to 0.00.
+`published.json` also names which runs are published, and records what each phase was measured against at the time. It is the only hand edited file in this directory; `npm run check:evals` validates it.
 
 ### The fixtures now differ from what production serves
 
