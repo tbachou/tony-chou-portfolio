@@ -1,37 +1,33 @@
 #!/usr/bin/env node
 /**
- * Reports every git worktree with the two facts that decide whether it is
- * still useful: does it hold commits that are not on main, and does it hold
- * uncommitted work?
+ * Reports what every git worktree holds, so you can decide which ones are
+ * finished with. It reports; it does not judge, and it never prints a command
+ * that deletes anything.
  *
- * This exists because of a specific, expensive failure on 2026-08-31. A
- * worktree whose branch had been fully merged was still on disk, still had a
- * shell pointing at it, and still held two uncommitted files. An eval run was
- * started there by accident. It cost real budget and produced a result that
- * could not be tied to a commit, and the state it measured existed nowhere
- * else. See docs/evals/interview/0012-phase-two-public-evals-page.md.
+ * That restraint is the whole design, and it was learned three times over.
+ * This script exists because on 2026-08-31 an eval run was started by accident
+ * in a merged worktree that still held uncommitted files: it cost real budget
+ * and produced a result no commit could reproduce. Every version since has
+ * tried to answer "is this one safe to delete?", and every version got that
+ * answer wrong in a new way:
  *
- * Two shapes are worth acting on, and they are different problems:
+ *   1. `git status` does not list ignored files, so a worktree holding a
+ *      `.env` looked clean and was printed as safe to remove.
+ *   2. The regenerable filter matched substrings, so `test-coverage/` matched
+ *      `coverage/` and hand written notes were cleared.
+ *   3. `--ignored=matching` collapses a wholly ignored directory to one entry,
+ *      so `!! dist/` cleared everything inside it, including a hand typed
+ *      `dist/.env`. Confirmed by removing the worktree and losing the file.
  *
- *   MERGED + DIRTY   the trap. Nothing here is unmerged, so the directory
- *                    looks disposable, but deleting it silently destroys the
- *                    uncommitted work. Rescue the changes, then remove it.
- *   MERGED + CLEAN   pure residue. Safe to remove, and worth removing,
- *                    because every one of these is a directory a stale
- *                    terminal tab can still be sitting in.
- *
- * Read only. It never deletes anything: the whole point is that the dangerous
- * case is the one where automatic cleanup would lose work.
- *
- * Ignored files are counted too, and this is not a detail. `git status` does
- * not list them, so a worktree holding a `.env` reports as clean and reads as
- * safe to delete, while `git worktree remove` takes the whole directory and
- * the file with it. That is the same shape of loss this script exists to
- * prevent, hidden one level deeper.
+ * Each fix was right about the case in front of it and left the shape intact:
+ * a wrong verdict here destroys data, and there is always another case. So the
+ * verdict is gone. What is left is the part that was always useful, which is
+ * seeing what a directory holds before you decide, including the ignored files
+ * a plain `git status` would never show you.
  */
 
 import { execFileSync } from 'node:child_process';
-import { isRegenerable, porcelainPath } from './worktree-paths.mjs';
+import { porcelainPath } from './worktree-paths.mjs';
 
 function git(args, cwd) {
   return execFileSync('git', args, {
@@ -61,17 +57,18 @@ if (!base) {
 
 const worktrees = [];
 let current = {};
-// `git worktree list` always names the primary checkout first. It can never
-// be removed, and suggesting it would be actively dangerous, so mark it.
+// `git worktree list` always names the primary checkout first. It cannot be
+// removed, so it is marked and left out of the "finished with?" section.
 let first = true;
 for (const line of git(['worktree', 'list', '--porcelain']).split('\n')) {
   if (line.startsWith('worktree ')) {
     current = { path: line.slice(9), primary: first };
     first = false;
-  }
-  else if (line.startsWith('branch ')) current.branch = line.slice(7).replace('refs/heads/', '');
-  else if (line.startsWith('detached')) current.branch = '(detached)';
-  else if (line === '') {
+  } else if (line.startsWith('branch ')) {
+    current.branch = line.slice(7).replace('refs/heads/', '');
+  } else if (line.startsWith('detached')) {
+    current.branch = '(detached)';
+  } else if (line === '') {
     if (current.path) worktrees.push(current);
     current = {};
   }
@@ -80,90 +77,75 @@ if (current.path) worktrees.push(current);
 
 const rows = worktrees.map((wt) => {
   let unmerged = null;
-  let dirty = null;
-  let dirtyFiles = [];
+  let tracked = [];
+  let ignored = [];
   try {
     unmerged = Number(git(['rev-list', '--count', `${base}..HEAD`], wt.path));
   } catch {
     /* unreadable worktree */
   }
-  let hidden = [];
   try {
     // --ignored=matching collapses a wholly ignored directory into one entry,
-    // so this stays cheap even with node_modules present.
+    // which keeps this cheap with node_modules present. Nothing is filtered
+    // out of the result: a collapsed directory can contain anything, and
+    // deciding it cannot is exactly the mistake this script stopped making.
     const lines = git(['status', '--porcelain', '--ignored=matching'], wt.path)
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
-    dirtyFiles = lines.filter((l) => !l.startsWith('!!'));
-    dirty = dirtyFiles.length;
-    hidden = lines
+    tracked = lines.filter((l) => !l.startsWith('!!'));
+    ignored = lines
       .filter((l) => l.startsWith('!!'))
       .map((l) => porcelainPath(l))
-      .filter((f) => f !== null && !isRegenerable(f));
+      .filter((f) => f !== null);
   } catch {
     /* unreadable worktree */
   }
-  return { ...wt, unmerged, dirty, dirtyFiles, hidden };
+  return { ...wt, unmerged, tracked, ignored };
 });
 
-const name = (p) => p.split('/').pop();
+const name = (r) => r.path.split('/').pop() + (r.primary ? ' (main)' : '');
 const pad = (s, n) => String(s).padEnd(n);
-const width = Math.max(20, ...rows.map((r) => name(r.path).length + (r.primary ? 7 : 0)));
+const width = Math.max(20, ...rows.map((r) => name(r).length));
 
 console.log(`\nWorktrees, compared against ${base}:\n`);
-console.log(`  ${pad('directory', width)}  ${pad('branch', 38)}  unmerged  uncommitted`);
-console.log(`  ${'-'.repeat(width)}  ${'-'.repeat(38)}  --------  -----------`);
+console.log(`  ${pad('directory', width)}  ${pad('branch', 38)}  unmerged  uncommitted  ignored`);
+console.log(`  ${'-'.repeat(width)}  ${'-'.repeat(38)}  --------  -----------  -------`);
 for (const r of rows) {
   console.log(
-    `  ${pad(name(r.path) + (r.primary ? ' (main)' : ''), width)}  ${pad(r.branch ?? '?', 38)}  ${pad(r.unmerged ?? '?', 8)}  ${r.dirty ?? '?'}`,
+    `  ${pad(name(r), width)}  ${pad(r.branch ?? '?', 38)}  ` +
+      `${pad(r.unmerged ?? '?', 8)}  ${pad(r.tracked.length, 11)}  ${r.ignored.length}`,
   );
 }
 
-// The primary checkout is never residue, whatever its branch says.
-const traps = rows.filter((r) => !r.primary && r.unmerged === 0 && r.dirty > 0);
-// Merged, clean to `git status`, but holding local only files git never shows.
-// Removing one of these looks free and is not.
-const quietTraps = rows.filter(
-  (r) => !r.primary && r.unmerged === 0 && r.dirty === 0 && r.hidden.length > 0,
-);
-const residue = rows.filter(
-  (r) => !r.primary && r.unmerged === 0 && r.dirty === 0 && r.hidden.length === 0,
-);
+const list = (label, entries) => {
+  if (entries.length === 0) return;
+  console.log(`    ${label}`);
+  for (const entry of entries.slice(0, 12)) console.log(`      ${entry}`);
+  if (entries.length > 12) console.log(`      … and ${entries.length - 12} more`);
+};
 
-if (traps.length > 0) {
-  console.log('\n⚠ MERGED BUT DIRTY — work here exists nowhere else, and the directory looks disposable:');
-  for (const r of traps) {
-    console.log(`\n  ${r.path}`);
-    for (const f of r.dirtyFiles.slice(0, 10)) console.log(`      ${f}`);
-    if (r.dirtyFiles.length > 10) console.log(`      … and ${r.dirtyFiles.length - 10} more`);
-  }
-  console.log('\n  Commit or move these somewhere real, THEN remove the worktree.');
-  console.log('  Do not run anything that costs money from one of these directories.');
-}
+const merged = rows.filter((r) => !r.primary && r.unmerged === 0);
 
-if (quietTraps.length > 0) {
+if (merged.length === 0) {
+  console.log('\n✓ Every worktree holds commits that are not on the base branch.\n');
+} else {
   console.log(
-    '\n⚠ MERGED AND CLEAN, BUT holding local only files git never lists —',
+    `\nFully merged, so nothing in them is missing from ${base}. ` +
+      'Here is what each one still holds:\n',
   );
-  console.log('  removing these takes the files with them:');
-  for (const r of quietTraps) {
-    console.log(`\n  ${r.path}`);
-    for (const f of r.hidden.slice(0, 10)) console.log(`      ${f}  (ignored)`);
-    if (r.hidden.length > 10) console.log(`      … and ${r.hidden.length - 10} more`);
+  for (const r of merged) {
+    console.log(`  ${r.path}`);
+    list('uncommitted:', r.tracked);
+    list('ignored (a plain git status never shows these):', r.ignored);
+    if (r.tracked.length === 0 && r.ignored.length === 0) {
+      console.log('    nothing: no uncommitted files, no ignored files');
+    }
+    console.log('');
   }
-  console.log('\n  Copy anything you still need out first, then remove the worktree.');
+  console.log(
+    '  Removing a worktree deletes its whole directory, everything listed above\n' +
+      '  included. Read the list, then remove the ones you are done with yourself.\n' +
+      '  Never run anything that spends money from a directory you have not checked.\n',
+  );
 }
-
-if (residue.length > 0) {
-  console.log('\n· Merged and clean — safe to remove, and worth removing:');
-  for (const r of residue) console.log(`    git worktree remove ${r.path}`);
-}
-
-if (traps.length === 0 && quietTraps.length === 0 && residue.length === 0) {
-  console.log('\n✓ Every worktree holds unmerged work. Nothing stale.');
-}
-
-console.log('');
-// Never fails the build: this is a hygiene report, and the dangerous case
-// needs a human to decide what the uncommitted work was for.
