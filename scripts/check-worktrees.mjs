@@ -22,7 +22,37 @@
  *
  * Read only. It never deletes anything: the whole point is that the dangerous
  * case is the one where automatic cleanup would lose work.
+ *
+ * Ignored files are counted too, and this is not a detail. `git status` does
+ * not list them, so a worktree holding a `.env` reports as clean and reads as
+ * safe to delete, while `git worktree remove` takes the whole directory and
+ * the file with it. That is the same shape of loss this script exists to
+ * prevent, hidden one level deeper.
  */
+
+/**
+ * Ignored paths a build or an install can recreate. Everything else that is
+ * ignored is treated as irreplaceable, so a new kind of local only file is
+ * reported rather than silently dropped.
+ */
+const REGENERABLE = [
+  'node_modules/',
+  'dist/',
+  'build/',
+  'out/',
+  '.next/',
+  '.turbo/',
+  '.cache/',
+  'coverage/',
+  'src/generated/',
+  '.DS_Store',
+];
+
+function isRegenerable(entry) {
+  return REGENERABLE.some((r) =>
+    r.endsWith('/') ? entry.includes(r) : entry.endsWith(r),
+  );
+}
 import { execFileSync } from 'node:child_process';
 
 function git(args, cwd) {
@@ -79,16 +109,24 @@ const rows = worktrees.map((wt) => {
   } catch {
     /* unreadable worktree */
   }
+  let hidden = [];
   try {
-    dirtyFiles = git(['status', '--porcelain'], wt.path)
+    // --ignored=matching collapses a wholly ignored directory into one entry,
+    // so this stays cheap even with node_modules present.
+    const lines = git(['status', '--porcelain', '--ignored=matching'], wt.path)
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
+    dirtyFiles = lines.filter((l) => !l.startsWith('!!'));
     dirty = dirtyFiles.length;
+    hidden = lines
+      .filter((l) => l.startsWith('!!'))
+      .map((l) => l.slice(2).trim())
+      .filter((f) => !isRegenerable(f));
   } catch {
     /* unreadable worktree */
   }
-  return { ...wt, unmerged, dirty, dirtyFiles };
+  return { ...wt, unmerged, dirty, dirtyFiles, hidden };
 });
 
 const name = (p) => p.split('/').pop();
@@ -106,7 +144,14 @@ for (const r of rows) {
 
 // The primary checkout is never residue, whatever its branch says.
 const traps = rows.filter((r) => !r.primary && r.unmerged === 0 && r.dirty > 0);
-const residue = rows.filter((r) => !r.primary && r.unmerged === 0 && r.dirty === 0);
+// Merged, clean to `git status`, but holding local only files git never shows.
+// Removing one of these looks free and is not.
+const quietTraps = rows.filter(
+  (r) => !r.primary && r.unmerged === 0 && r.dirty === 0 && r.hidden.length > 0,
+);
+const residue = rows.filter(
+  (r) => !r.primary && r.unmerged === 0 && r.dirty === 0 && r.hidden.length === 0,
+);
 
 if (traps.length > 0) {
   console.log('\n⚠ MERGED BUT DIRTY — work here exists nowhere else, and the directory looks disposable:');
@@ -119,12 +164,25 @@ if (traps.length > 0) {
   console.log('  Do not run anything that costs money from one of these directories.');
 }
 
+if (quietTraps.length > 0) {
+  console.log(
+    '\n⚠ MERGED AND CLEAN, BUT holding local only files git never lists —',
+  );
+  console.log('  removing these takes the files with them:');
+  for (const r of quietTraps) {
+    console.log(`\n  ${r.path}`);
+    for (const f of r.hidden.slice(0, 10)) console.log(`      ${f}  (ignored)`);
+    if (r.hidden.length > 10) console.log(`      … and ${r.hidden.length - 10} more`);
+  }
+  console.log('\n  Copy anything you still need out first, then remove the worktree.');
+}
+
 if (residue.length > 0) {
   console.log('\n· Merged and clean — safe to remove, and worth removing:');
   for (const r of residue) console.log(`    git worktree remove ${r.path}`);
 }
 
-if (traps.length === 0 && residue.length === 0) {
+if (traps.length === 0 && quietTraps.length === 0 && residue.length === 0) {
   console.log('\n✓ Every worktree holds unmerged work. Nothing stale.');
 }
 
