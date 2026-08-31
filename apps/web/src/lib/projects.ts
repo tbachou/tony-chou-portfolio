@@ -44,6 +44,15 @@ export const PROJECTS: Project[] = [
     href: '/projects/carryover'
   },
   {
+    slug: 'interview-simulator',
+    name: 'interview-simulator/',
+    pitch:
+      'The AI that answers as me on this page - held to a git-verified record, and measured in public.',
+    status: 'live',
+    href: '/projects/interview-simulator',
+    subPages: ['/projects/interview-simulator/evals']
+  },
+  {
     slug: 'streamflow',
     name: 'streamflow/',
     pitch:

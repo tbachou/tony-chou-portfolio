@@ -79,6 +79,23 @@ export default function HomePage() {
             >
               <h2 className="sr-only">Interview</h2>
               <ConversationPanel />
+              {/*
+                The answers above are generated, and the guard that decides
+                what they may claim is measured rather than asserted. The link
+                to that record belongs here, next to the thing it is about,
+                not only in the projects list.
+              */}
+              <p className="mt-6 text-term-xs leading-relaxed text-term-muted">
+                Every answer here is generated live and held to a git-verified record by a
+                deterministic guard.{' '}
+                <a
+                  href="/projects/interview-simulator/evals"
+                  className="text-term-accent underline underline-offset-2 hover:no-underline"
+                >
+                  See how well that holds up
+                </a>{' '}
+                — the eval scores are published, including the runs where nothing improved.
+              </p>
             </section>
 
             <ContactSection />
