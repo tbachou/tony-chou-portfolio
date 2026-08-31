@@ -58,3 +58,54 @@ export async function forecastsAsOf(
     ORDER BY "gaugeId", "validTime", "leadHours", "model", "recordedAt" DESC
   `);
 }
+
+/**
+ * The earliest `validTime` the store holds for each lead, at one gauge and
+ * model. This is AC-R6's least `validTime` held, measured rather than pinned as
+ * a constant.
+ *
+ * **This is the earliest row held, not the earliest date anything is usable at,
+ * and the two are not the same.** A prediction needs a complete window of `H`
+ * hourly rows (AC-R10), and the archive ramps in: `parse.ts` drops the hours
+ * Open-Meteo returns null for, so an early month lands as scattered rows rather
+ * than a contiguous prefix, which AC-R14 expects and records as PARTIAL. A
+ * couple of stray hours therefore put this value weeks before any complete
+ * window exists. It does not even order across leads: a stray hour at lead 48
+ * can make that lead report earlier than lead 24, whatever the run cadence
+ * implies. Anything that needs the usable date wants a different query, the
+ * earliest `validTime` with `H` consecutive hourly slots behind it.
+ *
+ * **Not knowability bounded, unlike everything else in this module.**
+ * `forecastsAsOf` takes an `asOf`, and AC-R8 gives it an axis. This takes
+ * neither and sees every row in the store however recently it was fetched, so
+ * it is an operator report and nothing else. Never call it from a prediction or
+ * a hindcast path: at issue time `T` it answers with rows recorded long after
+ * `T`, which is the leak the two axis design exists to prevent.
+ *
+ * Grouped rather than asked once per lead, so the whole answer costs one
+ * statement in the spirit of AC-R16, and the leads are the ones the store
+ * actually holds rather than the ones a constant expected. A lead with no rows
+ * is absent from the map rather than carrying a fallback date.
+ *
+ * `MIN` is safe over this append only table without a reduction first. The
+ * reduction in AC-R7 exists because summing revisions double counts, and a
+ * minimum is indifferent to how many rows share the hour it picks.
+ */
+export async function earliestStoredForecastValidTimes(
+  prisma: ForecastReader,
+  gaugeId: string,
+  model: string,
+): Promise<ReadonlyMap<number, Date>> {
+  const rows = await prisma.$queryRaw<{ leadHours: number; firstValidTime: Date }[]>(
+    Prisma.sql`
+      SELECT "leadHours", MIN("validTime") AS "firstValidTime"
+      FROM "weather_forecasts"
+      WHERE "gaugeId" = ${gaugeId}
+        AND "model" = ${model}
+      GROUP BY "leadHours"
+      ORDER BY "leadHours"
+    `,
+  );
+
+  return new Map(rows.map((row) => [row.leadHours, row.firstValidTime]));
+}
