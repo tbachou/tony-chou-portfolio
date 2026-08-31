@@ -19,7 +19,7 @@ import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 
 loadEnv({ path: path.resolve(__dirname, '..', '..', '.env') });
 
@@ -37,9 +37,8 @@ import {
 import { aggregate } from '../../src/modules/conversation/eval/aggregate';
 import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
 import {
-  classifyDirtyFiles,
-  isInert,
-  porcelainPath,
+  ALL_STATUS_ARGS,
+  MATERIAL_STATUS_ARGS,
 } from '../../src/modules/conversation/eval/dirty-tree';
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
 import {
@@ -96,11 +95,10 @@ function readJsonFile<T>(filePath: string, label: string): T {
 
 type GitInfo = {
   commit: string;
-  dirty: boolean;
-  /** Tracked, non-output files that differ from the recorded commit. */
-  dirtyFiles: string[];
-  /** The subset of those that this suite actually loads. */
-  materialFiles: string[];
+  /** git's own status output for everything that differs, verbatim. */
+  dirtyText: string;
+  /** The same, narrowed to what this suite loads. Empty means reproducible. */
+  materialText: string;
   root: string;
 };
 
@@ -110,36 +108,18 @@ function gitInfo(): GitInfo {
     const root = execSync('git rev-parse --show-toplevel', {
       encoding: 'utf8',
     }).trim();
-    // The dirty flag answers "did the code that ran differ from this
-    // commit?" — so it counts tracked modifications only, and ignores the
-    // suite's own outputs under docs/evals (results, scoreboard, baseline),
-    // which every run rewrites but which cannot change behavior.
-    const dirtyFiles = execSync('git status --porcelain --untracked-files=no', {
-      encoding: 'utf8',
-    })
-      .split('\n')
-      // Parse each line into a real path FIRST. A rename reads
-      // `R  old -> new`, and slicing the status off without splitting left the
-      // whole string, which then both classified on the old path and, when the
-      // old path was under docs/evals, was dropped by the filter below without
-      // appearing anywhere in the output.
-      .map((line) => porcelainPath(line))
-      .filter((f): f is string => f !== null && !f.startsWith('docs/evals/'));
+    // Two questions, both answered by git. Nothing here parses a path, which
+    // is the whole point: the parser was the bug.
+    const status = (args: string[]): string =>
+      execFileSync('git', args, { encoding: 'utf8' }).trimEnd();
     return {
       commit,
-      dirty: dirtyFiles.length > 0,
-      dirtyFiles,
-      materialFiles: classifyDirtyFiles(dirtyFiles).material,
+      dirtyText: status(ALL_STATUS_ARGS),
+      materialText: status(MATERIAL_STATUS_ARGS),
       root,
     };
   } catch {
-    return {
-      commit: 'unknown',
-      dirty: false,
-      dirtyFiles: [],
-      materialFiles: [],
-      root: process.cwd(),
-    };
+    return { commit: 'unknown', dirtyText: '', materialText: '', root: process.cwd() };
   }
 }
 
@@ -156,18 +136,19 @@ function gitInfo(): GitInfo {
  * fine and says so; a dirty tree touching the prompts is not.
  */
 function preflight(info: GitInfo): void {
+  const dirty = info.dirtyText.length > 0;
   console.log(`Worktree: ${info.root}`);
-  console.log(`Commit:   ${info.commit.slice(0, 7)}${info.dirty ? ' (tree differs)' : ' (clean)'}`);
+  console.log(
+    `Commit:   ${info.commit.slice(0, 7)}${dirty ? ' (tree differs)' : ' (clean)'}`,
+  );
 
-  if (info.dirtyFiles.length > 0) {
-    console.log(`Uncommitted (${info.dirtyFiles.length}):`);
-    for (const f of info.dirtyFiles) {
-      console.log(`  ${isInert(f) ? '·' : '!'} ${f}`);
-    }
+  if (dirty) {
+    console.log('Uncommitted:');
+    console.log(info.dirtyText);
   }
 
-  if (info.materialFiles.length === 0) {
-    if (info.dirty) {
+  if (info.materialText.length === 0) {
+    if (dirty) {
       console.log(
         'None of it is loaded by this suite, so the run is reproducible from the commit above.',
       );
@@ -176,18 +157,21 @@ function preflight(info: GitInfo): void {
     return;
   }
 
+  console.log('\nOf that, loaded by this suite:');
+  console.log(info.materialText);
+
   if (process.argv.includes('--allow-dirty')) {
     console.warn(
-      `\n⚠ ${info.materialFiles.length} uncommitted file(s) MARKED ! are loaded by this suite. ` +
-        'Continuing because --allow-dirty was passed. This run cannot be baselined: ' +
-        'its commit does not reproduce it.\n',
+      '\n\u26a0 The files above are loaded by this suite. Continuing because ' +
+        '--allow-dirty was passed. This run cannot be baselined: its commit ' +
+        'does not reproduce it.\n',
     );
     return;
   }
 
   console.error(
-    `\n❌ ${info.materialFiles.length} uncommitted file(s) MARKED ! above are loaded by this suite, ` +
-      `so commit ${info.commit.slice(0, 7)} would not reproduce this run.\n` +
+    `\n\u274c The files above are loaded by this suite, so commit ${info.commit.slice(0, 7)} ` +
+      'would not reproduce this run.\n' +
       '   Refusing before spending anything. Commit them, or pass --allow-dirty for a\n' +
       '   deliberately exploratory run (a reverted-module control run, for example).\n' +
       '   Check the worktree path above too: a stale one is the other way this gets wasted.',
@@ -226,7 +210,8 @@ async function main(): Promise<void> {
   // tree differs in a way that could change the result.
   const git = gitInfo();
   preflight(git);
-  const { commit, dirty } = git;
+  const commit = git.commit;
+  const dirty = git.dirtyText.length > 0;
 
   const caseCap = numFlag('cases', GOLDEN_CASES.length);
   const concurrency = Math.max(1, numFlag('concurrency', 2));
