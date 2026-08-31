@@ -114,14 +114,26 @@ export function judgeForecastCompleteness(
  * window always ends in the future by design, one lead ahead of now, so routing
  * it through the month rule would mark every live run PARTIAL for ever, and a
  * status that is always PARTIAL cannot report a real outage. Live runs are also
- * not chunks: `completedForecastChunks` skips anything that is not a whole
- * calendar month, so an OK live run resumes nothing.
+ * mostly not chunks, so an OK live run normally resumes nothing; `isCalendarMonth`
+ * carries the exception and how narrow it is.
+ *
+ * A window that implies no hours can never be OK. Without the first branch it
+ * would be: `expectedHourCount` returns 0 for a collapsed window, the plain
+ * comparison reads `0 < 0`, which is false, and the run records OK having asked
+ * for nothing and stored nothing. Worse, the same collapsed window returns 1
+ * when both ends happen to land on an exact hour, so the status flipped between
+ * OK and PARTIAL on the sub hour position of the clock, which is not a
+ * distinction about the data at all. A run that verified nothing has not
+ * verified that everything is fine.
  */
 export function judgeWindowCompleteness(
   hoursReturned: number,
   requested: IngestWindow,
 ): 'OK' | 'PARTIAL' {
-  return hoursReturned < expectedHourCount(requested) ? 'PARTIAL' : 'OK';
+  const expected = expectedHourCount(requested);
+
+  if (expected === 0) return 'PARTIAL';
+  return hoursReturned < expected ? 'PARTIAL' : 'OK';
 }
 
 /**
@@ -138,8 +150,24 @@ export function judgeWindowCompleteness(
  * was done.
  *
  * Checking both ends rather than the start alone, because the start is the half
- * that collides. Every backfill run records the whole month it stood for, never
- * the clamped request, so this recognises every chunk already in the store.
+ * that collides in practice. Every backfill run records the whole month it stood
+ * for, never the clamped request, so this recognises every chunk already in the
+ * store.
+ *
+ * **It narrows the hazard, it does not close it, and the difference is worth
+ * stating plainly.** Both ends can line up at once. A live window at lead 24
+ * with a stored edge of `2026-09-01T02:00:00.000Z` and a run starting at
+ * `2026-09-29T23:00:00.000Z` is exactly September, and would be read as a
+ * finished chunk. What makes that survivable is not this function: it is that
+ * the run has to start on an exact millisecond, since one millisecond either
+ * side breaks it, and the store has to be a month stale at that lead as well.
+ * That is a coincidence of roughly one in three and a half million runs, not a
+ * guarantee, and it rests on the wall clock rarely landing on a round number.
+ *
+ * The real fix is to tell the two kinds of run apart positively rather than by
+ * the shape of their windows, by recording which job wrote the row. That is a
+ * schema change and a decision about the job enum, so it is named here rather
+ * than made here.
  */
 export function isCalendarMonth(window: IngestWindow): boolean {
   const month = monthWindow(window.start);
@@ -189,6 +217,15 @@ export function isCalendarMonth(window: IngestWindow): boolean {
  * month for the cost reason AC-R16 sets out; a live job falling back to the
  * archive's beginning would ask for two and a half years in one request, and
  * would ask again every six hours.
+ *
+ * **That fallback covers an empty store, not a stale one.** With rows held but
+ * the newest of them months old, the gap recovery above is doing exactly what it
+ * is meant to and the request is still one span covering every hour since. A
+ * backfill that stopped two months ago produces a request of about sixty days,
+ * which is the shape this fallback is written to avoid, reached by the other
+ * road. It is bounded by how stale the store is rather than by anything here,
+ * so it is a cost worth watching after a long outage rather than a defect, and
+ * a cap belongs on the request if it ever bites.
  */
 export function liveForecastWindow(
   latestStoredValidTime: Date | null,
