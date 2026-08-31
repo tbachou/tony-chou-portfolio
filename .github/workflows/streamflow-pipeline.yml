@@ -1,5 +1,6 @@
-# Spec 0010's scheduled pipeline: pull new USGS readings, then re-poll the
-# stretches USGS may still revise.
+# Spec 0010's scheduled pipeline: pull new USGS readings, re-poll the stretches
+# USGS may still revise, then pull the Open-Meteo forecasts a prediction issued
+# now would need to read.
 #
 # This workflow holds the only write credential the streamflow database has.
 # Nothing else writes to it, so the hardening here is not ceremony:
@@ -99,6 +100,34 @@ jobs:
         env:
           PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
         run: npm run rescan --workspace=apps/streamflow
+
+      - name: Ingest Open-Meteo forecasts
+        # The live half of the rain child (0010's AC-R13), and it must come
+        # before predictions rather than merely near them: a forecaster issuing
+        # at this instant reads the rain expected over the next 24 to 72 hours,
+        # and those rows do not exist until this step writes them. Running it
+        # after would leave every prediction of the cycle reading a window that
+        # is one cycle stale.
+        #
+        # Runs even when an earlier step failed, for the same reason the rescan
+        # does: this job is independent of the USGS ones and shares nothing with
+        # them but the database. It records its own run rows either way, one per
+        # lead, and each says what it covered.
+        #
+        # Deliberately not held behind STREAMFLOW_FORECASTING. That gate exists
+        # because a prediction's interval is written once and never recomputed,
+        # so issuing early freezes a placeholder band into the public record.
+        # Nothing here is frozen: the weather store is append only, a re-fetch
+        # of unchanged values writes nothing, and no prediction reads these rows
+        # yet. Ingestion is ungated for the same reason USGS ingestion above is.
+        #
+        # The window is computed from what is already stored, never from this
+        # schedule, so a run GitHub delays or drops asks for the whole gap next
+        # time rather than skipping it.
+        if: ${{ !cancelled() }}
+        env:
+          PIPELINE_DATABASE_URL: ${{ secrets.PIPELINE_DATABASE_URL }}
+        run: npm run ingest:weather --workspace=apps/streamflow
 
       - name: Issue predictions
         # Runs after ingestion so persistence forecasts from the newest
