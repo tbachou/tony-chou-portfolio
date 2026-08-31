@@ -60,6 +60,27 @@ jobs:
       - name: Typecheck web
         run: npx tsc --noEmit -p apps/web/tsconfig.json
 
+      # Typechecking web is not the same as building it, and the difference is
+      # a whole class of failure this job could not see. A tsc pass never runs
+      # PostCSS, never resolves the Tailwind plugin chain, never bundles a
+      # client component and never renders a static route, so anything that
+      # breaks only in those stages reached Vercel with `verify` green.
+      #
+      # Demonstrated on 2026-08-31 by #42 (tailwindcss 3 to 4): `verify`
+      # passed, and the Vercel build died on the Tailwind PostCSS plugin move.
+      # The same day #51 (typescript 7) did fail `verify`, because it broke a
+      # typecheck and the streamflow build that `postinstall` runs, which is
+      # the distinction worth keeping straight: this step is not a catch all,
+      # it closes the web build shaped hole specifically.
+      #
+      # Render's build was added to this job for exactly this reason in #36,
+      # after a dependency bump broke `main`'s deploy. This is the same fix on
+      # the web side. Verified to pass with no environment variables set: the
+      # only dynamic route is `/streamflow`, which is `force-dynamic` and so
+      # reads the store at request time, never at build time.
+      - name: Build web (same builder Vercel runs)
+        run: npm run build --workspace=apps/web
+
       - name: Typecheck streamflow
         run: npx tsc --noEmit -p apps/streamflow/tsconfig.json
 
