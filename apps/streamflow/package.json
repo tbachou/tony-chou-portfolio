@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.4.0",
     "@types/pg": "^8.20.3",
     "jest": "^30.0.0",
     "prisma": "^7.9.1",
