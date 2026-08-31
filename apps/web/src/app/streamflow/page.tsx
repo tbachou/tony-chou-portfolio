@@ -24,6 +24,7 @@ import { streamflowDb } from '@/lib/streamflow-db';
 
 import { HydrographPanel } from './HydrographPanel';
 import { CalibrationPanel } from './CalibrationPanel';
+import { DataSources, NOT_A_FLOOD_FORECAST } from './DataSources';
 import { rangeSource } from './range-source';
 import { SkillChart } from './SkillChart';
 
@@ -320,6 +321,9 @@ export default async function StreamflowPage() {
                   {newestReading.qualifier.toLowerCase()}
                 </span>
               </p>
+              <p className="mt-3 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
+                {NOT_A_FLOOD_FORECAST}
+              </p>
             </div>
           )}
         </TerminalWindow>
@@ -459,6 +463,12 @@ export default async function StreamflowPage() {
                 </tbody>
               </table>
             </div>
+          )}
+
+          {currentForecasts.length > 0 && (
+            <p className="mt-4 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
+              {NOT_A_FLOOD_FORECAST}
+            </p>
           )}
 
           {currentForecasts.some(
@@ -621,7 +631,7 @@ export default async function StreamflowPage() {
           {lastRun && (
             <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 text-term-sm sm:grid-cols-4">
               {[
-                ['last job', lastRun.job.toLowerCase().replace('_', ' ')],
+                ['last job', lastRun.job.toLowerCase().replaceAll('_', ' ')],
                 ['outcome', lastRun.status.toLowerCase()],
                 ['rows written', lastRun.rowsWritten.toLocaleString()],
                 ['ran', relativeAge(lastRun.startedAt, now)],
@@ -634,11 +644,7 @@ export default async function StreamflowPage() {
             </dl>
           )}
 
-          <p className="mt-6 border-t border-term-border pt-5 text-term-xs text-term-muted">
-            Discharge data courtesy of the U.S. Geological Survey, National
-            Water Information System. Readings are shown in{' '}
-            {DISPLAY_TIMEZONE.replace('_', ' ')}; everything is stored in UTC.
-          </p>
+          <DataSources timeZone={DISPLAY_TIMEZONE.replaceAll('_', ' ')} />
         </TerminalWindow>
       </main>
     </div>
