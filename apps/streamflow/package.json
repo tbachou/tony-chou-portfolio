@@ -15,6 +15,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "ingest": "tsx src/ingest/ingest-observations.ts",
+    "ingest:weather": "tsx src/ingest/live-forecasts.ts",
     "rescan": "tsx src/ingest/rescan-observations.ts",
     "predict": "tsx src/forecast/predict.ts",
     "score": "tsx src/forecast/score.ts",

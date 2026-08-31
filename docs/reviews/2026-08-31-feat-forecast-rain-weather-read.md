@@ -1,0 +1,38 @@
+# Review, feat/forecast-rain-weather-read, 2026-08-31
+
+**Reviewed by**: Claude Sonnet 5 (author on unspecified)
+**Scope**: 23 files, branch vs `origin/main` (merge base `8f16348`)
+**Verdict**: Approve with nits
+
+## Summary
+
+This is build plan tasks 7-11 of the `0010-forecast-rain` child spec: the knowability-axis weather read (`forecastsAsOf`/`forecastKnowableAt`), the rain window and antecedent wetness feature builders with their paired repository queries, the archive-vs-live leakage test extended to weather rows, and the new live weather ingest job (`live-forecasts.ts`) wired into the scheduled workflow ahead of prediction. The code is unusually well specified: every non-obvious rule (the half-open window, the axis-vs-column distinction in AC-R8a, the `isCalendarMonth` guard against a live run masquerading as a finished backfill chunk, the `now + leadHours` boundary that is the whole reason the live job exists) is stated in a load-bearing docstring and backed by a named test, including several deliberate "break it, then put it back" mutation tests. I independently re-ran the suite, typecheck and lint and got the same results verify.md claims: 523/523 tests across 40 suites, clean `tsc --noEmit`, clean `eslint`.
+
+I traced all five points flagged for independent verification and found the reasoning sound in every case: the empty-store fallback in `liveForecastWindow` does not silently orphan history (the backfill walks calendar months independently of what the live job has touched, and `isCalendarMonth` correctly stops a live-shaped run from being misread as a finished chunk — this is tested directly with `ignores a live run whose window happens to start on a month boundary` / `still runs the month a live run only appeared to cover`); the `now + leadHours` far-edge arithmetic is exactly the boundary claimed, with a test that also proves one hour further would leak; the `ingestForecastMonth` → `ingestForecastWindow` refactor preserves the run-row lifecycle byte for byte (verified against the diff); and `completedForecastChunks`' new `isCalendarMonth` filter cannot exclude a legitimate pre-existing chunk, because every historical `OPEN_METEO_INGEST` row was written by `ingestForecastMonth`, which has always recorded exact calendar-month boundaries. The one real gap is in point (d): the per-lead `catch` in `ingestLiveForecasts` can, in a narrow case, swallow a failure with no trace anywhere in the CI log or the database — see the Minor below.
+
+## Minor
+
+### 🟡 A per-lead failure before the run row exists is invisible, `apps/streamflow/src/ingest/live-forecasts.ts:96-129`
+
+**Problem**: The `for` loop's `catch { summary.leadsFailed += 1; ... }` (no error binding) assumes "the run row already says FAILED and carries the sanitised error." That is true only for failures inside `ingestForecastWindow`'s own `try` block (fetch, diff, write) — the `PipelineRun` row is created and updated with `sanitizeError(cause)` there. But `ensureGauge(prisma)` and `prisma.pipelineRun.create(...)` inside `ingestForecastWindow` run *before* that `try` block. If either throws for one lead (a transient connection blip, a constraint conflict), that lead produces no `PipelineRun` row and no console output naming what failed — only the aggregate `FAILED N` count at the very end and a non-zero process exit. Compare with the backfill's CLI entry point and with `ingestForecastMonth`'s own CLI entry, both of which `console.error(sanitizeError(cause))` on an uncaught failure; this per-lead catch has no equivalent, so a GitHub Actions log for this specific failure mode would show a red step with no error text to diagnose from.
+
+**Why it matters**: The parent spec's AC-5 promise is "a silent failure of any of them is visible." The overall run does surface (exit code 1, aggregate count), but the specific cause of one lead's failure does not, which costs debugging time on exactly the job that runs unattended four times a day forever. This is a narrow window (only the pre-run-row steps of one lead have to fail), not a data-loss or leakage risk.
+
+**Suggested fix**: Bind the caught error and log `sanitizeError(cause)` per lead (matching the pattern already used at the bottom-level CLI catches), even though the common case already has a `PipelineRun` row to fall back on.
+
+## Nits
+
+- ⚪ `apps/streamflow/src/ingest/forecast-window.ts:186-191`, the empty-store fallback in `liveForecastWindow` (start at the live edge rather than `BACKFILL_START`) is correct and well-reasoned, but it does mean correctness of history depends on an operational fact — the backfill having been run at least once — that nothing in code enforces or checks. Worth a line in a runbook or the eventual `apps/streamflow/AGENTS.md` (already flagged as missing in the spec's own follow-up) once one exists.
+- ⚪ `apps/streamflow/src/ingest/live-forecasts.ts:77-86`, the docstring's "one gauge upsert" undersells the actual cost slightly (the outer `ensureGauge` plus one more inside `ingestForecastWindow` per lead, four upserts total for three leads); the second doc paragraph two lines down does clarify this ("the core upserts again per lead, which is idempotent and costs one statement"), so this is a very minor readability point, not a real ambiguity.
+
+## Strengths
+
+- The leakage test suite (`forecast/leakage.spec.ts`) is a genuine model of how to test a negative property: every fixture is read twice, once where the "shadow" row is correctly excluded and once (the control) where it's legitimately visible and dominates the sum by three orders of magnitude, which proves the exclusion is the axis bound doing work rather than an accident of the window or lead filter. Combined with the forged-row test that documents *why* a well-formed row can never reach the archive bound in production, this is careful, self-aware test design.
+- `isCalendarMonth` and its guard in `completedForecastChunks` anticipate and correctly handle the exact collision the new live job introduces (a live window's start landing precisely on a month boundary), and it's proven against a fake store that reproduces the collision rather than merely asserted.
+- `sanitizeError` and the counts-only `console.log` convention are applied consistently across every new entry point (`backfill-forecasts.ts`, `ingest-forecasts.ts`, `live-forecasts.ts`); no forecast value or connection string reaches a log line anywhere in the diff, consistent with the public-repo rule.
+- The GitHub Actions addition (`Ingest Open-Meteo forecasts` step) follows every hardening convention already established in the file: secret scoped to the step, `if: ${{ !cancelled() }}`, no `${{ github.event.* }}` interpolation, correctly ordered ahead of the prediction step.
+- verify.md is honest about what this diff does not build (AC-R15 attribution, the forecaster-skip half of AC-R10) and records a caveat (AC-R9's archive bound is unreachable by well-formed data) that a less careful writeup would have glossed over.
+
+## Test coverage
+
+Independently re-ran `npm test --workspace=apps/streamflow` (523/523 passed, 40 suites), `npx tsc --noEmit -p apps/streamflow/tsconfig.json` (clean) and `npx eslint apps/streamflow` (clean), matching verify.md's claims exactly. New logic in this diff (the window functions, the live ingest job, the rain/wetness feature builders, the axis-mapping read) is covered by named tests tied to specific acceptance criteria, including boundary and mutation tests for the two points most likely to hide a leak (the axis mapping in AC-R8a and the `now + leadHours` edge in AC-R13). No missing-coverage findings.
