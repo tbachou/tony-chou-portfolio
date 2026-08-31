@@ -1,6 +1,6 @@
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaClient } from '../generated/prisma/client';
-import type { StoredForecast } from '../types';
+import type { KnowabilityAxis, StoredForecast } from '../types';
 
 /**
  * The reads this module needs, named structurally so tests can supply a plain
@@ -29,11 +29,30 @@ export type ForecastReader = Pick<PrismaClient, '$queryRaw'>;
  * the store bills by operation, so a loop that works correctly can still be a
  * defect.
  *
- * The `asOf` bound is on `recordedAt` here, the strict axis every live read
- * uses. Spec task 7 adds the `KnowabilityAxis` parameter, and per AC-R8a it
- * maps the archive axis onto `issuedAt` by a hand written branch rather than a
- * `row[axis]` lookup, because for weather the archive column is `issuedAt` and
- * not the `validTime` the axis name spells.
+ * `axis` moves the `asOf` bound and nothing else, exactly as it does in
+ * `observationsAsOf`. The default `recordedAt` is the strict rule every live
+ * read takes, and passing nothing leaves it in place so the live pipeline
+ * cannot acquire the looser one by accident. Only the hindcast passes the
+ * archive axis; a second caller on it is a review failure (AC-R8).
+ *
+ * **On the archive axis the bound is `issuedAt`, not the `validTime` the axis
+ * name spells.** `KnowabilityAxis` names the knowability mode, not a column,
+ * and for weather the archive mode column is when the forecast was issued. The
+ * branch below is written out by hand for that reason (AC-R8a): the generic
+ * `row[axis]` idiom `reconstructAsOf` uses would compile here, because a
+ * weather row carries a `validTime` too, and would then bound on the wrong
+ * clock. `forecastKnowableAt` in `forecast-as-of.ts` states the same mapping
+ * in TypeScript and is the tested oracle for it.
+ *
+ * The window bounds stay on `validTime` under both axes. They ask which hours
+ * the caller wants, which is a different question from which rows it may see,
+ * and moving them with the axis would silently change the window instead of
+ * the visibility.
+ *
+ * The index ends on `validTime` and so does not cover the archive bound, which
+ * is filtered afterwards. That is cheap here because the four equality and
+ * range clauses ahead of it have already narrowed the scan to one gauge, model
+ * and lead over one window, and no path calls this per slot.
  */
 export async function forecastsAsOf(
   prisma: ForecastReader,
@@ -43,7 +62,16 @@ export async function forecastsAsOf(
   from: Date,
   to: Date,
   asOf: Date,
+  axis: KnowabilityAxis = 'recordedAt',
 ): Promise<StoredForecast[]> {
+  // Written as one interchangeable clause in the position the strict bound
+  // already occupied, so the parameters keep their order and the default still
+  // produces the statement this query has always produced.
+  const knowableBy =
+    axis === 'validTime'
+      ? Prisma.sql`AND "issuedAt" <= ${asOf}`
+      : Prisma.sql`AND "recordedAt" <= ${asOf}`;
+
   return prisma.$queryRaw<StoredForecast[]>(Prisma.sql`
     SELECT DISTINCT ON ("gaugeId", "validTime", "leadHours", "model")
       "gaugeId", "validTime", "leadHours", "issuedAt", "recordedAt",
@@ -52,7 +80,7 @@ export async function forecastsAsOf(
     WHERE "gaugeId" = ${gaugeId}
       AND "model" = ${model}
       AND "leadHours" = ${leadHours}
-      AND "recordedAt" <= ${asOf}
+      ${knowableBy}
       AND "validTime" >= ${from}
       AND "validTime" <= ${to}
     ORDER BY "gaugeId", "validTime", "leadHours", "model", "recordedAt" DESC

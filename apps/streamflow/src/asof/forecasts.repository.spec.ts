@@ -121,6 +121,74 @@ describe('forecastsAsOf', () => {
     );
     expect(orderBy?.startsWith(distinctOn as string)).toBe(true);
   });
+
+  // AC-R8. The default has to keep meaning the strict rule, or every live
+  // caller acquires the looser one by having been written before the parameter
+  // existed. The first test in this block pins the default statement; this one
+  // pins that naming the strict axis out loud changes nothing.
+  it('sends the same statement for an explicit recordedAt axis', async () => {
+    const strict = reader();
+    const explicit = reader();
+
+    await forecastsAsOf(strict.prisma, 'g', 'gfs_seamless', 24, FROM, TO, AS_OF);
+    await forecastsAsOf(
+      explicit.prisma,
+      'g',
+      'gfs_seamless',
+      24,
+      FROM,
+      TO,
+      AS_OF,
+      'recordedAt',
+    );
+
+    expect(explicit.statement()).toEqual(strict.statement());
+  });
+
+  // AC-R8a, on the query half. The axis is named `validTime` and the column it
+  // must bound on is `issuedAt`, which is the whole wart this criterion exists
+  // to contain.
+  it('bounds on issuedAt, not validTime, when the archive axis is asked for', async () => {
+    const { prisma, statement } = reader();
+
+    await forecastsAsOf(prisma, 'g', 'gfs_seamless', 48, FROM, TO, AS_OF, 'validTime');
+    const sent = statement();
+
+    expect(sent.text).toBe(STATEMENT.replace('"recordedAt" <= $4', '"issuedAt" <= $4'));
+    // The parameters keep their order, so the bound moved and nothing else did.
+    expect(sent.values).toEqual(['g', 'gfs_seamless', 48, AS_OF, FROM, TO]);
+  });
+
+  // The mistake a blanket rename would make. The window bounds are also on
+  // `validTime`, and they answer a different question: which hours the caller
+  // asked for, not which rows it may see. Moving them with the axis would
+  // quietly return a different window rather than a different visibility.
+  it('leaves the window bounds on validTime under the archive axis', async () => {
+    const { prisma, statement } = reader();
+
+    await forecastsAsOf(prisma, 'g', 'gfs_seamless', 48, FROM, TO, AS_OF, 'validTime');
+    const { text } = statement();
+
+    expect(text).toContain('AND "validTime" >= $5 AND "validTime" <= $6');
+    expect(text).toContain('AND "issuedAt" <= $4');
+    expect(text).not.toContain('"issuedAt" >= ');
+  });
+
+  // Visibility and reduction are two separate steps (AC-R8). The axis picks
+  // which rows may be seen; the newest revision among them still wins, so the
+  // DISTINCT ON must not follow the axis onto `issuedAt`. It cannot: within one
+  // lead every row shares a fixed offset between the two, so ordering by
+  // `issuedAt` would tie on every revision of an hour and pick arbitrarily.
+  it('keeps the reduction on recordedAt under the archive axis', async () => {
+    const { prisma, statement } = reader();
+
+    await forecastsAsOf(prisma, 'g', 'gfs_seamless', 48, FROM, TO, AS_OF, 'validTime');
+    const { text } = statement();
+
+    expect(text).toContain(
+      'ORDER BY "gaugeId", "validTime", "leadHours", "model", "recordedAt" DESC',
+    );
+  });
 });
 
 const FIRST_LEAD_STATEMENT =
