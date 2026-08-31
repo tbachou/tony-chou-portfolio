@@ -6,6 +6,8 @@ import {
   DIMENSIONS,
   blobUrl,
   evalsRepoPath,
+  isComparable,
+  latestMeasured,
   loadPublished,
   loadRun,
   loadWriteup,
@@ -84,7 +86,8 @@ export default function InterviewSimulatorEvalsPage() {
     body: loadWriteup(entry)
   }));
 
-  const latest = [...rows].reverse().find((row) => row.run !== null) as {
+  const latestEntry = latestMeasured(manifest) as PublishedRun;
+  const latest = rows.find((row) => row.entry.phase === latestEntry.phase) as {
     entry: PublishedRun;
     run: RunSummary;
   };
@@ -330,7 +333,7 @@ export default function InterviewSimulatorEvalsPage() {
                 </thead>
                 <tbody>
                   {rows.map(({ entry, run }) => {
-                    const comparable = run === null || run.datasetHash === latestHash;
+                    const comparable = isComparable(run, latestHash);
                     return (
                       <tr key={entry.phase}>
                         <th
