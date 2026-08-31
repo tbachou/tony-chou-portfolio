@@ -203,16 +203,21 @@ _Steps derived from **AC-16** in [index.md](index.md): the dashboard shows inter
 
 _Steps derived from the acceptance criteria in [0010-forecast-rain.md](0010-forecast-rain.md). `/check verify` runs these; `/test` locks the durable ones._
 
-_This child is **part built**. Build plan tasks 1 to 5 shipped: the table and its two migrations, the pinned client and parser, the as of read with its diff and batched write, one month ingested end to end, and the resumable backfill. Tasks 6 to 12 have not. Eight of the sixteen criteria therefore have no code to exercise and are marked `not built` below, so an unticked box there is not mistaken for a check nobody got round to running. Boxes marked `[x]` were run on 2026-08-30; the unticked ones under Commands need a database and are the operator's._
+_This child is **part built**. Build plan tasks 1 to 7 shipped: the table and its two migrations, the pinned client and parser, the as of read with its diff and batched write, one month ingested end to end, the resumable backfill, the archive boundary derived per lead from the store, and the weather read's knowability axis. Tasks 8 to 12 have not. Six of the sixteen criteria therefore have no code to exercise and are marked `not built` below, so an unticked box there is not mistaken for a check nobody got round to running. Boxes marked `[x]` were run on 2026-08-30; the unticked ones under Commands need a database and are the operator's._
 
 ## Commands
 
-- [x] `npm test --workspace=apps/streamflow` → 403 green across 34 suites, including 97 across the eight rain suites: `openmeteo/client` 11, `openmeteo/parse` 16, `asof/forecasts.repository` 6, `ingest/forecast-window` 18, `ingest/forecast-write` 8, `ingest/forecast-diff` 10, `ingest/ingest-forecasts` 12, `ingest/backfill-forecasts` 16 → AC-R1, AC-R2, AC-R3, AC-R4, AC-R5, AC-R12, AC-R14, AC-R16
+- [x] `npm test --workspace=apps/streamflow` → 428 green across 35 suites, including 122 across the nine rain suites: `openmeteo/client` 11, `openmeteo/parse` 16, `asof/forecasts.repository` 17, `asof/forecast-as-of` 14, `ingest/forecast-window` 18, `ingest/forecast-write` 8, `ingest/forecast-diff` 10, `ingest/ingest-forecasts` 12, `ingest/backfill-forecasts` 16 → AC-R1, AC-R2, AC-R3, AC-R4, AC-R5, AC-R6, AC-R8, AC-R8a, AC-R12, AC-R14, AC-R16
 - [x] `npx tsc --noEmit -p apps/streamflow/tsconfig.json` → clean. Note a stale generated Prisma client fails three of these suites at compile time with `'leadHours' does not exist in type 'PipelineRunSelect'`; run `npx prisma generate` in the workspace first, since `src/generated/prisma` is gitignored and does not travel with a branch
+- [x] Break it, then put it back: replace the hand written branch in `forecastKnowableAt` with `row[axis]` and the query's `"issuedAt" <= ${asOf}` with `"validTime"` → 7 tests fail across `asof/forecast-as-of` and `asof/forecasts.repository`. This is the bug AC-R8a exists to prevent, and it typechecks, so a passing suite before the mutation proves nothing on its own → AC-R8a
+- [x] Break it, then put it back: change the `axis` default on both to `'validTime'` → 6 tests fail. A loosened default is how every live caller would silently acquire the archive rule by having been written before the parameter existed → AC-R8
+- [x] Break it, then put it back: move the query's window bounds onto `"issuedAt"` along with the axis bound → 3 tests fail. The window asks which hours the caller wants, which is not the question the axis answers → AC-R8
 - [x] `gh workflow run streamflow-score.yml` against the live store → `No pending migrations to apply.` then `score OK: 0 rows, run cmtg99m18...`. A `pipelineRun.create()` whose RETURNING clause names `leadHours` now succeeds against the production schema, which is the exact call that raised P2022 on 2026-08-30 → AC-R5
 - [ ] Against a throwaway local Postgres with the migrations applied, insert a `weather_forecasts` row with `leadHours` of 0 → rejected by `weather_forecasts_lead_hours_check`. The parser half is covered by the suite above; this is the database half, and the whole point of AC-R2 is that the two catch different mistakes → AC-R2
 - [ ] Against a throwaway seeded with two months at two leads, run the backfill twice → the second pass fetches nothing and writes nothing. The suite proves the skip against a stubbed reader; this proves it against real rows and a real unique key → AC-R3, AC-R5
 - [ ] Against the live store, read only: count `OK` `OPEN_METEO_INGEST` runs grouped by `leadHours` and compare against the months the archive covers → every month accounted for at every lead, no lead running behind the others → AC-R5
+- [ ] Against a throwaway seeded at lead 48 with rows whose `issuedAt` and `validTime` straddle one issue time `T`, call `forecastsAsOf` at `T` on each axis → the archive axis returns rows the live axis cannot see, and neither returns a row issued after `T`. The suite compares generated SQL; this is the only check that the two axes mean what they say against real rows → AC-R8, AC-R8a
+- [ ] Against the live store, read only: call `earliestStoredForecastValidTimes` for the gauge and pinned model → one date per lead, each at or after 2024-01-18, and none of them equal to `BACKFILL_START`. A date matching the constant would mean the derivation is reading a literal back to itself → AC-R6
 
 ## Value sourcing checks
 
@@ -229,14 +234,16 @@ One per row of the spec's Value sourcing table that has code behind it. Each nam
 - [x] Run status: `records PARTIAL when the response falls short of the window`, `is PARTIAL even when the response looks complete, so it is never skipped`, `is OK again once the month has fully elapsed` → AC-R14
 - [x] Never asking for the future: `never asks for an hour that has not happened yet`, `records the run against the whole month, not the clamped request` → AC-R14
 - [x] Bounded database cost: `reads the comparison set in exactly one query regardless of month length`, `issues exactly one statement per call`, `ingests a full month in a statement count in the low tens, not hundreds` → AC-R16
+- [x] First usable date per lead: `asks for the least validTime per lead, at one gauge and model`, `binds no date at all, so no literal can slip in as a floor`, `omits a lead the store holds nothing for`, `reports nothing at all on an empty store, rather than a floor`, `reports a stray early row even when it makes leads non-monotonic`. The last one matters because the earliest row held is not the first usable date and does not even order across leads → AC-R6
+- [x] Which rows are visible: `reads issuedAt, not validTime, on the archive axis`, `judges the archive axis on issuedAt`, `bounds on issuedAt, not validTime, when the archive axis is asked for`, `leaves the window bounds on validTime under the archive axis`, `keeps the reduction on recordedAt under the archive axis` → AC-R8, AC-R8a
+- [x] That the mapping is hand written rather than looked up: `disagrees with a row[axis] lookup on the archive axis`, `agrees with a row[axis] lookup on the live axis, where the idiom is right`. The fixture is built so the two columns give different answers, which is what AC-R8a asks a test to show → AC-R8a
+- [x] That visibility is not reduction: `does not reduce, so a revised hour appears more than once`. AC-R7's reduction is a separate step and is not built yet, so this pins that the read hands back every revision rather than pretending to have chosen one → AC-R8
 
 ## What this does not yet do
 
-Eight criteria have no implementation at all. Listed so an unticked box is not read as an unrun check.
+Six criteria have no implementation at all. Listed so an unticked box is not read as an unrun check.
 
-- **AC-R6**, first usable date per lead derived from the store. Nothing reads the least `validTime`, and `config.ts:46` still pins `BACKFILL_START` to `2024-01-01`, which the spec's own measurements put about three weeks early and wrong differently per lead.
-- **AC-R7**, the rain feature as a sum over the reduced one row per hour set. No consumer of `precipMm` exists outside ingest.
-- **AC-R8** and **AC-R8a**, the weather read taking `KnowabilityAxis`, with the archive mode mapped onto `issuedAt` by a hand written branch rather than `row[axis]`.
+- **AC-R7**, the rain feature as a sum over the reduced one row per hour set. No consumer of `precipMm` exists outside ingest. The visibility half it builds on is in place; the reduction and the sum are not.
 - **AC-R9**, the leakage test extended to weather rows on both axes.
 - **AC-R10**, a short window yielding null rather than zero, and the forecaster skipped with the tally incremented.
 - **AC-R11**, antecedent wetness reusing `regimeInputs`.
@@ -250,9 +257,10 @@ Eight criteria have no implementation at all. Listed so an unticked box is not r
 - AC-R3 covered by the diff suite, including the absent tempC against stored null case that would otherwise write a row every run
 - AC-R4 covered by the write suite's derivation tests and by the unique key in migration `20260830050821`
 - AC-R5 covered by the backfill suite's resume tests and, at runtime, by the dispatched scoring run writing a `PipelineRun` against the production schema
-- AC-R6 not built
+- AC-R6 covered by `earliestStoredForecastValidTimes` and its suite, which binds no date at all, so no literal can stand in as a floor
 - AC-R7 not built
-- AC-R8, AC-R8a not built
+- AC-R8 covered by the axis on `forecastsAsOf` and by `forecastsVisibleAt`, on both the SQL bound and the in memory one
+- AC-R8a covered by `forecastKnowableAt` and by the fixture whose two columns disagree, plus the mutation above that shows the suite catches `row[axis]`
 - AC-R9 not built
 - AC-R10 not built
 - AC-R11 not built
