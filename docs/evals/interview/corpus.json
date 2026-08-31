@@ -1,7 +1,7 @@
 {
-  "corpusHash": "bc110d6d748ce8c0c297e0625e7703fe98da9fa8971e8e1b33337cf92a8905d8",
-  "chunkCount": 572,
-  "embeddedAt": "2026-08-31T23:02:49.582Z",
+  "corpusHash": "01dd57837b3370672f0c5c492e119535284eae2b5a7a7269904355978e021ae3",
+  "chunkCount": 584,
+  "embeddedAt": "2026-08-31T23:49:15.070Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
@@ -65,7 +65,7 @@
     },
     {
       "path": "docs/specs/_root/0007-agent-skills-storage-distribution/index.md",
-      "hash": "e65bc53cc992e2e6d9aa15905b00ab9c1a53aa511396defbca0743672727ccc3"
+      "hash": "a33f0fea2862a6282a60ff436418fa23376a81f911dac4526383179a3a0859f8"
     },
     {
       "path": "docs/specs/_root/0007-agent-skills-storage-distribution/verify.md",
@@ -150,6 +150,10 @@
     {
       "path": "docs/specs/_root/0013-credential-check-second-layer.md",
       "hash": "9110318ec1ef23b90b236b1a36106b32a3f0cda80fe25ecff582091c2077e971"
+    },
+    {
+      "path": "docs/specs/_root/0014-agent-skill-storage/index.md",
+      "hash": "ab06b104e188ffa081b4ec24c6c753852a3c469012e2dbf629b6ee2b725365c8"
     }
   ]
 }
