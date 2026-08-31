@@ -255,7 +255,7 @@ export default function StreamflowProjectPage() {
                 rel="noopener noreferrer"
                 className="terminal-select inline-flex min-h-[44px] items-center border border-term-border px-4 py-2 text-term-base text-term-ink"
               >
-                [ the gauge on usgs ↗ ]
+                [ the gauge on usgs <span aria-hidden="true">↗</span> ]
               </a>
             </div>
             <p className="mt-3 max-w-[39rem] text-term-xs text-term-muted">
