@@ -28,29 +28,34 @@ updates:
         update-types:
           - minor
           - patch
-      # DEVELOPMENT majors are grouped, which reverses the rule above on
-      # purpose. Measured 2026-08-31: seventeen Dependabot pull requests had
-      # been opened in this repo's life, two merged and eight closed, and the
-      # open set had grown to seven against a config whose stated goal was one
-      # to read on a Monday. Four of the seven were dev-dependency majors
-      # arriving one per package (tailwindcss 4, @types/node 26, archiver 8,
-      # @nestjs/schematics 12), none of which this project intends to take.
-      # @types/node had already been closed once as #5 and came straight back
-      # as #43, because closing a pull request records no decision anywhere.
+      # Development majors stay out too, for the same reason, and this line
+      # is the second attempt at it. Grouping development majors was tried on
+      # 2026-08-31 and reverted the same day, so the reasoning is written down
+      # rather than left to be rediscovered.
       #
-      # A dev-dependency major does not need its changelog read the way a
-      # shipped one does: it either builds and passes the suites or it does
-      # not, and that verdict is the same whether it arrives alone or with
-      # three others. Grouping them trades "which of the four broke it" for
-      # one pull request a week instead of four, which is the trade this repo
-      # wants. Split a package back out with its own `ignore` entry, the way
-      # eslint is handled below, when its verdict is durable.
-      development:
+      # The argument for grouping was that a development major does not need
+      # its changelog read the way a shipped one does: it either builds and
+      # passes the suites or it does not. That is true and beside the point.
+      # What keeping majors separate actually buys is ISOLATION, not reading
+      # time. The first grouped run produced a single pull request of nineteen
+      # updates in which ten were routine and nine could not be taken at all
+      # (typescript 7 removing a moduleResolution three tsconfigs still use,
+      # tailwindcss 4, the NestJS 11 to 12 family, @types/node 26, archiver 8).
+      # Grouped, the ten good ones could not merge until every one of the nine
+      # was individually ignored, discovered one failed deploy at a time.
+      # Separated, the ten merge as one weekly pull request and the nine fail
+      # alone and harmlessly, which is what this config did before.
+      #
+      # The noise the grouping was meant to fix is real, but `ignore` is the
+      # tool for it, not grouping. An ignore entry also records the decision,
+      # which is the part that was actually missing: @types/node 26 was closed
+      # as #5 and came straight back as #43, because closing a pull request
+      # records nothing anywhere.
+      development-minor-and-patch:
         dependency-type: development
         update-types:
           - minor
           - patch
-          - major
     ignore:
       # NOTE: `ignore` cannot filter by dependency-type, and it applies to
       # security updates as well as routine ones. So every entry here is a
@@ -84,6 +89,54 @@ updates:
         update-types:
           - version-update:semver-major
       - dependency-name: "@eslint/eslintrc"
+        update-types:
+          - version-update:semver-major
+      # The rest of the pins, added 2026-08-31 when the grouping experiment
+      # made the size of this list visible. Every one is a major this project
+      # has actually decided against, not a routine bump nobody got round to,
+      # and every one carries the condition that lifts it. Without the lift
+      # line an ignore becomes a permanent silence nobody remembers choosing.
+      #
+      # Weigh each addition: `ignore` cannot filter by dependency type and it
+      # applies to security updates too, so an entry here means not hearing
+      # about a vulnerability in that package either. That is tolerable for
+      # build tooling that never ships to a user, and would not be for a
+      # runtime dependency.
+      #
+      # typescript 7 removes `moduleResolution: node10`, which three tsconfigs
+      # still set as its alias `node`: apps/streamflow, packages/shared and
+      # infra/lambda/feedback-classifier. Observed 2026-08-31 as TS5108 in a
+      # Vercel build. Lift once those three move to `node16` or `bundler`,
+      # which is a migration rather than a bump.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+      # tailwindcss 4 moves the PostCSS plugin to its own `@tailwindcss/postcss`
+      # package and replaces `tailwind.config.ts` with CSS first `@theme`. This
+      # repo's whole design system lives in `terminal.css` custom properties
+      # with a measured two palette contrast model, so it is a project, not an
+      # upgrade. Observed 2026-08-31 failing the Vercel build on #42. Lift when
+      # someone does that migration deliberately.
+      - dependency-name: tailwindcss
+        update-types:
+          - version-update:semver-major
+      # @types/node tracks the Node major it describes. The repo requires Node
+      # 22, so types for 26 describe a runtime this project does not run.
+      # Rejected twice already, closed as #5 and reopened as #43. Lift when the
+      # runtime itself moves.
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
+      # The NestJS tooling family follows the framework major. apps/api runs
+      # NestJS 11, so 12 for the CLI, schematics or testing package would sit
+      # ahead of the framework it drives. Lift together with the framework.
+      - dependency-name: "@nestjs/cli"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@nestjs/schematics"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@nestjs/testing"
         update-types:
           - version-update:semver-major
       # eslint 10 does not work here yet. The visible symptom is the peer
