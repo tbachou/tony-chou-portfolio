@@ -319,6 +319,92 @@ describe('loadWriteup', () => {
   });
 });
 
+/**
+ * These fields name files inside the eval record. Nothing stops a manifest
+ * from naming a file outside it, and `path.join` resolves `..` happily, so
+ * before this check a writeupFile of `../../../../etc/hosts` read that file
+ * and the page rendered its contents. The manifest is committed and hand
+ * edited, but the repo is public and CI runs this loader on pull requests
+ * from forks, so the trust boundary is not "only the owner edits it".
+ */
+describe('unverifiable numbers', () => {
+  it('refuses a recorded delta for a dimension that has no mean at all', () => {
+    // Every case errored on grounding, so there is no mean in either run and
+    // nothing to recompute against. Accepting the recorded number would
+    // publish it unchecked, which is the one thing this loader must not do.
+    const errored = caseRow({ grounding: { status: 'judge_error' } });
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [
+          { ...measuredEntry, delta: { honesty: 0, grounding: -99, persona: 0 } },
+          unmeasuredEntry
+        ],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      },
+      results: runFile({ datasetHash: 'hash-a', cases: [errored] }),
+      baseline: {
+        noiseBand: { honesty: 0, grounding: 0, persona: 0 },
+        run: runFile({ datasetHash: 'hash-a', cases: [errored] })
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/has no mean.*cannot be checked/s);
+  });
+
+  it('refuses a results file whose dimension is scored with no numeric score', () => {
+    // This is the only input where this module and the eval runner's own
+    // aggregate() produce different means, so it is rejected by name.
+    const dir = fixture({
+      results: runFile({ cases: [caseRow({ persona: { status: 'scored' } })] })
+    });
+    expect(() => loadPublished(dir)).toThrow(/numeric score/);
+  });
+});
+
+describe('path containment', () => {
+  const withEntry = (overrides: Record<string, unknown>) => ({
+    publishedRuns: [{ ...measuredEntry, ...overrides }, unmeasuredEntry],
+    baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+  });
+
+  it('refuses a writeupFile that climbs out of the evals directory', () => {
+    const dir = fixture({ manifest: withEntry({ writeupFile: '../../../../../../etc/hosts' }) });
+    expect(() => loadPublished(dir)).toThrow(/outside/i);
+  });
+
+  it('refuses an absolute writeupFile', () => {
+    const dir = fixture({ manifest: withEntry({ writeupFile: '/etc/hosts' }) });
+    expect(() => loadPublished(dir)).toThrow(/outside/i);
+  });
+
+  it('refuses a resultsFile that climbs out', () => {
+    const dir = fixture({ manifest: withEntry({ resultsFile: '../../../../../../etc/hosts' }) });
+    expect(() => loadPublished(dir)).toThrow(/outside/i);
+  });
+
+  it('refuses a specPath that climbs out of the repo root', () => {
+    const dir = fixture({ manifest: withEntry({ specPath: '../../../../../../../etc/hosts' }) });
+    expect(() => loadPublished(dir)).toThrow(/outside/i);
+  });
+
+  it('refuses through loadWriteup directly, not only through loadPublished', () => {
+    // loadWriteup is exported and called per row by the page, so the check has
+    // to live at the read site rather than only in the manifest pass.
+    const dir = fixture({});
+    const entry = { ...loadPublished(dir).publishedRuns[0], writeupFile: '../../../etc/hosts' };
+    expect(() => loadWriteup(entry, dir)).toThrow(/outside/i);
+  });
+
+  it('refuses through loadRun directly as well', () => {
+    const dir = fixture({});
+    const entry = { ...loadPublished(dir).publishedRuns[0], resultsFile: '../../../etc/hosts' };
+    expect(() => loadRun(entry, dir)).toThrow(/outside/i);
+  });
+
+  it('still allows the ordinary nested paths the real record uses', () => {
+    expect(() => loadPublished(fixture({}))).not.toThrow();
+  });
+});
+
 describe('provenance links', () => {
   it('pins to the Vercel build commit when one is set (AC-7)', () => {
     vi.stubEnv('VERCEL_GIT_COMMIT_SHA', 'abc123');

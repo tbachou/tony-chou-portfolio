@@ -162,7 +162,15 @@ export type PublishedManifest = z.infer<typeof manifestSchema>;
 
 const dimensionResultSchema = z
   .object({ status: z.string(), score: z.number().optional() })
-  .loose();
+  .loose()
+  // A dimension marked scored with no numeric score is the one shape where
+  // this module and the eval runner's own aggregate() disagree: the runner
+  // sums it into a NaN mean, this module drops it and counts a judge error.
+  // The doc comment on aggregateDimension promises the two projections cannot
+  // disagree, so the malformed input is refused by name instead.
+  .refine((d) => d.status !== 'scored' || typeof d.score === 'number', {
+    message: 'a dimension with status "scored" must carry a numeric score'
+  });
 
 const caseSchema = z
   .object({
@@ -265,6 +273,31 @@ function summarise(results: ParsedResults): RunSummary {
 // Loaders
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolves a manifest supplied path and refuses one that leaves its base.
+ *
+ * The three path fields are meant to be simple relative names inside the eval
+ * record, but the schema cannot express that and `path.join` resolves `..`
+ * without complaint, so `writeupFile: '../../../../etc/hosts'` read that file
+ * and the page rendered it. The manifest is committed and hand edited, which
+ * sounds like a closed trust boundary and is not: the repo is public, and CI
+ * runs this loader on pull requests from forks.
+ *
+ * Refusing here rather than in the schema keeps the check at the read site,
+ * so a caller that reaches a loader directly is covered too.
+ */
+function containedPath(base: string, relative: string, label: string): string {
+  const resolved = path.resolve(base, relative);
+  const fence = base.endsWith(path.sep) ? base : base + path.sep;
+  if (resolved !== base && !resolved.startsWith(fence)) {
+    throw new Error(
+      `${label}: resolves outside ${base}: ${relative}. ` +
+        'These fields name files inside the eval record; a path that climbs out of it is refused.'
+    );
+  }
+  return resolved;
+}
+
 function readJson(absolutePath: string, label: string): unknown {
   if (!existsSync(absolutePath)) {
     throw new Error(`${label} is missing: ${absolutePath}`);
@@ -307,19 +340,19 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
   for (const entry of manifest.publishedRuns) {
     const label = `publishedRuns phase ${entry.phase}`;
 
-    const writeup = path.join(evalsDir, entry.writeupFile);
+    const writeup = containedPath(evalsDir, entry.writeupFile, `${label}: writeupFile`);
     if (!existsSync(writeup)) {
       throw new Error(`${label}: writeupFile does not exist: ${writeup}`);
     }
 
-    const spec = path.join(repoRoot, entry.specPath);
+    const spec = containedPath(repoRoot, entry.specPath, `${label}: specPath`);
     if (!existsSync(spec)) {
       throw new Error(`${label}: specPath does not exist: ${spec}`);
     }
 
     if (!entry.measured) continue;
 
-    const results = path.join(evalsDir, entry.resultsFile as string);
+    const results = containedPath(evalsDir, entry.resultsFile as string, `${label}: resultsFile`);
     if (!existsSync(results)) {
       throw new Error(`${label}: resultsFile does not exist: ${results}`);
     }
@@ -371,7 +404,21 @@ function checkRecordedDelta(
   for (const dimension of DIMENSIONS) {
     const runMean = run.perDimension[dimension].mean;
     const baselineMean = baseline.perDimension[dimension].mean;
-    if (runMean === null || baselineMean === null) continue;
+    if (runMean === null || baselineMean === null) {
+      // No mean means nothing to check against, so any recorded number here
+      // would be published unverified. Refuse rather than accept it silently:
+      // this function's whole job is that a recorded delta is either checked
+      // or impossible.
+      const recorded = (entry.delta as Record<Dimension, number>)[dimension];
+      if (recorded !== 0) {
+        throw new Error(
+          `publishedRuns phase ${entry.phase}: recorded delta for ${dimension} is ${recorded}, ` +
+            'but that dimension has no mean in the run or the baseline (every case errored), ' +
+            'so the number cannot be checked. Record 0 or drop the phase from the manifest.'
+        );
+      }
+      continue;
+    }
     const recomputed = round4(runMean - baselineMean);
     const recorded = round4((entry.delta as Record<Dimension, number>)[dimension]);
     if (recomputed !== recorded) {
@@ -394,16 +441,21 @@ export function loadRun(entry: PublishedRun, evalsDir: string = EVALS_DIR): RunS
   if (!entry.measured || !entry.resultsFile) {
     throw new Error(`publishedRuns phase ${entry.phase} took no measurement; it has no run to load`);
   }
+  const label = `publishedRuns phase ${entry.phase}`;
   return summarise(
     parseResults(
-      path.join(evalsDir, entry.resultsFile),
-      `publishedRuns phase ${entry.phase}: its results file`
+      containedPath(evalsDir, entry.resultsFile, `${label}: resultsFile`),
+      `${label}: its results file`
     )
   );
 }
 
 export function loadWriteup(entry: PublishedRun, evalsDir: string = EVALS_DIR): string {
-  const absolute = path.join(evalsDir, entry.writeupFile);
+  const absolute = containedPath(
+    evalsDir,
+    entry.writeupFile,
+    `publishedRuns phase ${entry.phase}: writeupFile`
+  );
   if (!existsSync(absolute)) {
     throw new Error(`publishedRuns phase ${entry.phase}: writeupFile does not exist: ${absolute}`);
   }

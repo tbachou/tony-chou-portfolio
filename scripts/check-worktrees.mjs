@@ -30,30 +30,8 @@
  * prevent, hidden one level deeper.
  */
 
-/**
- * Ignored paths a build or an install can recreate. Everything else that is
- * ignored is treated as irreplaceable, so a new kind of local only file is
- * reported rather than silently dropped.
- */
-const REGENERABLE = [
-  'node_modules/',
-  'dist/',
-  'build/',
-  'out/',
-  '.next/',
-  '.turbo/',
-  '.cache/',
-  'coverage/',
-  'src/generated/',
-  '.DS_Store',
-];
-
-function isRegenerable(entry) {
-  return REGENERABLE.some((r) =>
-    r.endsWith('/') ? entry.includes(r) : entry.endsWith(r),
-  );
-}
 import { execFileSync } from 'node:child_process';
+import { isRegenerable, porcelainPath } from './worktree-paths.mjs';
 
 function git(args, cwd) {
   return execFileSync('git', args, {
@@ -121,8 +99,8 @@ const rows = worktrees.map((wt) => {
     dirty = dirtyFiles.length;
     hidden = lines
       .filter((l) => l.startsWith('!!'))
-      .map((l) => l.slice(2).trim())
-      .filter((f) => !isRegenerable(f));
+      .map((l) => porcelainPath(l))
+      .filter((f) => f !== null && !isRegenerable(f));
   } catch {
     /* unreadable worktree */
   }
