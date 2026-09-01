@@ -29,6 +29,9 @@ const state = vi.hoisted(() => ({
   everIssued: null as unknown,
   everIssuedReject: false,
   lastRunReject: false,
+  lastIngest: null as unknown,
+  lastIngestReject: false,
+  newestReadingReject: false,
 }));
 
 vi.mock('@/lib/streamflow-db', () => ({
@@ -46,10 +49,22 @@ vi.mock('@/lib/streamflow-db', () => ({
     },
     observation: {
       count: async () => 18_849,
-      findFirst: async () => state.newestReading,
+      findFirst: async () => {
+        if (state.newestReadingReject) throw new Error('reading read failed');
+        return state.newestReading;
+      },
     },
     pipelineRun: {
-      findFirst: async () => {
+      // Two different reads now. `job: 'USGS_INGEST'` is the health one;
+      // the combined set is what the panel displays. They must be
+      // distinguishable, because the whole point of the fix is that a
+      // rescan row can be newer and healthier than the ingest row.
+      findFirst: async (args: { where?: { job?: unknown } }) => {
+        const ingestOnly = args?.where?.job === 'USGS_INGEST';
+        if (ingestOnly) {
+          if (state.lastIngestReject) throw new Error('ingest read failed');
+          return state.lastIngest;
+        }
         if (state.lastRunReject) throw new Error('run read failed');
         return state.lastRun;
       },
@@ -133,6 +148,9 @@ beforeEach(() => {
   state.everIssued = { id: 'pred-ever' };
   state.everIssuedReject = false;
   state.lastRunReject = false;
+  state.lastIngest = { status: 'OK' as const, startedAt: new Date(Date.now() - HOUR) };
+  state.lastIngestReject = false;
+  state.newestReadingReject = false;
 });
 afterEach(cleanup);
 
@@ -158,15 +176,15 @@ describe('the reading warning', () => {
 
   it('names a broken pipeline only when the last run actually failed', async () => {
     state.newestReading = readingAt(30);
-    state.lastRun = { ...(state.lastRun as object), status: 'OK' } as unknown;
+    state.lastIngest = { status: 'OK', startedAt: new Date(Date.now() - HOUR) };
 
     await renderPage();
-    expect(screen.queryByText(/No ingest run has completed since then/i)).toBeNull();
+    expect(screen.queryByText(/not running normally/i)).toBeNull();
     cleanup();
 
-    state.lastRun = { ...(state.lastRun as object), status: 'FAILED' } as unknown;
+    state.lastIngest = { status: 'FAILED', startedAt: new Date(Date.now() - HOUR) };
     await renderPage();
-    expect(screen.getByText(/No ingest run has completed since then/i)).toBeTruthy();
+    expect(screen.getByText(/not running normally/i)).toBeTruthy();
   });
 
   it('says the pipeline is not completing when the scheduler simply stopped', async () => {
@@ -175,16 +193,15 @@ describe('the reading warning', () => {
     // newest row stays an old success. Reading status alone reports that as
     // perfect health, which is what the first version did.
     state.newestReading = readingAt(70 * 24);
-    state.lastRun = {
-      job: 'USGS_INGEST' as const,
-      status: 'OK' as const, // still OK, because nothing has run to fail
+    // The ingest row itself is an old success, because nothing has run to fail.
+    state.lastIngest = {
+      status: 'OK',
       startedAt: new Date(Date.now() - 70 * 24 * HOUR),
-      rowsWritten: 96,
     };
 
     await renderPage();
 
-    expect(screen.getByText(/No ingest run has completed since then/i)).toBeTruthy();
+    expect(screen.getByText(/not running normally/i)).toBeTruthy();
   });
 
   it('points the reader somewhere else while the data is stale', async () => {
@@ -266,17 +283,17 @@ describe('the forecast table', () => {
   });
 });
 
-describe('the stale input marker', () => {
+describe('the stale forecast marker', () => {
   it('marks nothing when the forecasts saw a recent reading', async () => {
     state.observations = [observationAt(3)];
     state.predictions = [forecast()];
 
     await renderPage();
 
-    expect(screen.queryByText(/does not describe the river as it is now/i)).toBeNull();
+    expect(screen.queryByText(/may be well off/i)).toBeNull();
   });
 
-  it('collapses to one note when every surviving row is stale input', async () => {
+  it('collapses to one note when every surviving row is stale', async () => {
     // AC-S7. Six identical symbols for one fact is noise, and all affected is
     // the common case during an outage.
     state.observations = [observationAt(40)];
@@ -287,7 +304,7 @@ describe('the stale input marker', () => {
 
     await renderPage();
 
-    const notes = screen.getAllByText(/does not describe the river as it is now/i);
+    const notes = screen.getAllByText(/may be well off/i);
     expect(notes).toHaveLength(1);
     // and no per row markers alongside it
     expect(screen.queryByText('‡')).toBeNull();
@@ -316,7 +333,7 @@ describe('the stale input marker', () => {
     expect(screen.getByText(/Issued more than .* hours ago/i)).toBeTruthy();
   });
 
-  it('marks per row when only some rows are stale input', async () => {
+  it('marks per row when only some rows are stale', async () => {
     // One forecast issued long ago against an old reading, one issued
     // recently against a fresh one.
     state.observations = [observationAt(40), observationAt(1)];
@@ -348,7 +365,7 @@ describe('the stale input marker', () => {
 
     await renderPage();
 
-    expect(screen.getAllByText(/does not describe the river as it is now/i)).toHaveLength(1);
+    expect(screen.getAllByText(/may be well off/i)).toHaveLength(1);
     expect(screen.queryByText('‡')).toBeNull();
   });
 });
@@ -365,21 +382,19 @@ describe('a failed read is never reported as a fact', () => {
     await renderPage();
 
     expect(screen.queryByText(/No forecast has been issued yet/i)).toBeNull();
-    expect(screen.getByText(/could not be read just now/i)).toBeTruthy();
+    expect(screen.getByText(/could not check whether one has ever been issued/i)).toBeTruthy();
   });
 
   it('does not claim the pipeline is broken when the run read failed', async () => {
     // It used to say "the pipeline is not completing its runs" in the same
     // render as the panel below saying "the schedule itself is unaffected".
     state.newestReading = readingAt(30);
-    state.lastRunReject = true;
+    state.lastIngestReject = true;
 
     await renderPage();
 
     expect(screen.getByText(/nothing newer has reached this page/i)).toBeTruthy();
-    expect(
-      screen.queryByText(/No ingest run has completed since then/i),
-    ).toBeNull();
+    expect(screen.queryByText(/not running normally/i)).toBeNull();
   });
 
   it('still points somewhere useful when it cannot tell', async () => {
@@ -391,10 +406,96 @@ describe('a failed read is never reported as a fact', () => {
     // Scoped to the empty state itself: the footer names them too, and the
     // point of this fix is that the pointer is HERE, in the state a reader
     // reaches with no forecast on screen.
-    const emptyState = screen.getByText(/could not be read just now/i);
+    const emptyState = screen.getByText(/could not check whether one has ever been issued/i);
     expect(
       emptyState.querySelector('a[href="https://water.noaa.gov/"]'),
     ).toBeTruthy();
     expect(emptyState.textContent).toMatch(/emergency services/i);
+  });
+});
+
+describe('the page cannot call a reading stale and its forecasts fine', () => {
+  it('marks rows built from a reading the page itself is warning about', async () => {
+    // The six hour contradiction window after a single missed ingest, found by
+    // the third gate round. The reading crosses the threshold first; forecasts
+    // built from that very reading stay under it until their own age catches
+    // up. For those six hours the page warned about the number and presented
+    // unmarked forecasts derived from it.
+    //
+    // Reading 9h01m old, so it is flagged. The forecast was issued 3h ago from
+    // that same reading, so its INPUT age is 6h01m, under the threshold: the
+    // forecast-only predicate says fine, and only the reading's own staleness
+    // makes it stale.
+    const readingAge = 9 * HOUR + 60_000;
+    state.newestReading = readingAt(readingAge / HOUR);
+    state.observations = [observationAt(readingAge / HOUR)];
+    state.predictions = [
+      forecast({
+        horizonHours: 72,
+        issuedAt: new Date(Date.now() - 3 * HOUR),
+        targetTime: new Date(Date.now() + 69 * HOUR),
+      }),
+    ];
+
+    await renderPage();
+
+    // the page is warning about the reading...
+    expect(screen.getByText(/nothing newer has reached this page/i)).toBeTruthy();
+    // ...so it must not present a forecast built from it as fine
+    expect(screen.getByText(/may be well off/i)).toBeTruthy();
+  });
+});
+
+describe('a rescan must not stand in for a dead ingest', () => {
+  it('warns even when a healthy rescan is the newest pipeline row', async () => {
+    // The HIGH the third gate round found. The rescan step runs even when
+    // ingest fails, and a rescan with nothing to re-poll records OK, so the
+    // newest row of the combined set is a fresh success for as long as ingest
+    // is broken. Health is now read from the ingest job alone.
+    state.newestReading = readingAt(70);
+    state.lastIngest = {
+      status: 'FAILED',
+      startedAt: new Date(Date.now() - 70 * HOUR),
+    };
+    // what the display panel shows: a healthy rescan twelve minutes ago
+    state.lastRun = {
+      job: 'USGS_RESCAN' as const,
+      status: 'OK' as const,
+      startedAt: new Date(Date.now() - 12 * 60_000),
+      rowsWritten: 0,
+    };
+
+    await renderPage();
+
+    expect(screen.getByText(/not running normally/i)).toBeTruthy();
+  });
+});
+
+describe('what the page says when it could not look', () => {
+  it('never claims the gauge or the ingest job is fine from a failed read', async () => {
+    // The READ must reject. A null reading is the empty store, a different
+    // state that correctly renders nothing at all.
+    state.newestReadingReject = true;
+
+    await renderPage();
+
+    // Queried off the DOM: these paragraphs hold child anchors, and getByText
+    // joins only direct text nodes, so a regex spanning the anchors misses.
+    const msg = [...document.querySelectorAll('p')].find((el) =>
+      /latest reading could not be read/i.test(el.textContent ?? ''),
+    );
+    expect(msg?.textContent).toMatch(
+      /says nothing about the gauge or the ingest job/i,
+    );
+    // and that state had no pointer at all before
+    expect(msg?.querySelector('a[href="https://water.noaa.gov/"]')).toBeTruthy();
+  });
+
+  it('never claims the schedule is unaffected when it could not read the runs', async () => {
+    state.lastRunReject = true;
+
+    await renderPage();
+
+    expect(screen.queryByText(/schedule itself is unaffected/i)).toBeNull();
   });
 });
