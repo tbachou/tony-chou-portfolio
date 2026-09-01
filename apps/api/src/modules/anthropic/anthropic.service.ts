@@ -3,6 +3,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   DEFAULT_ANTHROPIC_MODEL,
   type AiProvider,
+  type RunToolConversationParams,
+  type RunToolConversationResult,
   type ForceToolCallParams,
   type ForceToolCallResult,
   type StreamMessageParams,
@@ -10,6 +12,10 @@ import {
   totalInputTokens,
   type UpstreamErrorClassification,
 } from './ai-provider.interface';
+import {
+  runToolConversation,
+  type ProviderMessage,
+} from './tool-conversation';
 
 // Re-exported for existing call sites (`import type { StreamMessageParams } from
 // './anthropic.service'`); the canonical definitions now live in
@@ -75,6 +81,25 @@ export class AnthropicService implements AiProvider {
       inputTokens: totalInputTokens(finalMessage.usage),
       outputTokens: finalMessage.usage.output_tokens,
     };
+  }
+
+  /** The model driven tool loop (spec 0012 phase three). Shared with Bedrock. */
+  async runToolConversation(
+    params: RunToolConversationParams,
+  ): Promise<RunToolConversationResult> {
+    const client = this.getClient();
+    return runToolConversation(
+      // The cast is the seam. `tool-conversation.ts` deliberately imports no
+      // SDK, because this SDK's types and the other provider's are nominally
+      // different (see that file). Both accept this wire shape at runtime.
+      (body, options) =>
+        client.messages.create(
+          body as unknown as Parameters<typeof client.messages.create>[0],
+          options,
+        ) as unknown as Promise<ProviderMessage>,
+      this.model,
+      params,
+    );
   }
 
   /**

@@ -3,6 +3,7 @@ import { ConversationService } from './conversation.service';
 import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AiProvider } from '../anthropic/ai-provider.interface';
+import { runToolConversation } from '../anthropic/tool-conversation';
 import type { DailyUsageService } from '../daily-usage/daily-usage.service';
 import type {
   HistoryTurn,
@@ -66,7 +67,20 @@ function makeHarness() {
       delete: jest.fn().mockResolvedValue(undefined),
     },
   };
-  const anthropic = { streamMessage: jest.fn(), forceToolCall: jest.fn() };
+  const anthropic = {
+    streamMessage: jest.fn(),
+    forceToolCall: jest.fn(),
+    // The Tony generation runs through here now (0012 phase three AC-4); only
+    // the interviewer still uses streamMessage. Defaulted so the many tests
+    // that only care about the interviewer do not each have to stub it.
+    runToolConversation: jest.fn().mockResolvedValue({
+      text: 'a',
+      inputTokens: 1,
+      outputTokens: 1,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+    }),
+  };
   const dailyUsage = {
     assertCapNotExceeded: jest.fn().mockResolvedValue(undefined),
     incrementOp: jest.fn((count: number, tokens: number) => ({
@@ -108,17 +122,18 @@ describe('ConversationService.generateTurnPair', () => {
 
   it('happy path: emits the full event sequence and commits both turns via one transaction', async () => {
     const h = makeHarness();
-    h.anthropic.streamMessage
-      .mockResolvedValueOnce({
-        text: 'What drove the rebuild?',
-        inputTokens: 20,
-        outputTokens: 10,
-      })
-      .mockResolvedValueOnce({
-        text: 'Faster.',
-        inputTokens: 30,
-        outputTokens: 40,
-      });
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'What drove the rebuild?',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: 'Faster.',
+      inputTokens: 30,
+      outputTokens: 40,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+    });
 
     await h.service.generateTurnPair({
       topic,
@@ -141,7 +156,9 @@ describe('ConversationService.generateTurnPair', () => {
       'turn_end',
       { conversationId: 'conv-1', turnIndex: 0, isFinal: false },
     ]);
-    expect(h.anthropic.streamMessage).toHaveBeenCalledTimes(2);
+    // One interviewer call on streamMessage, one Tony call on the tool loop.
+    expect(h.anthropic.streamMessage).toHaveBeenCalledTimes(1);
+    expect(h.anthropic.runToolConversation).toHaveBeenCalledTimes(1);
     expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(h.prisma.conversationTurn.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'turn-1' } }),
@@ -153,6 +170,67 @@ describe('ConversationService.generateTurnPair', () => {
     );
     expect(h.dailyUsage.incrementOp).toHaveBeenCalledWith(2, 100);
     expect(h.prisma.conversationTurn.delete).not.toHaveBeenCalled();
+  });
+
+  describe('retrieval is offered only when it is configured', () => {
+    const upstashEnv = {
+      UPSTASH_VECTOR_REST_URL: 'https://example-vector.upstash.io',
+      UPSTASH_VECTOR_REST_TOKEN: 'read-only-token',
+    };
+
+    it('offers no tools at all when the Upstash credentials are absent', async () => {
+      delete process.env.UPSTASH_VECTOR_REST_URL;
+      delete process.env.UPSTASH_VECTOR_REST_TOKEN;
+      const h = makeHarness();
+      h.anthropic.streamMessage.mockResolvedValueOnce({
+        text: 'q',
+        inputTokens: 1,
+        outputTokens: 1,
+      });
+
+      await h.service.generateTurnPair({
+        topic,
+        prepared,
+        history: [],
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      // Without this the model spends an extra round trip per searching turn
+      // to be told the search is unavailable, in a deployment that knew at
+      // startup. With no tools the generation is what it was before retrieval.
+      const params = h.anthropic.runToolConversation.mock.calls[0][0] as {
+        tools: unknown[];
+        maxIterations: number;
+      };
+      expect(params.tools).toEqual([]);
+      expect(params.maxIterations).toBe(1);
+    });
+
+    it('offers searchKnowledge when they are present', async () => {
+      Object.assign(process.env, upstashEnv);
+      const h = makeHarness();
+      h.anthropic.streamMessage.mockResolvedValueOnce({
+        text: 'q',
+        inputTokens: 1,
+        outputTokens: 1,
+      });
+
+      await h.service.generateTurnPair({
+        topic,
+        prepared,
+        history: [],
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      const params = h.anthropic.runToolConversation.mock.calls[0][0] as {
+        tools: { name: string }[];
+        maxIterations: number;
+      };
+      expect(params.tools.map((t) => t.name)).toEqual(['searchKnowledge']);
+      expect(params.maxIterations).toBeGreaterThan(1);
+    });
   });
 
   it('a blank interviewer question fails the turn rather than persisting an empty row', async () => {
@@ -179,10 +257,284 @@ describe('ConversationService.generateTurnPair', () => {
     ]);
     // Tony is never asked, and the reserved slot is released for a retry.
     expect(h.anthropic.streamMessage).toHaveBeenCalledTimes(1);
+    expect(h.anthropic.runToolConversation).not.toHaveBeenCalled();
     expect(h.prisma.conversationTurn.delete).toHaveBeenCalledWith({
       where: { id: 'turn-1' },
     });
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('records tokens already billed when the tool loop throws part way', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    // Built by the REAL tool loop rather than by faking its mechanism: the
+    // usage now lives in a module-private WeakMap, so a test that attaches it
+    // by hand would pass while the production contract was broken.
+    let upstreamCalls = 0;
+    const failure = await runToolConversation(
+      () => {
+        upstreamCalls += 1;
+        if (upstreamCalls <= 2) {
+          return Promise.resolve({
+            content: [
+              { type: 'tool_use', id: `tu_${upstreamCalls}`, name: 't', input: {} },
+            ],
+            stop_reason: 'tool_use',
+            usage: { input_tokens: 1200, output_tokens: 90 },
+          });
+        }
+        return Promise.reject(new Error('529 overloaded'));
+      },
+      'model-x',
+      {
+        system: 's',
+        userMessage: 'u',
+        maxTokens: 600,
+        tools: [{ name: 't', description: 'd', inputSchema: {} }],
+        executeTool: async () => 'r',
+        maxIterations: 4,
+      },
+    ).catch((error: unknown) => error);
+    h.anthropic.runToolConversation.mockRejectedValueOnce(failure);
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    // The turn failed, but the money was still spent, so the daily cap has to
+    // move. Otherwise a persistently failing turn burns budget invisibly.
+    // 2 loop iterations at 1200+90, plus the interviewer's 20+10, which was
+    // itself being dropped until the running total was hoisted.
+    expect(h.dailyUsage.incrementOp).toHaveBeenCalledWith(0, 2580 + 30);
+    expect(h.events.map(([event]) => event)).toContain('turn_error');
+    expect(h.prisma.conversationTurn.delete).toHaveBeenCalled();
+  });
+
+  it('records both generations when the transaction itself fails', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: 'a real answer',
+      inputTokens: 5000,
+      outputTokens: 2500,
+      toolCallCount: 1,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: false,
+    });
+    h.prisma.$transaction.mockRejectedValueOnce(new Error('deadlock detected'));
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    // Both generations completed and were billed before the write failed, and
+    // a Prisma error carries no tool loop usage, so nothing else could
+    // recover them: 30 + 7500.
+    expect(h.dailyUsage.incrementOp).toHaveBeenLastCalledWith(0, 7530);
+  });
+
+  it('does not double count when the failure comes after a committed turn', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    // The transaction succeeds, charging the full turn, and the failure
+    // happens afterwards. Charging again from the catch would bill it twice.
+    let emitted = 0;
+    const emit = (event: string, data: unknown) => {
+      emitted += 1;
+      if (event === 'turn_end') throw new Error('client disconnected');
+      h.events.push([event, data]);
+    };
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit,
+    });
+
+    expect(emitted).toBeGreaterThan(0);
+    // Only the transaction's own increment, never a second one from the catch.
+    expect(h.dailyUsage.incrementOp).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts Tony\'s tokens when a failure lands between the call and the write', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: 'a real answer',
+      inputTokens: 400,
+      outputTokens: 300,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: false,
+    });
+
+    // Several statements sit between the billed call and the transaction: the
+    // retrieval log, the guard, the emit loop. Each is a window where these
+    // tokens are spent and uncounted, which is why the accumulate belongs
+    // immediately after the call rather than just before the write.
+    const emit = (event: string, data: unknown) => {
+      if (event === 'token') throw new Error('client vanished mid-stream');
+      h.events.push([event, data]);
+    };
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit,
+    });
+
+    expect(h.dailyUsage.incrementOp).toHaveBeenCalledWith(0, 30 + 700);
+  });
+
+  it('blames the token budget, not the guard, when a tool call is truncated', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: '',
+      inputTokens: 10,
+      outputTokens: 10,
+      toolCallCount: 1,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: true,
+    });
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    // The guard does reject the empty text, but the cause is the token
+    // budget. Logging it as a guard failure sends an operator after the wrong
+    // thing, which is the misattribution this whole phase started with.
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(lines.some((l) => l.includes('truncated mid tool call'))).toBe(true);
+    expect(lines.some((l) => l.includes('Ownership guard fired'))).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('still blames the guard for a genuine guard failure', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: '   ',
+      inputTokens: 10,
+      outputTokens: 10,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: false,
+    });
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(lines.some((l) => l.includes('Ownership guard fired'))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('warns with the error type and message when retrieval fails', async () => {
+    // The line an operator actually sees. Nothing asserted it, so making the
+    // service's onFailure a no-op, dropping the cause, or downgrading warn to
+    // debug all left the suite green.
+    process.env.UPSTASH_VECTOR_REST_URL = 'https://example-vector.upstash.io';
+    process.env.UPSTASH_VECTOR_REST_TOKEN = 'read-only-token';
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    h.anthropic.runToolConversation.mockImplementationOnce(
+      async (params: { executeTool: (c: unknown) => Promise<string> }) => {
+        // Drive the real executor the service built, with a tool the model
+        // was never offered, so onFailure fires through the production path.
+        await params.executeTool({ name: 'nope', input: {} });
+        return {
+          text: 'an answer',
+          inputTokens: 1,
+          outputTokens: 1,
+          toolCallCount: 1,
+          stoppedOnIterationCap: false,
+          stoppedOnMaxTokens: false,
+        };
+      },
+    );
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(
+      lines.some((l) => l.startsWith('searchKnowledge failed: unknown tool requested: nope')),
+    ).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('does not touch the counters when nothing was billed', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockRejectedValue(new Error('upstream down'));
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    expect(h.dailyUsage.incrementOp).not.toHaveBeenCalled();
   });
 
   it('error path: releases the reserved slot and emits turn_error instead of turn_end', async () => {
@@ -212,9 +564,11 @@ describe('ConversationService.generateTurnPair', () => {
       delete process.env.AI_PROVIDER;
       process.env.ANTHROPIC_MODEL = 'claude-sonnet-5';
       const h = makeHarness();
-      h.anthropic.streamMessage
-        .mockResolvedValueOnce({ text: 'q', inputTokens: 1, outputTokens: 1 })
-        .mockResolvedValueOnce({ text: 'a', inputTokens: 1, outputTokens: 1 });
+      h.anthropic.streamMessage.mockResolvedValueOnce({
+        text: 'q',
+        inputTokens: 1,
+        outputTokens: 1,
+      });
       const logSpy = jest.spyOn(Logger.prototype, 'log');
 
       await h.service.generateTurnPair({
@@ -409,9 +763,11 @@ describe('interviewer user message (spec 0012 AC-1, AC-2)', () => {
 
   async function interviewerMessage(history: HistoryTurn[] = []) {
     const h = makeHarness();
-    h.anthropic.streamMessage
-      .mockResolvedValueOnce({ text: 'q', inputTokens: 1, outputTokens: 1 })
-      .mockResolvedValueOnce({ text: 'a', inputTokens: 1, outputTokens: 1 });
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
 
     await h.service.generateTurnPair({
       topic,
@@ -440,9 +796,11 @@ describe('interviewer user message (spec 0012 AC-1, AC-2)', () => {
 
   it('says so plainly when the topic has no other story', async () => {
     const h = makeHarness();
-    h.anthropic.streamMessage
-      .mockResolvedValueOnce({ text: 'q', inputTokens: 1, outputTokens: 1 })
-      .mockResolvedValueOnce({ text: 'a', inputTokens: 1, outputTokens: 1 });
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
 
     await h.service.generateTurnPair({
       topic: { ...topic, stories: [story] } as TopicWithStories,

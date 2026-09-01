@@ -6,10 +6,22 @@ import {
   resolveConfiguredProvider,
   type AiProvider,
 } from '../anthropic/ai-provider.interface';
+import { usageFromError } from '../anthropic/tool-conversation';
 import { ConversationRole } from '../../generated/prisma/enums';
 import { Prisma } from '../../generated/prisma/client';
 import type { StoryModel, TopicModel } from '../../generated/prisma/models';
 import { loadConversationSkill } from './skill-loader';
+import {
+  createSearchKnowledgeExecutor,
+  MAX_TOOL_ITERATIONS,
+  retrievalStrictFromEnv,
+  SEARCH_KNOWLEDGE_TOOL,
+  type RetrievalStats,
+} from './retrieval/search-knowledge';
+import {
+  isRetrievalConfigured,
+  openReadOnly,
+} from './retrieval/vector-store';
 import {
   CREDENTIAL_GUARD_FALLBACK,
   CREDENTIAL_GUARD_REASON,
@@ -227,6 +239,12 @@ export class ConversationService {
     const { conversationId, turnIndex, isFinal, story, interviewerTurnId } =
       prepared;
 
+    // Everything actually billed this turn, so a failure can still charge it
+    // against the daily cap. The tool loop's own tokens ride on the thrown
+    // error; the interviewer's are only here, and were being dropped.
+    let billedTokens = 0;
+    let committed = false;
+
     try {
       emit('turn_start', { role: 'interviewer' });
       const interviewerResult = await this.anthropic.streamMessage({
@@ -241,6 +259,9 @@ export class ConversationService {
         onToken: (text) => emit('token', { text }),
       });
 
+      billedTokens +=
+        interviewerResult.inputTokens + interviewerResult.outputTokens;
+
       // The interviewer has no guard of its own, so a blank question would be
       // persisted as-is and then dropped from later transcripts, leaving an
       // answer with no question above it. Treat it as a failed generation:
@@ -253,7 +274,35 @@ export class ConversationService {
       // Buffered, not live: the ownership guard below must see the complete
       // response before anything reaches the client, so onToken here only
       // accumulates internally (via AnthropicService's return value), never emits.
-      const tonyGenerated = await this.anthropic.streamMessage({
+      // Retrieval is offered to the Tony generation only (AC-4). The
+      // interviewer above gets no tools: it asks questions from the topic and
+      // has nothing to look up.
+      //
+      // And it is offered only when it is actually configured. Otherwise the
+      // model spends a whole extra round trip per searching turn to be told
+      // the search is unavailable, in a deployment that knew at startup. With
+      // no credentials this path is byte for byte the generation that ran
+      // before retrieval existed.
+      const retrievalEnabled = isRetrievalConfigured();
+      if (!retrievalEnabled) this.warnRetrievalUnconfiguredOnce();
+      const retrieval = createSearchKnowledgeExecutor({
+        openIndex: openReadOnly,
+        // The guard filter is story aware, because the guard is: the Product
+        // Forge numeric rule and the sole credit rule fire only for some
+        // stories.
+        story,
+        // One level, carrying the error's type and message. Deciding whether
+        // a failure is ours or theirs was tried three times and was wrong
+        // three times; the rate in `stats.failures` is the thing to alert on.
+        onFailure: (cause) =>
+          this.logger.warn(`searchKnowledge failed: ${cause}`),
+        // Production degrades (AC-8); the eval harness sets this and fails
+        // loudly instead (AC-9), because a run that silently drops retrieval
+        // still costs money and still reports scores.
+        failLoudly: retrievalStrictFromEnv(),
+      });
+
+      const tonyGenerated = await this.anthropic.runToolConversation({
         system: loadConversationSkill('tony'),
         userMessage: buildTonyUserMessage(
           story,
@@ -264,9 +313,30 @@ export class ConversationService {
         // 600 leaves room for a slightly long answer to finish. At 400 the
         // model's longer answers truncated mid-sentence (spec 0011's eval
         // caught it: persona judge scored the cut-off answers 0).
+        //
+        // This is per model turn, not per generation. A searching turn spends
+        // a few of these tokens on the tool call itself and still has the full
+        // budget for the answer that follows.
         maxTokens: 600,
-        onToken: () => undefined,
+        tools: retrievalEnabled ? [SEARCH_KNOWLEDGE_TOOL] : [],
+        executeTool: retrieval.execute,
+        // One model turn when nothing is offered: with no tools there is
+        // nothing to come back for, and a larger number would only matter if
+        // the model could ask for something.
+        maxIterations: retrievalEnabled ? MAX_TOOL_ITERATIONS : 1,
       });
+
+      // Immediately after the billed call, mirroring the interviewer above.
+      // Everything between here and the transaction (the retrieval log, the
+      // guard, the emit loop) can throw, and each statement in between is a
+      // window where these tokens are spent and uncounted.
+      billedTokens += tonyGenerated.inputTokens + tonyGenerated.outputTokens;
+
+      this.logRetrieval(
+        retrieval.stats,
+        tonyGenerated.stoppedOnIterationCap,
+        tonyGenerated.stoppedOnMaxTokens,
+      );
 
       const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
       let tonyText = tonyGenerated.text;
@@ -278,7 +348,10 @@ export class ConversationService {
             ? CREDENTIAL_GUARD_FALLBACK
             : (story.requiredFraming ?? GENERIC_GUARD_FALLBACK);
         this.logger.warn(
-          `Ownership guard fired for story ${story.id} (${story.title}): ${guardResult.reason}`,
+          tonyGenerated.stoppedOnMaxTokens
+            ? `Generation truncated mid tool call for story ${story.id} (${story.title}); ` +
+                'answered with the fallback. This is a token budget problem, not a guard failure.'
+            : `Ownership guard fired for story ${story.id} (${story.title}): ${guardResult.reason}`,
         );
       }
 
@@ -290,7 +363,6 @@ export class ConversationService {
         interviewerResult.inputTokens + interviewerResult.outputTokens;
       const tonyTokenCount =
         tonyGenerated.inputTokens + tonyGenerated.outputTokens;
-
       await this.prisma.$transaction([
         this.prisma.conversationTurn.update({
           where: { id: interviewerTurnId },
@@ -316,9 +388,35 @@ export class ConversationService {
         this.dailyUsage.incrementOp(2, interviewerTokenCount + tonyTokenCount),
       ]);
 
+      committed = true;
       emit('turn_end', { conversationId, turnIndex, isFinal });
       this.logProviderCall('ok');
     } catch (error) {
+      // Tokens billed before the failure still cost money, so they still count
+      // against the daily cap. The tool loop can make several calls, and
+      // without this a loop that failed on its third iteration billed two
+      // calls that never reached the counters, letting a persistently failing
+      // turn burn budget while DAILY_TOKEN_CAP never moved.
+      const spent = usageFromError(error);
+      if (spent) billedTokens += spent.inputTokens + spent.outputTokens;
+      // `committed` guards the one path that would double count: the
+      // transaction already charged the full turn, so a failure after it must
+      // not charge it again.
+      if (!committed && billedTokens > 0) {
+        try {
+          // Awaited in a try rather than chained with .catch, because
+          // incrementOp returns a PrismaPromise and this must not depend on
+          // that being a real promise.
+          await this.dailyUsage.incrementOp(0, billedTokens);
+        } catch {
+          // Best effort: the turn already failed, and losing the counter
+          // update must not replace the real error with a database one.
+          this.logger.warn(
+            `Failed to record ${billedTokens} tokens spent by a failed turn`,
+          );
+        }
+      }
+
       // Release the reserved slot so a retry of the same call can re-claim it.
       await this.prisma.conversationTurn
         .delete({ where: { id: interviewerTurnId } })
@@ -343,6 +441,81 @@ export class ConversationService {
    * provider-swap child, AC-P5): { provider, model, outcome }. Not full
    * parity with Beta's per-agent logging — that stays out of scope here.
    */
+  /**
+   * One structured line per turn that offered retrieval (AC-13).
+   *
+   * Records the fact of each call, how many results came back, how long it
+   * took, and which documents were returned. It records NO query text: the
+   * query is model generated from a visitor's conversation, and the umbrella's
+   * AC-4 keeps visitor content out of every log and every table.
+   *
+   * Silent when the model chose not to search, which is the common case and is
+   * not an event.
+   */
+  private logRetrieval(
+    stats: RetrievalStats,
+    stoppedOnIterationCap: boolean,
+    stoppedOnMaxTokens: boolean,
+  ): void {
+    // Fires for anything that happened, not only for a completed search. The
+    // malformed and unknown tool paths skip every other counter, so without
+    // them here the turns most worth seeing were the ones with no log line.
+    const nothingHappened =
+      stats.calls === 0 &&
+      stats.capped === 0 &&
+      stats.malformed === 0 &&
+      stats.unknownTool === 0 &&
+      !stoppedOnIterationCap &&
+      !stoppedOnMaxTokens;
+    if (nothingHappened) return;
+    this.logger.log(
+      JSON.stringify({
+        retrieval: {
+          calls: stats.calls,
+          capped: stats.capped,
+          failures: stats.failures,
+          malformed: stats.malformed,
+          unknownTool: stats.unknownTool,
+          // Searches where every hit was dropped by the guard filter. Expected
+          // to be non zero for Product Forge stories, whose numeric rule is
+          // broad, so a rising number is only a signal read per story.
+          allSuppressed: stats.allSuppressed,
+          // Chunks dropped because quoting them would have failed the
+          // ownership guard. Logged rather than silent: a rising number here
+          // means the corpus is accumulating text the persona cannot use.
+          suppressed: stats.suppressed,
+          resultCounts: stats.resultCounts,
+          latenciesMs: stats.latenciesMs,
+          sourcePaths: stats.sourcePaths,
+          stoppedOnIterationCap,
+          // The model was cut off mid tool call, so it neither searched nor
+          // answered. Without this the turn looked like an ownership guard
+          // failure, which is a different problem with a different fix.
+          stoppedOnMaxTokens,
+        },
+      }),
+    );
+  }
+
+  /**
+   * Says once, not per turn, that retrieval is switched off by configuration.
+   *
+   * Per turn would be noise in a deployment that is never going to have
+   * credentials; never would repeat the failure this whole phase keeps
+   * hitting, where a capability quietly does nothing and no signal exists.
+   */
+  private warnedRetrievalUnconfigured = false;
+
+  private warnRetrievalUnconfiguredOnce(): void {
+    if (this.warnedRetrievalUnconfigured) return;
+    this.warnedRetrievalUnconfigured = true;
+    this.logger.warn(
+      'searchKnowledge is not offered: UPSTASH_VECTOR_REST_URL / ' +
+        'UPSTASH_VECTOR_REST_TOKEN are not set, so the persona answers from the ' +
+        'story alone. Set them to enable retrieval.',
+    );
+  }
+
   private logProviderCall(outcome: 'ok' | 'error'): void {
     const { provider, model } = resolveConfiguredProvider();
     this.logger.log(JSON.stringify({ provider, model, outcome }));
