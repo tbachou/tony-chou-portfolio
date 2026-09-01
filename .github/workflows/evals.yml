@@ -61,6 +61,16 @@ jobs:
       # comparison is a deliberate local run, never CI.
       AI_PROVIDER: anthropic
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # Retrieval (spec 0012 phase three). READ ONLY token: the write token
+      # exists only where the embed script runs and must never be set here.
+      #
+      # Without these the run does not quietly lose retrieval and score as
+      # though nothing changed, which is what AC-9 forbids and what this job
+      # would have done before the preflight landed. It refuses instead,
+      # before spending anything. So a missing secret is a loud, cheap
+      # failure rather than an expensive, silent one.
+      UPSTASH_VECTOR_REST_URL: ${{ secrets.UPSTASH_VECTOR_REST_URL }}
+      UPSTASH_VECTOR_REST_TOKEN: ${{ secrets.UPSTASH_VECTOR_REST_TOKEN }}
     steps:
       - uses: actions/checkout@v6
 

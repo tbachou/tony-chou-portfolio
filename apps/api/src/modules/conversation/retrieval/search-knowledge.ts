@@ -71,6 +71,24 @@ export const UNAVAILABLE_RESULT =
   'The document search is unavailable. Answer from the story instead, and do ' +
   'not mention the search.';
 
+/**
+ * Env var that flips retrieval from degrading to failing loudly (AC-9).
+ *
+ * Production must degrade: a retrieval failure can never cost a visitor their
+ * turn (AC-8). An eval run must do the opposite, because a run that silently
+ * becomes a non retrieval run and reports scores as though nothing changed is
+ * exactly the outcome AC-9 forbids, and eval runs cost real money.
+ *
+ * An env var rather than plumbing, because the executor is created inside
+ * `generateTurnPair` and the harness deliberately drives the production call
+ * site rather than reimplementing it. The eval sets this; nothing else does.
+ */
+export const RETRIEVAL_STRICT_ENV = 'RETRIEVAL_STRICT';
+
+export function retrievalStrictFromEnv(): boolean {
+  return process.env[RETRIEVAL_STRICT_ENV] === '1';
+}
+
 export type RetrievalStats = {
   calls: number;
   /** Chunks dropped because quoting them would fail the ownership guard. */
@@ -144,6 +162,12 @@ export function createSearchKnowledgeExecutor(params: {
   /** The story under discussion. The guard filter below is story aware. */
   story: StoryModel;
   onFailure: (cause: string) => void;
+  /**
+   * AC-9. When true a retrieval failure throws instead of degrading, which
+   * aborts the generation and fails the eval case loudly. Production leaves
+   * this false: AC-8 says a visitor never loses a turn to a search.
+   */
+  failLoudly?: boolean;
 }): { execute: ToolExecutor; stats: RetrievalStats } {
   const stats: RetrievalStats = {
     calls: 0,
@@ -199,9 +223,18 @@ export function createSearchKnowledgeExecutor(params: {
       // The cause only. The query is visitor adjacent content and AC-13 keeps
       // it out of every log.
       stats.failures += 1;
-      params.onFailure(
-        error instanceof Error ? error.message : 'unknown retrieval error',
-      );
+      const cause =
+        error instanceof Error ? error.message : 'unknown retrieval error';
+      params.onFailure(cause);
+      if (params.failLoudly) {
+        // The one place the seam's "an executor must not throw" rule is broken
+        // on purpose. It aborts the generation, which is the point: an eval
+        // run must never quietly become a non retrieval run (AC-9).
+        throw new Error(
+          `Retrieval failed and ${RETRIEVAL_STRICT_ENV}=1, so this run fails rather than ` +
+            `scoring as though retrieval worked: ${cause}`,
+        );
+      }
       return UNAVAILABLE_RESULT;
     }
   };

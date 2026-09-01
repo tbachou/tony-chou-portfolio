@@ -13,6 +13,7 @@ import { loadConversationSkill } from './skill-loader';
 import {
   createSearchKnowledgeExecutor,
   MAX_TOOL_ITERATIONS,
+  retrievalStrictFromEnv,
   SEARCH_KNOWLEDGE_TOOL,
   type RetrievalStats,
 } from './retrieval/search-knowledge';
@@ -271,6 +272,10 @@ export class ConversationService {
         story,
         onFailure: (cause) =>
           this.logger.warn(`searchKnowledge unavailable: ${cause}`),
+        // Production degrades (AC-8); the eval harness sets this and fails
+        // loudly instead (AC-9), because a run that silently drops retrieval
+        // still costs money and still reports scores.
+        failLoudly: retrievalStrictFromEnv(),
       });
 
       const tonyGenerated = await this.anthropic.runToolConversation({

@@ -5,6 +5,8 @@ import {
   NO_MATCH_RESULT,
   SEARCH_KNOWLEDGE_TOOL,
   UNAVAILABLE_RESULT,
+  RETRIEVAL_STRICT_ENV,
+  retrievalStrictFromEnv,
 } from './search-knowledge';
 import { search } from './vector-store';
 import { StoryOwnership } from '../../../generated/prisma/enums';
@@ -226,6 +228,41 @@ describe('createSearchKnowledgeExecutor', () => {
     const personal = makeExecutor();
     expect(await personal.execute(call())).toContain('0006-grade-guesser');
     expect(personal.stats.suppressed).toBe(0);
+  });
+
+  it('throws instead of degrading when the eval asks it to (AC-9)', async () => {
+    searchMock.mockRejectedValue(new Error('upstream 503'));
+    const onFailure = jest.fn();
+    const { execute, stats } = createSearchKnowledgeExecutor({
+      openIndex: jest.fn(() => ({}) as never),
+      story,
+      onFailure,
+      failLoudly: true,
+    });
+
+    // An eval run must never quietly become a non retrieval run and report
+    // scores as though nothing changed. Production does the opposite (AC-8),
+    // which the test above pins.
+    await expect(execute(call())).rejects.toThrow(/upstream 503/);
+    expect(stats.failures).toBe(1);
+    expect(onFailure).toHaveBeenCalledWith('upstream 503');
+  });
+
+  it('reads strict mode from the environment, defaulting to degrade', () => {
+    const original = process.env[RETRIEVAL_STRICT_ENV];
+    try {
+      delete process.env[RETRIEVAL_STRICT_ENV];
+      expect(retrievalStrictFromEnv()).toBe(false);
+      process.env[RETRIEVAL_STRICT_ENV] = '1';
+      expect(retrievalStrictFromEnv()).toBe(true);
+      // Anything else is not strict: a half set variable must not silently
+      // turn a production API into one that fails turns.
+      process.env[RETRIEVAL_STRICT_ENV] = 'true';
+      expect(retrievalStrictFromEnv()).toBe(false);
+    } finally {
+      if (original === undefined) delete process.env[RETRIEVAL_STRICT_ENV];
+      else process.env[RETRIEVAL_STRICT_ENV] = original;
+    }
   });
 
   it('never puts the query text in anything it reports (AC-13)', async () => {
