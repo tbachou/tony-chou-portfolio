@@ -302,20 +302,47 @@ describe('createSearchKnowledgeExecutor', () => {
     expect(stats.unknownTool).toBe(1);
   });
 
-  it('classifies a fetch failure as network, not as a bug in our own code', async () => {
-    // @upstash/vector uses fetch, and WHATWG fetch rejects with a TypeError on
-    // every genuine network failure. Treating TypeError as "unexpected" made a
-    // real outage log as our bug, which is exactly backwards.
-    const fetchFailure = new TypeError('fetch failed');
-    Object.defineProperty(fetchFailure, 'cause', {
-      value: new Error('getaddrinfo ENOTFOUND'),
+  describe('classifying a failure as theirs or ours', () => {
+    async function kindOf(error: unknown): Promise<string> {
+      searchMock.mockRejectedValueOnce(error);
+      const { execute, onFailure } = makeExecutor();
+      await execute(call());
+      return (onFailure.mock.calls[0] as [string, string])[1];
+    }
+
+    it("treats fetch's TypeError as network", async () => {
+      // WHATWG fetch rejects with exactly this for every genuine network
+      // failure, and @upstash/vector rethrows it unchanged.
+      expect(await kindOf(new TypeError('fetch failed'))).toBe('network');
     });
-    searchMock.mockRejectedValueOnce(fetchFailure);
-    const outage = makeExecutor();
 
-    await outage.execute(call());
+    it('treats a JSON parse failure as network', async () => {
+      // The SDK calls res.json() BEFORE checking res.ok, so a 502 whose body
+      // is an HTML error page arrives as a parse failure.
+      expect(
+        await kindOf(
+          new SyntaxError(`Unexpected token '<', "<html>502 " is not valid JSON`),
+        ),
+      ).toBe('network');
+    });
 
-    expect(outage.onFailure).toHaveBeenCalledWith('fetch failed', 'network');
+    it('still treats a TypeError from our own code as ours', async () => {
+      expect(await kindOf(new TypeError('x is not a function'))).toBe(
+        'unexpected',
+      );
+    });
+
+    it('does not excuse our TypeError just because it carries a cause', async () => {
+      // An earlier version accepted any TypeError with a `cause` as a network
+      // failure, which swept up TypeErrors thrown deliberately in our own code
+      // and inverted the split in the other direction.
+      const ours = new TypeError('bad argument', { cause: new Error('why') });
+      expect(await kindOf(ours)).toBe('unexpected');
+    });
+
+    it('treats an unrecognised error as theirs', async () => {
+      expect(await kindOf(new Error('Forbidden'))).toBe('network');
+    });
   });
 
   it('tells the model a query was missing rather than that nothing matched', async () => {
@@ -330,14 +357,50 @@ describe('createSearchKnowledgeExecutor', () => {
     expect(searchMock).not.toHaveBeenCalled();
   });
 
-  it('bounds a model-supplied tool name before it reaches a log', async () => {
+  it('survives a tool_use block that carries no name at all', async () => {
+    // isToolUse gates only on the block type, so a nameless tool_use reaches
+    // the executor as undefined. Calling .replace on it threw from inside the
+    // executor that must not throw, and the visitor lost the whole turn.
+    const { execute, stats } = makeExecutor();
+
+    const result = await execute({ name: undefined as unknown as string, input: {} });
+
+    expect(result).toContain('Unknown tool');
+    expect(stats.unknownTool).toBe(1);
+  });
+
+  it('flattens newlines in a tool name even when it is short', async () => {
     const { execute, onFailure } = makeExecutor();
 
-    await execute({ name: `evil${'x'.repeat(500)}\nsecond line`, input: {} });
+    // Short on purpose. The previous version of this test used a 500 character
+    // name, so the newline sat past the truncation point and `slice` removed
+    // it: deleting the flatten entirely left the suite green. The flatten is
+    // the log-injection defence, so it needs an input only it can handle.
+    await execute({ name: 'search\nERROR fake log line', input: {} });
 
     const [cause] = onFailure.mock.calls[0] as [string, string];
-    expect(cause.length).toBeLessThan(120);
-    expect(cause).not.toContain('\n');
+    expect(cause).toBe('unknown tool requested: search ERROR fake log line');
+  });
+
+  it('truncates a long tool name at exactly 64 code points', async () => {
+    const { execute, onFailure } = makeExecutor();
+
+    await execute({ name: 'x'.repeat(200), input: {} });
+
+    const [cause] = onFailure.mock.calls[0] as [string, string];
+    expect(cause).toBe(`unknown tool requested: ${'x'.repeat(64)}`);
+  });
+
+  it('does not split an emoji across the truncation boundary', async () => {
+    const { execute, onFailure } = makeExecutor();
+
+    await execute({ name: `${'x'.repeat(63)}\u{1F525}tail`, input: {} });
+
+    const [cause] = onFailure.mock.calls[0] as [string, string];
+    // A lone surrogate reaching a log is a hazard this codebase already
+    // guards against elsewhere.
+    expect(cause).toContain('\u{1F525}');
+    expect(/[\uD800-\uDFFF]/.test(cause.replace(/\u{1F525}/gu, ''))).toBe(false);
   });
 
   it('separates a bug in our own code from an outage upstream', async () => {

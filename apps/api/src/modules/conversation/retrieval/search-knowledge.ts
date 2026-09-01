@@ -226,7 +226,15 @@ export function createSearchKnowledgeExecutor(params: {
       // Bounded and flattened before it reaches a log: the name is whatever
       // the model emitted, and model output is derived from a visitor's
       // conversation. AC-13 keeps that out of logs.
-      const safeName = call.name.replace(/\s+/g, ' ').slice(0, 64);
+      // String() first, and surrogate safe. `isToolUse` gates only on the
+      // block type, so a tool_use block with no name arrives here as
+      // undefined, and calling .replace on it threw from inside the executor
+      // that must not throw, costing the visitor the whole turn. Splitting by
+      // code point rather than code unit keeps a lone surrogate out of the
+      // log, which this codebase already treats as a hazard elsewhere.
+      const safeName = [...String(call.name ?? 'unnamed').replace(/\s+/g, ' ')]
+        .slice(0, 64)
+        .join('');
       params.onFailure(`unknown tool requested: ${safeName}`, 'unexpected');
       return `Unknown tool: ${safeName}`;
     }
@@ -289,17 +297,31 @@ export function createSearchKnowledgeExecutor(params: {
       // on `cause`) for every genuine network failure, so treating TypeError
       // as our bug reported every real outage as a defect in this code and
       // left the network bucket almost unreachable.
-      const isFetchFailure =
-        error instanceof TypeError &&
-        (error.message === 'fetch failed' || 'cause' in error);
-      const kind =
-        !isFetchFailure &&
-        (error instanceof TypeError ||
-          error instanceof RangeError ||
-          error instanceof ReferenceError ||
-          error instanceof SyntaxError)
-          ? 'unexpected'
-          : 'network';
+      //
+      // One list, of the error types that mean a bug HERE. Everything else is
+      // theirs, which is the safer default: over reporting an outage as our
+      // defect is what the previous two versions of this did.
+      //
+      // Two absences are deliberate, and both are real Upstash outage shapes
+      // that arrive looking like our mistakes:
+      //
+      //   TypeError('fetch failed')  WHATWG fetch's rejection for every
+      //                              genuine network failure, rethrown
+      //                              unchanged by @upstash/vector. Excluded by
+      //                              message, not by carrying a `cause`: an
+      //                              earlier version accepted any TypeError
+      //                              with a cause and so excused TypeErrors
+      //                              thrown deliberately in our own code.
+      //   SyntaxError                the SDK calls res.json() BEFORE checking
+      //                              res.ok, so a 502 whose body is an HTML
+      //                              error page surfaces as a JSON parse
+      //                              failure. Inside this catch the only JSON
+      //                              parsed is the SDK's own response.
+      const isOurBug =
+        (error instanceof TypeError && error.message !== 'fetch failed') ||
+        error instanceof RangeError ||
+        error instanceof ReferenceError;
+      const kind = isOurBug ? 'unexpected' : 'network';
       params.onFailure(cause, kind);
       if (params.failLoudly) {
         // The one place the seam's "an executor must not throw" rule is broken

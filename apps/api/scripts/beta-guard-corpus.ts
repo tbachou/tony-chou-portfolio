@@ -55,6 +55,7 @@ import type {
   UpstreamErrorClassification,
 } from '../src/modules/anthropic/ai-provider.interface';
 import { CORPUS, type CorpusProfile } from './beta-guard-corpus.profiles';
+import { toolLoopRefusalReason } from '../src/modules/anthropic/harness-replay';
 
 /**
  * Wraps the real provider so the screener and drafter can be recorded once
@@ -106,17 +107,23 @@ class CachingProvider implements AiProvider {
    * `async` so a caller writing `.catch(...)` gets a rejection rather than a
    * synchronous throw, which is what the sibling harness does.
    */
+  /**
+   * Beta makes no tool loop calls today, so there is nothing to cache here.
+   *
+   * Delegated rather than stubbed so this stays a faithful `AiProvider`: a
+   * stub that always threw would turn a future Beta change into a corpus run
+   * failing for a reason that has nothing to do with Beta. The mode rule lives
+   * in `harness-replay.ts` because jest does not collect anything under
+   * `scripts/`, and an untested condition here already regressed once.
+   *
+   * `async` so a caller using `.catch` gets a rejection rather than a
+   * synchronous throw.
+   */
   async runToolConversation(
     params: RunToolConversationParams,
   ): Promise<RunToolConversationResult> {
-    if (this.mode === 'replay') {
-      throw new Error(
-        `CachingProvider: a tool loop call arrived in ${this.mode} mode. Beta made none when ` +
-          'this wrapper was written, so nothing here caches or replays it, and running it ' +
-          'would spend on a live model call inside a run that reports itself as a replay. ' +
-          'Add caching for it before Beta starts using one.',
-      );
-    }
+    const refusal = toolLoopRefusalReason(this.mode);
+    if (refusal) throw new Error(`CachingProvider: ${refusal}`);
     return this.real.runToolConversation(params);
   }
 

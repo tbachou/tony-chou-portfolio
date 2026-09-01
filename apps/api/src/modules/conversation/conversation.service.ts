@@ -327,6 +327,12 @@ export class ConversationService {
         maxIterations: retrievalEnabled ? MAX_TOOL_ITERATIONS : 1,
       });
 
+      // Immediately after the billed call, mirroring the interviewer above.
+      // Everything between here and the transaction (the retrieval log, the
+      // guard, the emit loop) can throw, and each statement in between is a
+      // window where these tokens are spent and uncounted.
+      billedTokens += tonyGenerated.inputTokens + tonyGenerated.outputTokens;
+
       this.logRetrieval(
         retrieval.stats,
         tonyGenerated.stoppedOnIterationCap,
@@ -343,7 +349,10 @@ export class ConversationService {
             ? CREDENTIAL_GUARD_FALLBACK
             : (story.requiredFraming ?? GENERIC_GUARD_FALLBACK);
         this.logger.warn(
-          `Ownership guard fired for story ${story.id} (${story.title}): ${guardResult.reason}`,
+          tonyGenerated.stoppedOnMaxTokens
+            ? `Generation truncated mid tool call for story ${story.id} (${story.title}); ` +
+                'answered with the fallback. This is a token budget problem, not a guard failure.'
+            : `Ownership guard fired for story ${story.id} (${story.title}): ${guardResult.reason}`,
         );
       }
 
@@ -355,12 +364,6 @@ export class ConversationService {
         interviewerResult.inputTokens + interviewerResult.outputTokens;
       const tonyTokenCount =
         tonyGenerated.inputTokens + tonyGenerated.outputTokens;
-      // Added BEFORE the transaction, because a transaction that fails leaves
-      // these tokens billed and uncounted. They cannot be recovered from the
-      // error either: a Prisma failure carries no tool loop usage, so
-      // usageFromError returns null for it.
-      billedTokens += tonyTokenCount;
-
       await this.prisma.$transaction([
         this.prisma.conversationTurn.update({
           where: { id: interviewerTurnId },
