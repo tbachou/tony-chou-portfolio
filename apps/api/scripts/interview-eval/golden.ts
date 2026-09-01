@@ -476,12 +476,22 @@ export const GOLDEN_CASES: EvalCase[] = [
     isFinal: false,
     difficulty: 'hard',
     category: 'retrieval-attribution',
-    // Phrasing chosen by probing the live index, not by guessing: this reaches
-    // the rejected Beta evidence check at 0.741, where "tell me about
-    // something you specced and did not build" reached the 0012 specs instead
-    // and would have tested attribution on the wrong subject.
+    // Phrasing chosen by probing the live index rather than guessing, and
+    // re probed after the index was rebuilt: an earlier wording put the
+    // rejected Beta evidence check at rank 1, and on the current index the
+    // same wording drops it to rank 4, outside topK, so it would have been
+    // retrieved not at all.
+    //
+    // This wording puts 0008 at rank 3 (0.693), alongside two 0012 chunks
+    // about a spec that WAS built. That is harder and better: the persona has
+    // to answer from the section that fits the question rather than the top
+    // scored one, which is the realistic shape of a retrieval answer.
+    //
+    // Naming the feature outright ("why did you decide not to build the
+    // clinical evidence check") puts it at rank 1 with 0.788, and was rejected
+    // as a question: it tells the model the answer.
     injectQuestion:
-      'Have you specced a feature and then decided it should not be built at all?',
+      'Tell me about a spec you wrote and then rejected, and what made you drop it.',
     expectedCharacteristics: [
       'a real rejected decision from the corpus, with the reason it was rejected',
       'names the document',
@@ -518,23 +528,25 @@ export const GOLDEN_CASES: EvalCase[] = [
     isFinal: false,
     difficulty: 'hard',
     category: 'retrieval-attribution',
-    // The other direction, and it is a real condition rather than a contrived
-    // one. Probed against the live index: this question returns THREE chunks
-    // above the 0.62 threshold (0.647, 0.644, 0.640), all about credential
-    // checks and provider swaps, none about being on call. Genuine hits score
-    // 0.71 to 0.79, so the threshold currently admits loosely related text for
-    // any plausible professional question the corpus does not cover.
+    // The other direction, and a real condition rather than a contrived one.
+    // Probed against the live index: this question returns chunks above the
+    // 0.68 threshold at 0.720, and none of them is about hiring. It is one of
+    // three negatives that outscore the weakest genuine positive (0.699),
+    // because it is a people and process question against a corpus full of
+    // documents about how this engineer works. No threshold separates those,
+    // which is why the calibration stopped at 0.68 rather than chasing them.
     //
-    // An absurd question ("favourite holiday destination", 0.569) would fall
-    // below the threshold and make this case pass without testing anything.
-    // What is worth testing is whether the persona resists citing material it
-    // was handed but which does not answer the question.
+    // The on call question this case used to ask now scores below the
+    // threshold and returns nothing, which would have made it a no match case
+    // and stopped testing what it is for. What is worth testing is whether the
+    // persona declines to cite material it was handed but which does not
+    // answer the question.
     injectQuestion:
-      'How do you handle being on call, and what does your rotation look like?',
+      'How do you run hiring loops, and what do you look for when you interview someone?',
     expectedCharacteristics: [
       'answers from the story and background, or says plainly it is not something to speak to',
       'cites nothing, because the retrieved sections do not answer the question',
-      'does not stretch a credential check or a provider swap into an on-call answer',
+      'does not stretch a spec about retrieval or guards into an answer about hiring',
       'never mentions searching, tools, or documents it could not find',
     ],
   },
