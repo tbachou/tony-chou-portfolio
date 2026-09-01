@@ -34,6 +34,33 @@ npx prisma migrate diff --from-config-datasource \
 docker rm -f mig; unset DATABASE_URL
 ```
 
+## Tracing a request
+
+Two paths worth knowing, both easy to lose by grep alone. `file.ts:function` throughout.
+
+**A conversation turn** (`POST /conversation/turn`, spec 0012 phase three):
+
+1. `conversation.controller.ts` → `conversation.service.ts:generateTurnPair` — the only production caller. Everything below happens inside it.
+2. **Interviewer** — `AiProvider.streamMessage`, no tools. Produces the question.
+3. **Tony** — `AiProvider.runToolConversation`. Gets `searchKnowledge` only when `isRetrievalConfigured()` is true (both `UPSTASH_VECTOR_*` set); otherwise no tools and one iteration, which is the pre-retrieval generation exactly.
+4. `anthropic/tool-conversation.ts:runToolConversation` — the tool loop. Knows the protocol (`tool_use` → `tool_result`, matching ids, one user turn) and nothing about retrieval. Non streaming, because the guard must see the whole answer first.
+5. `retrieval/search-knowledge.ts:createSearchKnowledgeExecutor` — the policy: two searches per turn, query validation, never throws in production, per turn stats. Knows nothing about the protocol.
+6. `retrieval/vector-store.ts:search` — Upstash query, `topK: 3`, raw text in (the index embeds server side). Drops results under `MINIMUM_SIMILARITY`.
+7. `search-knowledge.ts:filterChunksForStory` — drops any chunk the ownership guard would reject if quoted. Story aware, because the guard is.
+8. Back through the loop as a `tool_result`, model answers.
+9. `ownership-guard.ts:evaluateTonyResponse` on the finished text, then the transaction, then SSE. **No model output reaches a visitor before this.**
+
+**An embed** (`npm run embed:corpus`, developer machine only):
+
+`scripts/embed-corpus.ts` → `retrieval/corpus.ts:collectCorpus` (which files belong) → `retrieval/chunk.ts:chunkMarkdown` (heading sized, 2000 char cap) → `vector-store.ts:replaceAll` (`reset()` then batches of 50) → `docs/evals/interview/corpus.json` written **last**, only if every batch succeeded.
+
+**The two seams**, and why each exists:
+
+- `anthropic/ai-provider.interface.ts` — `streamMessage`, `forceToolCall`, `runToolConversation`, implemented by the direct and Bedrock services. `tool-conversation.ts` imports NO SDK because the Bedrock SDK bundles its own `@anthropic-ai/sdk` at a different version and the two `MessageParam` types are incompatible.
+- Protocol vs policy: the tool loop knows the wire format, the executor knows the rules. That split is why the loop has no idea retrieval exists.
+
+**Four files in `src/` exist only because jest's `rootDir` is `src` and will not collect `scripts/`**: `eval/run-outcome.ts`, `eval/grounding-prompt.ts`, `retrieval/index-health.ts`, `anthropic/harness-replay.ts`. Each has exactly one caller, in `scripts/`. If you go looking for eval preflight logic and it is not next to the preflight, that is why.
+
 ## Conventions
 
 - Request shapes are zod schemas in `@portfolio/shared`, not DTO classes. A controller applies one with `@Body(new ZodValidationPipe(theSchema))`; `.strict()` on the schema is what rejects unknown properties. The web app builds its payloads to the same schema, so a field cannot be tightened on one side only.
