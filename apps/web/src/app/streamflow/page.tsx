@@ -194,6 +194,7 @@ export default async function StreamflowPage() {
     totalResult,
     oldestRecordResult,
     newestReadingResult,
+    lastIngestResult,
     lastRunResult,
     recentForecastsResult,
     everIssuedResult,
@@ -216,6 +217,18 @@ export default async function StreamflowPage() {
     // Ingest jobs only. Scoring runs hourly and ingestion every six hours, so
     // the newest run of any kind is usually a scoring pass, which would sit
     // under a paragraph describing how readings arrive and contradict it.
+    // Health only, and deliberately NOT the row the panel below displays.
+    // The rescan runs even when ingest fails (its workflow step is
+    // `if: !cancelled()`) and a rescan with nothing to re-poll records `OK`,
+    // so the newest row of the combined set is a fresh success for as long as
+    // ingest is broken. Reading health off that set made AC-S4 structurally
+    // unsatisfiable: the criterion says "the most recent INGEST run", and the
+    // combined query cannot express it. Found by the pre deploy audit.
+    prisma.pipelineRun.findFirst({
+      where: { job: 'USGS_INGEST' },
+      orderBy: { startedAt: 'desc' },
+      select: { status: true, startedAt: true },
+    }),
     prisma.pipelineRun.findFirst({
       where: { job: { in: ['USGS_INGEST', 'USGS_RESCAN'] } },
       orderBy: { startedAt: 'desc' },
@@ -249,6 +262,12 @@ export default async function StreamflowPage() {
   const oldestRecord = settled('oldest record', oldestRecordResult, null);
   const newestReading = settled('newest reading', newestReadingResult, null);
   const lastRun = settled('last pipeline run', lastRunResult, null);
+  const lastIngest = settled<{ status: string; startedAt: Date } | null>(
+    'last ingest run',
+    lastIngestResult,
+    null,
+  );
+  const lastIngestFailed = failed(lastIngestResult);
   const recentForecasts = settled('recent forecasts', recentForecastsResult, []);
   const scoredErrors = settled('scored errors', scoredErrorsResult, []);
   const liveCoverage = calibration(settled('live coverage', liveIntervalsResult, []));
@@ -305,32 +324,40 @@ export default async function StreamflowPage() {
   // load bearing: with four stale and two elapsed, the survivors are four of
   // four and earn one note, while counting before the filter reads four of
   // six and would wrongly print a marker on every row. AC-S8a.
+  // The reading's own age. Only evaluated when the read succeeded; a failed
+  // read keeps its existing message and says nothing about staleness. AC-S11.
+  const readingIsStale = newestReading
+    ? isStale(newestReading.validTime, now, STALE_AFTER_HOURS)
+    : false;
+
+  // `readingIsStale` is ORed in, and without it the page contradicts itself
+  // for a six hour window after a single missed ingest: the reading crosses
+  // the threshold and is flagged, while the forecasts built from that very
+  // reading stay unmarked until their own age crosses it too. Whatever the
+  // page says about the reading it must say about anything derived from it.
   const staleForecastIds = new Set(
     liveForecasts
-      .filter((forecast) =>
-        isStaleForecast(rows, forecast.issuedAt, now, STALE_AFTER_HOURS),
+      .filter(
+        (forecast) =>
+          readingIsStale ||
+          isStaleForecast(rows, forecast.issuedAt, now, STALE_AFTER_HOURS),
       )
       .map((forecast) => forecast.id),
   );
   const everyForecastStale =
     liveForecasts.length > 0 && staleForecastIds.size === liveForecasts.length;
 
-  // The reading's own age. Only evaluated when the read succeeded; a failed
-  // read keeps its existing message and says nothing about staleness. AC-S11.
-  const readingIsStale = newestReading
-    ? isStale(newestReading.validTime, now, STALE_AFTER_HOURS)
-    : false;
   // Not just `status !== 'OK'`. A scheduler that stops entirely writes no new
   // row, so the newest row stays an old success and the status keeps saying
   // the pipeline is healthy while nothing has run for weeks. AC-S4.
   // Three findings, not two. A failed read is not evidence about the
   // pipeline, and asserting otherwise contradicted the run panel's own "the
   // schedule itself is unaffected" in the same render. AC-S4, AC-S11.
-  const ingestNotCompleting = lastRunFailed
+  const ingestNotCompleting = lastIngestFailed
     ? false
-    : lastRun
-      ? lastRun.status !== 'OK' ||
-        isStale(lastRun.startedAt, now, STALE_AFTER_HOURS)
+    : lastIngest
+      ? lastIngest.status !== 'OK' ||
+        isStale(lastIngest.startedAt, now, STALE_AFTER_HOURS)
       : true;
 
   const skill = rollingSkill(scoredErrors, skillFrom, now).map((series) => ({
@@ -411,8 +438,9 @@ export default async function StreamflowPage() {
             <div className="mt-6 border-t border-term-border pt-5">
               <p className="text-term-xs text-term-muted">latest reading</p>
               <p className="mt-2 text-term-sm text-term-body">
-                The latest reading could not be read just now. The gauge and the ingest job are
-                unaffected; this is the page failing to ask.
+                The latest reading could not be read just now. This is the page failing
+                to ask, and it says nothing about the gauge or the ingest job.{' '}
+                <Redirect />
               </p>
             </div>
           )}
@@ -507,12 +535,12 @@ export default async function StreamflowPage() {
           )}
 
           {liveForecasts.length === 0 ? (
-            <p className="mt-6 border border-term-border px-4 py-10 text-center text-term-sm text-term-muted">
+            <p className="mt-6 border border-term-border px-4 py-10 text-term-sm text-term-body">
               {recentForecastsResult.status === 'rejected'
-                ? 'The forecast table could not be read just now. Nothing else on this page depends on it, so the rest is still current.'
+                ? 'The forecast table could not be read just now. Nothing else on this page depends on it; this is the page failing to ask.'
                 : everIssuedFailed
                   ? EVER_ISSUED_UNKNOWN_NOTE
-                  : hasEverIssued
+                  : hasEverIssued || recentForecasts.length > 0
                     ? ELAPSED_FORECASTS_NOTE
                     : 'No forecast has been issued yet. The pipeline issues one per forecaster per horizon every six hours.'}
               {/* Only where the page has stopped being current. A store that
@@ -600,7 +628,7 @@ export default async function StreamflowPage() {
                           staleForecastIds.has(forecast.id) && (
                             <span
                               className="ml-2 text-term-xs"
-                              title="Issued more than the freshness threshold ago, or from a river reading that old"
+                              title="Issued more than the freshness threshold ago, or from a river reading that old, so it was made without the river's current level"
                             >
                               &Dagger;
                             </span>
@@ -778,8 +806,9 @@ export default async function StreamflowPage() {
 
           {lastRunFailed && (
             <p className="mt-6 text-term-sm text-term-body">
-              The run history could not be read just now, so the job below is not shown. The
-              schedule itself is unaffected.
+              The run history could not be read just now, so the job below is not shown.
+              This is the page failing to ask; it says nothing about whether the schedule
+              ran.
             </p>
           )}
 

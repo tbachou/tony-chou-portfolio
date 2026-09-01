@@ -17,7 +17,15 @@
  *
  * **A string must state what is known, not predict what follows.** The ingest
  * note used to say a newer reading "should not be expected shortly", which is
- * wrong after a single skipped run when the next is due within the hour.
+ * wrong after a single skipped run when the next is due within the hour. Its
+ * replacement then said "no ingest run has completed since then either",
+ * which was true on only one of the three conditions that trigger it, so it
+ * says the weaker, true thing instead.
+ *
+ * **A string must not be so careful it says nothing.** The legend was fixed
+ * from a false cause to "does not describe the river as it is now", which is
+ * true of every forecast ever made and therefore told a reader nothing. Being
+ * cause neutral is required; being vacuous is not the way to get there.
  *
  * The exact text is fixed by spec 0010 child `0010-staleness-disclosure.md`,
  * Feature design > Copy. Change it there first.
@@ -64,7 +72,7 @@ export const NOAA_WATER_URL = 'https://water.noaa.gov/';
  * nothing is coming would be false more often than true. AC-S4.
  */
 export const STALE_INGEST_NOTE =
-  'No ingest run has completed since then either.';
+  'The job that feeds this page is not running normally either.';
 
 /**
  * The empty state when the pipeline has stopped. Deliberately different from
@@ -81,7 +89,7 @@ export const ELAPSED_FORECASTS_NOTE =
  * previously told a months old pipeline it had never started. AC-S9, AC-S11.
  */
 export const EVER_ISSUED_UNKNOWN_NOTE =
-  'No current forecast is showing, and the check for whether any has ever been issued could not be read just now.';
+  'No current forecast is showing, and this page could not check whether one has ever been issued. That is the page failing to ask; it is not news about the river.';
 
 /**
  * The marker legend. Its second sentence is cause neutral on purpose: a row
@@ -90,5 +98,5 @@ export const EVER_ISSUED_UNKNOWN_NOTE =
  * AC-S5, AC-S5a, AC-S7.
  */
 export function staleForecastLegend(hours: number): string {
-  return `Issued more than ${hours} hours ago, or from a river reading that old. Either way it does not describe the river as it is now.`;
+  return `Issued more than ${hours} hours ago, or from a river reading that old. Either way it was made without the river's current level, and may be well off.`;
 }
