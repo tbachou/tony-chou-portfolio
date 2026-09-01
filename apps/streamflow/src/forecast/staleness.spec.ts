@@ -1,6 +1,11 @@
 import { ISSUE_INTERVAL_HOURS, STALE_AFTER_HOURS } from '../config';
 import type { StoredObservation } from '../types';
-import { inputReadingFor, isStale, isStaleInput } from './staleness';
+import {
+  inputReadingFor,
+  isStale,
+  isStaleForecast,
+  isStaleInput,
+} from './staleness';
 
 /**
  * The rule that decides what a visitor is told about a real river.
@@ -134,5 +139,46 @@ describe('isStaleInput', () => {
     // Fails toward disclosure. Returning false here would launder the worst
     // case, a forecast whose input cannot even be identified, into the clean one.
     expect(isStaleInput([], issuedAt, 9)).toBe(true);
+  });
+});
+
+describe('isStaleForecast', () => {
+  const now = new Date('2026-08-31T12:00:00.000Z');
+
+  it('is false when the forecast is recent and saw a recent reading', () => {
+    const issuedAt = new Date(now.getTime() - 2 * HOUR);
+    const rows = [reading('2026-08-31T09:30:00.000Z')];
+    expect(isStaleForecast(rows, issuedAt, now, 9)).toBe(false);
+  });
+
+  it('is true when the forecast itself is old, however fresh its input was', () => {
+    // THE case both audit passes found. The predictor died while ingest kept
+    // running: input fresh at issue time, forecast forty hours old, and the
+    // first version of this rule said nothing at all.
+    const issuedAt = new Date(now.getTime() - 40 * HOUR);
+    const rows = [
+      // one hour before it was issued, so the input was genuinely fresh then
+      {
+        gaugeId: 'g1',
+        validTime: new Date(issuedAt.getTime() - HOUR),
+        recordedAt: new Date(issuedAt.getTime() - HOUR),
+        valueCfs: 142,
+        qualifier: 'PROVISIONAL' as const,
+      },
+    ];
+
+    expect(isStaleInput(rows, issuedAt, 9)).toBe(false); // input was fine
+    expect(isStaleForecast(rows, issuedAt, now, 9)).toBe(true); // the forecast is not
+  });
+
+  it('is true when the input was old even though the forecast is recent', () => {
+    const issuedAt = new Date(now.getTime() - HOUR);
+    const rows = [reading('2026-08-30T12:00:00.000Z')];
+    expect(isStaleForecast(rows, issuedAt, now, 9)).toBe(true);
+  });
+
+  it('is true when both clocks failed', () => {
+    const issuedAt = new Date(now.getTime() - 40 * HOUR);
+    expect(isStaleForecast([], issuedAt, now, 9)).toBe(true);
   });
 });

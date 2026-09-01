@@ -93,3 +93,32 @@ export function isStaleInput(
   if (!input) return true;
   return isStale(input.validTime, issuedAt, thresholdHours);
 }
+
+/**
+ * Whether a displayed forecast should be marked at all, on either count.
+ *
+ * Two independent failures wear the same face to a reader, so they get the
+ * same marker. A forecast is untrustworthy if the reading it was built from
+ * was already old (`isStaleInput`), and equally if the forecast ITSELF is old,
+ * however fresh its input was at the time.
+ *
+ * **The second half is the one the first draft missed**, and both audit passes
+ * found it independently. The workflow runs ingest and predict as separate
+ * steps, so the predictor can die while ingest keeps running. Then the reading
+ * is fresh, so no reading warning fires; the input was fresh when the forecast
+ * was issued, so no input marker fires; and a forecast forty hours old renders
+ * under a present tense heading with nothing anywhere to say so. Predictions
+ * are issued on the same six hourly cadence as ingest, so an issue age past
+ * the threshold means a missed predict cycle.
+ *
+ * Spec 0010 child `0010-staleness-disclosure.md`, AC-S5, AC-S5a.
+ */
+export function isStaleForecast(
+  rows: readonly StoredObservation[],
+  issuedAt: Date,
+  now: Date,
+  thresholdHours: number,
+): boolean {
+  if (isStale(issuedAt, now, thresholdHours)) return true;
+  return isStaleInput(rows, issuedAt, thresholdHours);
+}

@@ -48,7 +48,12 @@ export type { ScoredError, SkillPoint, SkillSeries } from './forecast/skill';
 // flag instead of a boolean the caller can forget.
 export { gradedIntervals } from './forecast/predictions.repository';
 export { calibration } from './forecast/calibration';
-export { isStale, isStaleInput, inputReadingFor } from './forecast/staleness';
+export {
+  isStale,
+  isStaleInput,
+  isStaleForecast,
+  inputReadingFor,
+} from './forecast/staleness';
 export type {
   CalibrationReport,
   CoverageGroup,
