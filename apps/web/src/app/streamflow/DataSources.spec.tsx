@@ -13,6 +13,8 @@ import { DataSources } from './DataSources';
  * asserted here, and each by its `href` rather than by its wording, because
  * naming a licence without pointing at it is not carrying the licence.
  */
+const HOUR = 3_600_000;
+
 afterEach(cleanup);
 
 /** The two links the licence actually rests on, addressed by href. */
@@ -177,12 +179,18 @@ vi.mock('@/lib/streamflow-db', () => ({
     observation: {
       count: async () => 18_849,
       findFirst: async () => ({
-        validTime: new Date('2026-08-31T12:00:00.000Z'),
-        recordedAt: new Date('2026-08-31T12:05:00.000Z'),
+        // Relative, like every other instant in this file. Fixed dates put
+        // this suite into the stale state as they aged, which silently
+        // changed what the page rendered underneath these assertions.
+        validTime: new Date(Date.now() - 15 * 60_000),
+        recordedAt: new Date(Date.now() - 10 * 60_000),
         valueCfs: 142.5,
         qualifier: 'PROVISIONAL' as const,
       }),
     },
+    // AC-S9's unbounded probe, added when the elapsed empty state stopped
+    // being derivable from the two day window.
+    prediction: { findFirst: async () => ({ id: 'pred-ever' }) },
     pipelineRun: {
       findFirst: async () => ({
         // Deliberately the one PipelineJob member carrying two underscores.
@@ -191,7 +199,7 @@ vi.mock('@/lib/streamflow-db', () => ({
         // what gives the underscore fix a regression guard at all.
         job: 'OPEN_METEO_INGEST' as const,
         status: 'OK' as const,
-        startedAt: new Date('2026-08-31T12:00:00.000Z'),
+        startedAt: new Date(Date.now() - 30 * 60_000),
         rowsWritten: 96,
       }),
     },
@@ -202,14 +210,31 @@ vi.mock('@/lib/streamflow-db', () => ({
 // the one production uses rather than one invented here.
 vi.mock('@portfolio/streamflow', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@portfolio/streamflow')>()),
-  observationsAsOf: async () => [],
+  // One reading, three hours before the forecast was issued, so the page's
+  // stale input derivation has something real to find rather than falling
+  // through to its no-input-found branch.
+  observationsAsOf: async () => [
+    {
+      gaugeId: 'gauge-1',
+      validTime: new Date(Date.now() - 3 * HOUR),
+      recordedAt: new Date(Date.now() - 3 * HOUR),
+      valueCfs: 142.5,
+      qualifier: 'PROVISIONAL' as const,
+    },
+  ],
   // One current forecast, so the forecast table renders. Without it the
   // table is absent and the disclaimer beside it cannot be asserted.
+  //
+  // Dates are relative to now on purpose. Fixed instants made this test
+  // time dependent the moment the page began filtering forecasts whose
+  // target has passed: a hardcoded 2026-09-01 target silently stops
+  // rendering the table once that date goes by.
   publicPredictions: async () => [
     {
       id: 'pred-1',
       horizonHours: 24,
-      targetTime: new Date('2026-09-01T12:00:00.000Z'),
+      issuedAt: new Date(Date.now() - 2 * HOUR),
+      targetTime: new Date(Date.now() + 22 * HOUR),
       centralCfs: 150,
       lowerCfs: 110,
       upperCfs: 230,
@@ -302,9 +327,16 @@ describe('the dashboard page', () => {
 
     render(await StreamflowPage());
 
-    const hrefs = screen
-      .getAllByRole('link')
-      .map((link) => link.getAttribute('href'));
+    // Scoped to the credit block on purpose. The staleness warning renders
+    // the same two links, so an unscoped search finds them even when the
+    // footer has none: the pre deploy audit proved this test passed 13/13
+    // with both footer credits downgraded to plain spans. It was checking
+    // that SOME element on the page linked an authority, not this one.
+    const usgsCredit = screen.getByText(/U\.S\. Geological Survey/);
+    const block = usgsCredit.closest('div');
+    const hrefs = [...(block?.querySelectorAll('a') ?? [])].map((a) =>
+      a.getAttribute('href'),
+    );
 
     expect(hrefs).toContain(
       'https://waterdata.usgs.gov/monitoring-location/03230500/',

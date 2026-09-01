@@ -147,6 +147,24 @@ export const HORIZON_HOURS = [24, 48, 72] as const;
 export const ISSUE_INTERVAL_HOURS = 6;
 
 /**
+ * The age past which the dashboard stops presenting a reading as current.
+ *
+ * Derived rather than written as a literal, and the derivation is the point.
+ * The number only means anything relative to the ingest cadence: a healthy
+ * pipeline leaves the newest reading up to `ISSUE_INTERVAL_HOURS` old just
+ * before the next run, so a threshold at or below that fires constantly on a
+ * working system and trains a reader to ignore it. One and a half cycles
+ * clears that peak with margin and still fires after a single missed run.
+ *
+ * Written as `9` it would quietly become wrong the day the cadence changed,
+ * and nothing would fail. Written as this, the relationship is what is
+ * recorded, and `config.spec.ts` binds the relationship rather than the value.
+ *
+ * Spec 0010 child `0010-staleness-disclosure.md`, AC-S1.
+ */
+export const STALE_AFTER_HOURS = ISSUE_INTERVAL_HOURS * 1.5;
+
+/**
  * How far back the skill view looks by default, in days. Spec 0010 sets 90
  * for skill and calibration alike.
  */
