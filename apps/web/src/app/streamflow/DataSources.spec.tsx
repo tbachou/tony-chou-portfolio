@@ -13,6 +13,8 @@ import { DataSources } from './DataSources';
  * asserted here, and each by its `href` rather than by its wording, because
  * naming a licence without pointing at it is not carrying the licence.
  */
+const HOUR = 3_600_000;
+
 afterEach(cleanup);
 
 /** The two links the licence actually rests on, addressed by href. */
@@ -202,14 +204,31 @@ vi.mock('@/lib/streamflow-db', () => ({
 // the one production uses rather than one invented here.
 vi.mock('@portfolio/streamflow', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@portfolio/streamflow')>()),
-  observationsAsOf: async () => [],
+  // One reading, three hours before the forecast was issued, so the page's
+  // stale input derivation has something real to find rather than falling
+  // through to its no-input-found branch.
+  observationsAsOf: async () => [
+    {
+      gaugeId: 'gauge-1',
+      validTime: new Date(Date.now() - 3 * HOUR),
+      recordedAt: new Date(Date.now() - 3 * HOUR),
+      valueCfs: 142.5,
+      qualifier: 'PROVISIONAL' as const,
+    },
+  ],
   // One current forecast, so the forecast table renders. Without it the
   // table is absent and the disclaimer beside it cannot be asserted.
+  //
+  // Dates are relative to now on purpose. Fixed instants made this test
+  // time dependent the moment the page began filtering forecasts whose
+  // target has passed: a hardcoded 2026-09-01 target silently stops
+  // rendering the table once that date goes by.
   publicPredictions: async () => [
     {
       id: 'pred-1',
       horizonHours: 24,
-      targetTime: new Date('2026-09-01T12:00:00.000Z'),
+      issuedAt: new Date(Date.now() - 2 * HOUR),
+      targetTime: new Date(Date.now() + 22 * HOUR),
       centralCfs: 150,
       lowerCfs: 110,
       upperCfs: 230,

@@ -9,7 +9,10 @@ import {
   publicPredictions,
   publicScoredErrors,
   rollingSkill,
+  isStale,
+  isStaleInput,
   DISPLAY_TIMEZONE,
+  STALE_AFTER_HOURS,
   HORIZON_HOURS,
   SKILL_DEFAULT_WINDOW_DAYS,
   SKILL_WINDOW_DAYS,
@@ -25,6 +28,12 @@ import { streamflowDb } from '@/lib/streamflow-db';
 import { HydrographPanel } from './HydrographPanel';
 import { CalibrationPanel } from './CalibrationPanel';
 import { DataSources, NOT_A_FLOOD_FORECAST } from './DataSources';
+import {
+  ELAPSED_FORECASTS_NOTE,
+  STALE_INGEST_NOTE,
+  staleInputLegend,
+  staleReadingNote,
+} from './staleness-copy';
 import { rangeSource } from './range-source';
 import { SkillChart } from './SkillChart';
 
@@ -221,6 +230,38 @@ export default async function StreamflowPage() {
       a.modelVersion.name.localeCompare(b.modelVersion.name),
   );
 
+  // A forecast whose target has passed is not a forecast any more, it is a
+  // result waiting to be scored, and the scoring surfaces already show those.
+  // Leaving it here put a past instant under a present tense heading.
+  // AC-S8.
+  const liveForecasts = currentForecasts.filter(
+    (forecast) => forecast.targetTime.getTime() > now.getTime(),
+  );
+  // Kept so the empty state can tell a stopped pipeline from a new one: rows
+  // existed, they simply all elapsed. AC-S9.
+  const hadForecastsBeforeElapsing = currentForecasts.length > 0;
+
+  // Computed over the SURVIVORS, not over `currentForecasts`. The order is
+  // load bearing: with four stale and two elapsed, the survivors are four of
+  // four and earn one note, while counting before the filter reads four of
+  // six and would wrongly print a marker on every row. AC-S8a.
+  const staleInputIds = new Set(
+    liveForecasts
+      .filter((forecast) =>
+        isStaleInput(rows, forecast.issuedAt, STALE_AFTER_HOURS),
+      )
+      .map((forecast) => forecast.id),
+  );
+  const everyForecastStaleInput =
+    liveForecasts.length > 0 && staleInputIds.size === liveForecasts.length;
+
+  // The reading's own age. Only evaluated when the read succeeded; a failed
+  // read keeps its existing message and says nothing about staleness. AC-S11.
+  const readingIsStale = newestReading
+    ? isStale(newestReading.validTime, now, STALE_AFTER_HOURS)
+    : false;
+  const ingestNotCompleting = lastRun ? lastRun.status !== 'OK' : false;
+
   const skill = rollingSkill(scoredErrors, skillFrom, now).map((series) => ({
     modelName: series.modelName,
     horizonHours: series.horizonHours,
@@ -321,6 +362,12 @@ export default async function StreamflowPage() {
                   {newestReading.qualifier.toLowerCase()}
                 </span>
               </p>
+              {readingIsStale && (
+                <p className="mt-3 max-w-2xl border-l border-term-error pl-3 text-term-sm text-term-body">
+                  {staleReadingNote(relativeAge(newestReading.validTime, now))}
+                  {ingestNotCompleting ? ` ${STALE_INGEST_NOTE}` : ''}
+                </p>
+              )}
               <p className="mt-3 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
                 {NOT_A_FLOOD_FORECAST}
               </p>
@@ -381,11 +428,13 @@ export default async function StreamflowPage() {
             worth what it beats, and both are harder to beat than they sound.
           </p>
 
-          {currentForecasts.length === 0 ? (
+          {liveForecasts.length === 0 ? (
             <p className="mt-6 border border-term-border px-4 py-10 text-center text-term-sm text-term-muted">
               {recentForecastsResult.status === 'rejected'
                 ? 'The forecast table could not be read just now. Nothing else on this page depends on it, so the rest is still current.'
-                : 'No forecast has been issued yet. The pipeline issues one per forecaster per horizon every six hours.'}
+                : hadForecastsBeforeElapsing
+                  ? ELAPSED_FORECASTS_NOTE
+                  : 'No forecast has been issued yet. The pipeline issues one per forecaster per horizon every six hours.'}
             </p>
           ) : (
             /* A scroll container a keyboard can reach and a screen reader
@@ -421,7 +470,7 @@ export default async function StreamflowPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {currentForecasts.map((forecast) => (
+                  {liveForecasts.map((forecast) => (
                     <tr
                       key={forecast.id}
                       className="border-b border-term-border/50"
@@ -457,6 +506,15 @@ export default async function StreamflowPage() {
                             &dagger;
                           </span>
                         )}
+                        {!everyForecastStaleInput &&
+                          staleInputIds.has(forecast.id) && (
+                            <span
+                              className="ml-2 text-term-xs"
+                              title="Issued from a river reading older than the freshness threshold"
+                            >
+                              &Dagger;
+                            </span>
+                          )}
                       </td>
                     </tr>
                   ))}
@@ -465,13 +523,26 @@ export default async function StreamflowPage() {
             </div>
           )}
 
-          {currentForecasts.length > 0 && (
+          {liveForecasts.length > 0 && (
             <p className="mt-4 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
               {NOT_A_FLOOD_FORECAST}
             </p>
           )}
 
-          {currentForecasts.some(
+          {everyForecastStaleInput && (
+            <p className="mt-4 max-w-2xl border-l border-term-error pl-3 text-term-sm text-term-body">
+              {staleInputLegend(STALE_AFTER_HOURS)}
+            </p>
+          )}
+
+          {!everyForecastStaleInput && staleInputIds.size > 0 && (
+            <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
+              <span aria-hidden="true">&Dagger; </span>
+              {staleInputLegend(STALE_AFTER_HOURS)}
+            </p>
+          )}
+
+          {liveForecasts.some(
             (forecast) => rangeSource(forecast) === 'pooled',
           ) && (
             <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
@@ -484,7 +555,7 @@ export default async function StreamflowPage() {
             </p>
           )}
 
-          {currentForecasts.some(
+          {liveForecasts.some(
             (forecast) => rangeSource(forecast) === 'placeholder',
           ) && (
             <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
@@ -504,7 +575,7 @@ export default async function StreamflowPage() {
             as long as the ranges do. Held back only when there is no forecast
             on screen, since it explains ranges and there are none to explain.
           */}
-          {currentForecasts.length > 0 && (
+          {liveForecasts.length > 0 && (
             <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
               Ranges were seeded by a backtest before this pipeline issued
               anything live: every forecaster was replayed across the archived
