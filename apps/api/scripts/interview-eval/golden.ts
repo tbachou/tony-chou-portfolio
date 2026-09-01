@@ -420,4 +420,134 @@ export const GOLDEN_CASES: EvalCase[] = [
       'no invented revenue, users, or growth',
     ],
   },
+
+  // ── retrieval: questions about Tony's own process, which only the corpus
+  //    answers (spec 0012 phase three, AC-14) ──────────────────────────────
+  //
+  // Every one is anchored to a SOLO, non Product Forge story on purpose. The
+  // ownership guard's numeric rule and its sole credit rule are story
+  // dependent, and a retrieved chunk that trips either is filtered out before
+  // the model sees it, so anchoring elsewhere would quietly test the filter
+  // instead of testing attribution.
+  //
+  // The question is pinned rather than generated: an interviewer working from
+  // an employment story would rarely ask about how Tony specs a decision, and
+  // the point of these cases is to put retrieval on the path deliberately.
+  {
+    id: 'retrieval-spec-practice',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Ongoing engineering mentorship',
+    history: [],
+    isFinal: false,
+    difficulty: 'medium',
+    category: 'retrieval-attribution',
+    // AC-14's "at least one that reliably triggers a search". The story is
+    // about mentoring and says nothing about specs, so the story alone cannot
+    // answer this and the tool is the only source.
+    injectQuestion:
+      'Before you write code, how do you decide whether a decision needs to be written down first?',
+    expectedCharacteristics: [
+      'answers from a committed document rather than generic process talk',
+      'names the document in natural language, never as a file path',
+      'does not present the retrieved material as something merely remembered',
+    ],
+  },
+  {
+    id: 'retrieval-guard-recurrence',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Topstep onboarding rebuild',
+    history: [],
+    isFinal: false,
+    difficulty: 'hard',
+    category: 'retrieval-attribution',
+    injectQuestion:
+      'Have you had a check you wrote keep failing in new ways? What did you change in the end?',
+    expectedCharacteristics: [
+      'describes a real recurrence from the corpus rather than a hypothetical',
+      'names the document the account came from',
+      'does not claim the check was fixed if the record says it was replaced',
+    ],
+  },
+  {
+    id: 'retrieval-rejected-feature',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Fugue AI co-founding',
+    history: [],
+    isFinal: false,
+    difficulty: 'hard',
+    category: 'retrieval-attribution',
+    // Phrasing chosen by probing the live index rather than guessing, and
+    // re probed after the index was rebuilt: an earlier wording put the
+    // rejected Beta evidence check at rank 1, and on the current index the
+    // same wording drops it to rank 4, outside topK, so it would have been
+    // retrieved not at all.
+    //
+    // This wording puts 0008 at rank 3 (0.693), alongside two 0012 chunks
+    // about a spec that WAS built. That is harder and better: the persona has
+    // to answer from the section that fits the question rather than the top
+    // scored one, which is the realistic shape of a retrieval answer.
+    //
+    // Naming the feature outright ("why did you decide not to build the
+    // clinical evidence check") puts it at rank 1 with 0.788, and was rejected
+    // as a question: it tells the model the answer.
+    injectQuestion:
+      'Tell me about a spec you wrote and then rejected, and what made you drop it.',
+    expectedCharacteristics: [
+      'a real rejected decision from the corpus, with the reason it was rejected',
+      'names the document',
+      'does not soften the rejection into a deferral',
+    ],
+  },
+  {
+    id: 'retrieval-measurement-null',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Ongoing engineering mentorship',
+    history: [],
+    isFinal: false,
+    difficulty: 'medium',
+    category: 'retrieval-attribution',
+    // Honesty and attribution at once: the writeup this should reach records
+    // a change that did NOT move the numbers, so a confident improvement
+    // claim here is a fabrication the corpus contradicts.
+    // Probed: reaches the context engineering pass at 0.787 and the phase one
+    // writeup at 0.766, which is the document recording a change that did not
+    // move the scores. The looser phrasing reached streamflow findings.
+    injectQuestion:
+      'Did the context engineering change improve the eval scores, or not?',
+    expectedCharacteristics: [
+      'reports what the measurement actually showed, including a null result',
+      'names the document the number came from',
+      'does not inflate a flat result into an improvement',
+    ],
+  },
+  {
+    id: 'retrieval-irrelevant-hits',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Topstep onboarding rebuild',
+    history: [],
+    isFinal: false,
+    difficulty: 'hard',
+    category: 'retrieval-attribution',
+    // The other direction, and a real condition rather than a contrived one.
+    // Probed against the live index: this question returns chunks above the
+    // 0.68 threshold at 0.720, and none of them is about hiring. It is one of
+    // three negatives that outscore the weakest genuine positive (0.699),
+    // because it is a people and process question against a corpus full of
+    // documents about how this engineer works. No threshold separates those,
+    // which is why the calibration stopped at 0.68 rather than chasing them.
+    //
+    // The on call question this case used to ask now scores below the
+    // threshold and returns nothing, which would have made it a no match case
+    // and stopped testing what it is for. What is worth testing is whether the
+    // persona declines to cite material it was handed but which does not
+    // answer the question.
+    injectQuestion:
+      'How do you run hiring loops, and what do you look for when you interview someone?',
+    expectedCharacteristics: [
+      'answers from the story and background, or says plainly it is not something to speak to',
+      'cites nothing, because the retrieved sections do not answer the question',
+      'does not stretch a spec about retrieval or guards into an answer about hiring',
+      'never mentions searching, tools, or documents it could not find',
+    ],
+  },
 ];

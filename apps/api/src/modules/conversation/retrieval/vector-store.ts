@@ -37,33 +37,40 @@ export const TOP_K = 3;
  * Upstash normalises scores to 0 to 1 whatever the metric, so this number
  * means the same thing regardless of how the index was configured.
  *
- * **This is a placeholder, not a calibration.** It replaced the spec's 0.7
- * starting value on 2026-08-31 after four probe queries against the real 566
- * chunk corpus:
+ * **Calibrated 2026-09-01** against the 607 chunk index, replacing a 0.62
+ * placeholder that had been guessed from four self written probes. Twenty
+ * labelled queries: ten the corpus genuinely answers, ten plausible interview
+ * questions it does not.
  *
- *   0.736  "how do you approach testing"
- *   0.709  "what happens when a fix introduces the next bug"
- *   0.663  "what do you do when a guard keeps breaking"
- *   0.568  "what is your favourite colour"
+ *   positives top-1  0.699 0.710 0.725 0.763 0.765 0.784 0.788 0.796 0.808 0.852
+ *   negatives top-1  0.569 0.602 0.631 0.644 0.650 0.652 0.668 0.705 0.711 0.720
  *
- * What that evidence actually supports is narrow: 0.7 was demonstrably wrong,
- * because it dropped the third query, which is one of the questions this phase
- * exists to answer. Where to land instead was a guess. The queries were written
- * and graded by the same author as the chunker, there is one negative example
- * and it is an absurd one rather than a near miss, and no winning chunk was
- * read to check it answers the question rather than merely coming from a
- * plausible file. Four points do not separate two distributions.
+ * The two populations OVERLAP, so no value separates them and none was
+ * expected to. Three negatives outscore the weakest positive, and all three
+ * are process and people questions (hiring loops, performance reviews, daily
+ * standups) against a corpus full of documents about how this engineer works.
+ * They are semantically near because they ARE near.
  *
- * A real value needs a labelled set, and AC-14's golden cases are one: they are
- * questions with known correct answers, written for this purpose. Measure
- * precision and recall across thresholds when they land, and replace this.
+ *   threshold   positives kept   negatives rejected
+ *   0.62               10/10            2/10          <- the old placeholder
+ *   0.65               10/10            5/10
+ *   0.68               10/10            7/10          <- here
+ *   0.70                9/10            7/10
+ *   0.73                7/10           10/10
  *
- * Until then it errs toward recall on purpose. A retrieved chunk the model
- * ignores costs little and is visible through attribution; a dropped chunk
- * makes the capability quietly not work, which is the failure actually
- * observed here.
+ * 0.68 keeps every positive, sits just under the weakest at 0.699, and takes
+ * negatives rejected from two to seven. Going further costs real recall: 0.73
+ * buys the last three negatives for three positives, and this design errs
+ * toward recall on purpose. A retrieved chunk the model ignores is cheap and
+ * visible through attribution; a dropped chunk makes the capability quietly
+ * not work, which is the failure actually observed here.
+ *
+ * What the number does NOT do is keep junk out entirely. At 0.68 three of ten
+ * unrelated questions still return chunks, which is why the persona is told
+ * not to cite material that does not answer the question, and why a golden
+ * case tests exactly that.
  */
-export const MINIMUM_SIMILARITY = 0.62;
+export const MINIMUM_SIMILARITY = 0.68;
 
 type ChunkMetadata = { heading: string; headingPath: string; sourcePath: string };
 
