@@ -161,6 +161,20 @@ No Prisma schema change and no migration. Retrieval adds no table, no column, an
 | Vector index | Upstash, hosted | chunk id, embedded text, metadata (`sourcePath`, `heading`, `headingPath`) | the embed script only |
 | Corpus manifest | `docs/evals/interview/corpus.json`, committed | `corpusHash`, `chunkCount`, `embeddedAt`, and per document `{ path, hash }` | the embed script only |
 
+**Retrieved chunks are filtered through the ownership guard before the model sees them.**
+
+Found by the adversarial pass on 2026-09-01, and it is not hypothetical. The tool description tells the persona to name the document it used, so an honest answer quotes the retrieved section, and that answer is then judged by `evaluateTonyResponse`. Several committed documents quote guard tripping text as EXAMPLES: the credential check spec quotes a licensure claim in order to discuss it, and eval writeups quote figures a model once fabricated in order to record that it did. A sweep of all 579 chunks found 18 that trip the guard. The credential chunk was the literal top hit for "are you still a licensed occupational therapist".
+
+The effect was silent and misattributed: retrieval succeeded, the model quoted the source as instructed, the guard replaced the whole answer with scripted framing, and the log said only `Ownership guard fired`. The capability looked broken for a reason nobody would trace to retrieval.
+
+`filterChunksForStory` drops any chunk the guard would reject, using the same function that judges the answer. Three things about it are deliberate:
+
+- **The guard is not loosened.** It judges answers exactly as strictly as before. What changes is that the model is never handed material that would make a truthful answer fail.
+- **The filter is story aware**, because the guard is: the Product Forge numeric rule and the sole credit rule fire only for some stories, so a chunk dropped for one story is legitimately available for another.
+- **Documents are not excluded from the corpus.** Two other sections of the credential check spec are useful and are still returned for that same query; excluding the file would lose them over one paragraph.
+
+Suppressions are counted and logged (`suppressed`), so a corpus accumulating unusable text is visible rather than silent.
+
 **State transitions**: none. The index has no lifecycle beyond being rebuilt wholesale by the embed script.
 
 **API surface**:

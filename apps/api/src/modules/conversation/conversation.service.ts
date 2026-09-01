@@ -265,6 +265,10 @@ export class ConversationService {
       // has nothing to look up.
       const retrieval = createSearchKnowledgeExecutor({
         openIndex: openReadOnly,
+        // The guard filter is story aware, because the guard is: the Product
+        // Forge numeric rule and the sole credit rule fire only for some
+        // stories.
+        story,
         onFailure: (cause) =>
           this.logger.warn(`searchKnowledge unavailable: ${cause}`),
       });
@@ -391,6 +395,10 @@ export class ConversationService {
           calls: stats.calls,
           capped: stats.capped,
           failures: stats.failures,
+          // Chunks dropped because quoting them would have failed the
+          // ownership guard. Logged rather than silent: a rising number here
+          // means the corpus is accumulating text the persona cannot use.
+          suppressed: stats.suppressed,
           resultCounts: stats.resultCounts,
           latenciesMs: stats.latenciesMs,
           sourcePaths: stats.sourcePaths,

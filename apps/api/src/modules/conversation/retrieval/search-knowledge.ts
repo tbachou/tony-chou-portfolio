@@ -1,5 +1,7 @@
 import type { Index } from '@upstash/vector';
 import type { ToolDefinition, ToolExecutor } from '../../anthropic/ai-provider.interface';
+import type { StoryModel } from '../../../generated/prisma/models';
+import { evaluateTonyResponse } from '../ownership-guard';
 import { search, type RetrievedChunk } from './vector-store';
 
 /**
@@ -71,6 +73,8 @@ export const UNAVAILABLE_RESULT =
 
 export type RetrievalStats = {
   calls: number;
+  /** Chunks dropped because quoting them would fail the ownership guard. */
+  suppressed: number;
   /** Calls refused because the per turn cap was already reached. */
   capped: number;
   /** Calls that threw or reported the index unreachable. */
@@ -82,6 +86,34 @@ export type RetrievalStats = {
   /** Results returned per successful search, for the log line (AC-13). */
   resultCounts: number[];
 };
+
+/**
+ * Drops chunks that the ownership guard would reject if the persona quoted
+ * them (found by the adversarial pass, 2026-09-01).
+ *
+ * The tool description tells the model to name the document it used, so an
+ * honest answer quotes the retrieved section. That answer is then judged by
+ * `evaluateTonyResponse`. Some committed documents quote guard tripping text
+ * as EXAMPLES: the credential check spec quotes a licensure claim in order to
+ * discuss it, and eval writeups quote figures a model once fabricated in order
+ * to record that it did. Handing those to the model made its own honest answer
+ * fail, and the visitor got scripted framing while the log blamed the guard.
+ *
+ * Filtering here rather than loosening the guard is the whole point. The guard
+ * judges the answer and must stay exactly as strict; what changes is that the
+ * model is never handed material that would make a truthful answer fail it.
+ *
+ * Story aware, because the guard is: the Product Forge numeric rule and the
+ * sole credit rule fire only for some stories, so a chunk dropped for one
+ * story is legitimately available for another. Excluding whole documents from
+ * the corpus instead would lose good sections over one bad paragraph.
+ */
+export function filterChunksForStory<T extends { text: string }>(
+  chunks: T[],
+  story: StoryModel,
+): T[] {
+  return chunks.filter((chunk) => evaluateTonyResponse(chunk.text, story).ok);
+}
 
 /** Formats chunks for the model. Path first, because attribution needs it. */
 function renderResults(chunks: RetrievedChunk[]): string {
@@ -109,10 +141,13 @@ function renderResults(chunks: RetrievedChunk[]): string {
  */
 export function createSearchKnowledgeExecutor(params: {
   openIndex: () => Index;
+  /** The story under discussion. The guard filter below is story aware. */
+  story: StoryModel;
   onFailure: (cause: string) => void;
 }): { execute: ToolExecutor; stats: RetrievalStats } {
   const stats: RetrievalStats = {
     calls: 0,
+    suppressed: 0,
     capped: 0,
     failures: 0,
     sourcePaths: [],
@@ -146,7 +181,11 @@ export function createSearchKnowledgeExecutor(params: {
     const startedAt = Date.now();
     try {
       index ??= params.openIndex();
-      const chunks = await search(index, query);
+      const found = await search(index, query);
+      // Filtered BEFORE anything is counted or logged, so the recorded source
+      // paths are the ones actually handed to the model.
+      const chunks = filterChunksForStory(found, params.story);
+      stats.suppressed += found.length - chunks.length;
       stats.latenciesMs.push(Date.now() - startedAt);
       stats.resultCounts.push(chunks.length);
       stats.sourcePaths.push(...chunks.map((chunk) => chunk.sourcePath));

@@ -7,6 +7,8 @@ import {
   UNAVAILABLE_RESULT,
 } from './search-knowledge';
 import { search } from './vector-store';
+import { StoryOwnership } from '../../../generated/prisma/enums';
+import type { StoryModel } from '../../../generated/prisma/models';
 
 jest.mock('./vector-store', () => ({
   search: jest.fn(),
@@ -20,10 +22,28 @@ const chunk = (sourcePath: string, text = 'body', heading = 'Decision') => ({
   text,
 });
 
-function makeExecutor(openIndex = jest.fn(() => ({}) as never)) {
+/**
+ * A solo, non Product Forge story, so the story dependent guard branches stay
+ * quiet and a test that wants a clean pass gets one. The suppression tests
+ * below pick a story deliberately.
+ */
+const story = {
+  id: 'story-1',
+  title: 'Portfolio rebuild',
+  ownership: StoryOwnership.SOLO,
+  engagement: 'Personal project',
+  summary: 'Rebuilt the portfolio.',
+  requiredFraming: null,
+} as StoryModel;
+
+function makeExecutor(
+  openIndex = jest.fn(() => ({}) as never),
+  storyOverride: StoryModel = story,
+) {
   const onFailure = jest.fn();
   const { execute, stats } = createSearchKnowledgeExecutor({
     openIndex,
+    story: storyOverride,
     onFailure,
   });
   return { execute, stats, onFailure, openIndex };
@@ -160,6 +180,52 @@ describe('createSearchKnowledgeExecutor', () => {
     expect(result).toContain('Unknown tool');
     expect(searchMock).not.toHaveBeenCalled();
     expect(stats.calls).toBe(0);
+  });
+
+  it('drops a chunk the persona could not quote without failing the guard', async () => {
+    // The failing input from the adversarial pass on 2026-09-01: the credential
+    // check spec quotes a licensure claim in order to discuss it, and it is the
+    // top hit for the most obvious visitor question. Handed to the model, the
+    // model quotes it as the tool description instructs, and the guard then
+    // replaces the whole answer with scripted framing.
+    searchMock.mockResolvedValue([
+      chunk(
+        'docs/specs/_root/0013-credential-check-second-layer.md',
+        'Note that "I\'m still a licensed OT" and "I\'m no longer a licensed OT" differ by one word.',
+      ),
+      chunk('docs/specs/_root/0014-agent-skill-storage/index.md', 'Safe prose.'),
+    ]);
+    const { execute, stats } = makeExecutor();
+
+    const result = await execute(call());
+
+    expect(result).not.toContain('licensed OT');
+    expect(result).toContain('0014-agent-skill-storage');
+    expect(stats.suppressed).toBe(1);
+    // Only what survived is reported as a source.
+    expect(stats.sourcePaths).toEqual([
+      'docs/specs/_root/0014-agent-skill-storage/index.md',
+    ]);
+    expect(stats.resultCounts).toEqual([1]);
+  });
+
+  it('applies the story dependent guard branches, not just the universal ones', async () => {
+    const productForge = {
+      ...story,
+      engagement: 'Product Forge',
+    } as StoryModel;
+    searchMock.mockResolvedValue([
+      chunk('docs/specs/_root/0006-grade-guesser-daily-game.md', 'Fixed cost of about $0.02 per day.'),
+    ]);
+
+    // Same chunk, two stories: dropped for Product Forge, kept otherwise.
+    const forge = makeExecutor(undefined, productForge);
+    expect(await forge.execute(call())).toBe(NO_MATCH_RESULT);
+    expect(forge.stats.suppressed).toBe(1);
+
+    const personal = makeExecutor();
+    expect(await personal.execute(call())).toContain('0006-grade-guesser');
+    expect(personal.stats.suppressed).toBe(0);
   });
 
   it('never puts the query text in anything it reports (AC-13)', async () => {
