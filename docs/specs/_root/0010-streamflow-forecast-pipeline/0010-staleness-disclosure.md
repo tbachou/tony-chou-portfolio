@@ -30,16 +30,17 @@ One measurement bounds every answer here. Ingest runs on `0 0,6,12,18` and USGS 
 - **AC-S1**: The staleness threshold is derived as one and a half times `ISSUE_INTERVAL_HOURS`, in the shared streamflow config, and is not a literal. At the current six hour cadence it is nine hours. A test binds the relationship, not the number, so a cadence change moves the threshold with it.
 - **AC-S2**: The newest reading is stale when `now` minus its `validTime` exceeds that threshold. At or below it, the page renders exactly as it does today.
 - **AC-S3**: When the reading is stale, the gauge panel keeps the figure at its current size and glow and adds a warning naming how old the reading is. The number is never hidden, replaced or restyled: a reader who wants the last known value can still see it.
-- **AC-S4**: When the reading is stale **and** the most recent ingest run recorded `FAILED` or `PARTIAL`, the warning says the pipeline has not ingested successfully. When the reading is stale and the last run was `OK`, it does not, because late and broken are different findings.
+- **AC-S4**: When the reading is stale **and** the pipeline is not completing runs, the warning says so. Not completing means any of: the most recent ingest run recorded `FAILED` or `PARTIAL`; that run's own `startedAt` is older than the threshold; or no run exists at all. The last two matter because **a scheduler that stops entirely writes no new row**, so the most recent run stays the last successful one and its status stays `OK`. Reading status alone reports the worst failure this page has, a workflow GitHub disabled after sixty days of repository inactivity, as perfect health. When the reading is stale and the pipeline is merely late, the sentence is withheld, because late and broken are different findings.
 - **AC-S5**: A displayed forecast is stale input when `issuedAt` minus the `validTime` of its input reading exceeds the same threshold as **AC-S1**. One threshold governs both surfaces.
 - **AC-S6**: The input reading is the row with the greatest `validTime` among the loaded observations satisfying **both** `validTime <= issuedAt` **and** `recordedAt <= issuedAt`. No new query is issued and no column is added to `Prediction`. **The `recordedAt` bound is load bearing, not an optimisation.** The page loads one reconstruction as of `now`, not one as of `issuedAt`, and `writeObservations` stamps a single `recordedAt` on a whole batch. So after gap recovery backfills an outage (the parent's **AC-6**), a row whose `validTime` sits right against `issuedAt` but whose `recordedAt` is hours later would stand in as the input a forecast made during the outage supposedly used, and the row would read as fresh input. That is a false negative in precisely the case this criterion exists to catch. A test forges that shape and fails if `validTime` alone is used.
+- **AC-S5a**: A displayed forecast is **also** stale when `now` minus its own `issuedAt` exceeds the same threshold, whatever its input's age was. Predictions are issued on the same six hourly cadence as ingest, so a forecast past the threshold means a missed predict cycle. This is a separate failure from **AC-S5** and the pre deploy audit found it reachable: the workflow runs ingest and predict as separate steps, so the predictor can die while ingest keeps running, and then the reading is fresh, the input was fresh when the forecast was issued, and a forecast forty hours old renders with nothing to say so. A forecast stale on either count is marked identically; a reader does not need to know which clock failed.
 - **AC-S6a**: When no loaded observation satisfies both bounds, the forecast is treated as stale input rather than fresh. The derivation fails toward disclosure, never toward silence.
-- **AC-S7**: Stale input forecasts are marked, and the marker is a double dagger, the next free symbol after the `*` and dagger the table already spends on interval provenance. It carries its own legend paragraph in the same style as those two. When only some rows are affected, each carries a per row marker; when every row is affected, a single note above the table replaces the per row markers.
+- **AC-S7**: Stale input forecasts are marked, and the marker is a double dagger, the next free symbol after the `*` and dagger the table already spends on interval provenance. It carries its own legend paragraph in the same style as those two. When only some rows are affected, each carries a per row marker and the legend follows the table beside the other footnotes; when every row is affected, a single note **above** the table replaces the per row markers, because a reader scanning numbers reaches the table before anything under it.
 - **AC-S8**: A forecast whose `targetTime` is at or before `now` is not displayed. The table is about the future or it is not a forecast table.
 - **AC-S8a**: **AC-S8**'s filter runs before **AC-S7**'s decision, and "every row" in **AC-S7** means every row that survived it. The order is load bearing: with six rows of which four are stale input and two have elapsed, the survivors are four of four stale and should carry one note, while counting before the filter reads four of six and would wrongly print per row markers.
-- **AC-S9**: When **AC-S8** leaves no rows to show, the empty state says the current forecasts have elapsed and none newer has arrived. This is distinct in wording from the existing never issued state, because a stopped pipeline must not read as a fresh install.
+- **AC-S9**: When **AC-S8** leaves no rows to show, the empty state says the current forecasts have elapsed and none newer has arrived, in wording distinct from the never issued state, because a stopped pipeline must not read as a fresh install. **The distinction is drawn from a read that is not bounded by the two day forecast window**, a `findFirst` for any non hindcast prediction at this gauge. Drawing it from the loaded rows, as the first draft did, makes the elapsed state unreachable: every issue slot writes all three horizons, and a 72 hour row issued at the oldest loadable instant still targets a day into the future, so "every loaded row has elapsed" is a shape the scheduler cannot produce. Verified by sweeping every admissible issue time at five minute resolution: zero all elapsed cases. The consequence of getting this wrong is not a missing message but a false one, since the page then falls through to "no forecast has been issued yet" during exactly the outage this criterion is for.
 - **AC-S10**: No pipeline behaviour changes. The prediction job still issues from stale inputs, `persistenceForecast` still applies no maximum input age, and no scored row is affected.
-- **AC-S11**: A failed read stays distinct from stale data. Staleness is only evaluated when a read succeeded; the existing "could not be read just now" paths are untouched.
+- **AC-S11**: A failed read stays distinct from stale data. Staleness is only evaluated when a read succeeded, and the existing failure paths are untouched. **Correcting this criterion's first wording**, which claimed a rejected observations read renders a failure message: it does not, and never did. That read is the one the page deliberately does not settle, because the hydrograph is what this page is, so its rejection is rethrown to the error boundary and no part of the page renders. Every other panel settles and says so. This child does not change that, and the criterion now describes the behaviour rather than a behaviour that was assumed without checking.
 
 ## Options considered
 
@@ -118,13 +119,14 @@ Filtering elapsed rows rather than marking them follows from what the table clai
 | render any panel | the staleness threshold | derived as `ISSUE_INTERVAL_HOURS * 1.5` in `@portfolio/streamflow` config, exported as a named constant |
 | gauge panel | age of the newest reading | `now` minus `newestReading.validTime`, both already on the page |
 | gauge panel | whether to warn at all | that age compared against the threshold |
-| gauge panel | whether the pipeline is failing | `lastRun.status`, from the `PipelineRun` read the page already makes for the bottom panel |
+| gauge panel | whether the pipeline is failing | `lastRun.status` not `OK`, **or** `lastRun.startedAt` older than the threshold, **or** no run row at all, from the `PipelineRun` read the page already makes |
 | forecast table | the input reading for a row | greatest `Observation.validTime` among loaded rows with **both** `validTime <= issuedAt` and `recordedAt <= issuedAt`; `null` if none qualifies, which counts as stale per **AC-S6a** |
 | forecast table | a row's input age | that row's `issuedAt` minus the input reading's `validTime` |
 | forecast table | whether a row is stale input | that age compared against the same threshold |
-| forecast table | whether to mark per row or once | whether every row **surviving the AC-S8 filter** is stale input, or only some |
+| forecast table | whether a row is stale in itself | `now` minus that row's `issuedAt`, against the same threshold (**AC-S5a**) |
+| forecast table | whether to mark per row or once | whether every row **surviving the AC-S8 filter** is stale on either count, or only some |
 | forecast table | whether a row has elapsed | `targetTime` compared against `now` |
-| empty state | elapsed versus never issued | whether any row existed before the elapsed filter removed it |
+| empty state | elapsed versus never issued | a `findFirst` for any non hindcast prediction at this gauge, **unbounded by the two day window**; the loaded rows cannot answer this (**AC-S9**) |
 
 **Key invariants**
 
@@ -139,12 +141,21 @@ Filtering elapsed rows rather than marking them follows from what the table clai
 
 | Constant | Text |
 |---|---|
-| `STALE_READING_NOTE` | This reading is {age} old. New readings normally arrive every few hours, so the river may have changed since. |
-| `STALE_INGEST_NOTE` | The last ingest run did not complete, so nothing newer has reached the store. |
+| `STALE_READING_NOTE` | Last measured {age}, and nothing newer has reached this page since. The river can change a great deal in that time. |
+| `STALE_READING_REDIRECT` | For the level right now see the USGS gauge, and for a flood warning NOAA's National Water Prediction Service. |
+| `STALE_INGEST_NOTE` | The pipeline is not completing its runs, so a newer reading should not be expected shortly. |
 | `ELAPSED_FORECASTS_NOTE` | Every forecast on record has passed the time it was predicting, and none newer has been issued. That means the pipeline has stopped, not that it has not started. |
-| `STALE_INPUT_LEGEND` | Issued from a river reading more than {hours} hours old. The forecaster had no newer measurement to work from, so treat it as a claim about a river it could not fully see. |
+| `STALE_FORECAST_LEGEND` | Issued more than {hours} hours ago, or from a river reading that old. The forecaster had no newer measurement to work from, so treat it as a claim about a river it could not fully see. |
 
-`STALE_INGEST_NOTE` is appended to `STALE_READING_NOTE`, never shown alone: a failed run with fresh data on hand is a pipeline concern, not a reader's.
+Three things about this table are corrections rather than choices, and are written down so they are not undone.
+
+**`{age}` is the page's existing relative form** ("41 h ago", "3 days ago"), and the sentence is built around it rather than fighting it. The first draft read `This reading is {age} old`, which renders as **"This reading is 41 h ago old"**. Both audit passes caught it and the spec's own copy table produced it, so the fix belongs here and not only in the code.
+
+**`STALE_READING_REDIRECT` is appended to `STALE_READING_NOTE` and carries the same two links the footer block does.** Duplicating them is deliberate. A previous audit measured roughly 3,400px between the numbers and that footer, and `NOT_A_FLOOD_FORECAST` was hoisted for exactly that reason while the actionable half was left behind. Staleness is the state in which a reader most needs somewhere else to go, and it was the state in which the pointer was furthest away.
+
+**`STALE_INGEST_NOTE` covers a stopped scheduler, not only a failed run**, per **AC-S4**, which is why it no longer says "the last ingest run did not complete". It is appended to `STALE_READING_NOTE`, never shown alone: a pipeline fault with fresh data on hand is a maintainer's problem, not a reader's.
+
+The legend is renamed from `STALE_INPUT_LEGEND` because **AC-S5a** widened what it marks: a row now carries it for being old itself, not only for its input being old.
 
 **Security model**: unchanged. `/streamflow` is a public read only page with no authentication and no user input. This child adds no endpoint and no parameter.
 
@@ -158,6 +169,10 @@ Filtering elapsed rows rather than marking them follows from what the table clai
 - A forecast issued from a reading ten hours older than its `issuedAt` is marked; one issued from a reading an hour older is not, verifies **AC-S5**, **AC-S6**.
 - The gap recovery shape: a forecast issued during an outage, plus a backfilled observation whose `validTime` sits just before that `issuedAt` but whose `recordedAt` is hours after it. The forecast is still marked stale input, and the test fails if the lookup bounds on `validTime` alone, verifies **AC-S6**.
 - A forecast with no qualifying observation at all is marked stale rather than treated as fresh, verifies **AC-S6a**.
+- The predictor died but ingest did not: a fresh reading, and forecasts issued forty hours ago from an input that was fresh at the time. Every row is marked, and the test fails if staleness is measured only against the input, verifies **AC-S5a**.
+- A pipeline stopped for three days renders the elapsed empty state and not the never issued one, with the fixture built only from shapes the scheduler can write (whole six hourly slots, all three horizons), verifies **AC-S9**.
+- A scheduler that stopped without recording a failure, so the newest run row is an old `OK`, still says the pipeline is not completing runs, verifies **AC-S4**.
+- The reading warning reads as a sentence at nine hours, at thirty hours and at forty days, verifies the Copy table.
 - Four stale input rows and two elapsed rows render one note, not per row markers, because the elapsed pair is removed before the count, verifies **AC-S7**, **AC-S8a**.
 - Two of six rows stale input renders per row markers; six of six renders one note and no per row markers, verifies **AC-S7**.
 - A 24 hour row whose `targetTime` has passed is absent from the rendered table, verifies **AC-S8**.
@@ -171,10 +186,10 @@ Tracer Bullet, matching the parent. The thin thread is the reading warning: one 
 
 1. Export the derived threshold from the shared streamflow config beside `ISSUE_INTERVAL_HOURS`, with a test binding the relationship rather than the value. Satisfies **AC-S1**.
 2. A pure `isStale(validTime, now, threshold)` predicate and its suite, including the boundary at exactly the threshold. Satisfies **AC-S2**.
-3. Render the warning in the gauge panel when stale, keeping the figure untouched, and say that the pipeline has not ingested when the last run also failed or was partial. This is the thin thread; look at it against a seeded store before going wider. Satisfies **AC-S3**, **AC-S4**, **AC-S11**.
+3. Render the warning in the gauge panel when stale, keeping the figure untouched, and say the pipeline is not completing runs when the last run failed, is itself older than the threshold, or is absent. End the warning with the redirect and its two links. This is the thin thread; look at it against a seeded store before going wider. Satisfies **AC-S3**, **AC-S4**, **AC-S11**.
 4. A pure function returning the input reading for a given `issuedAt` from a list of observations, bounded on `recordedAt` as well as `validTime`, and the input age derived from it. Its suite covers the exact boundary, the gap recovery shape that `validTime` alone gets wrong, and the no qualifying row case that must fail toward disclosure. Satisfies **AC-S5**, **AC-S6**, **AC-S6a**.
-5. Filter forecasts whose `targetTime` has passed, and split the empty state into elapsed and never issued. This lands **before** the marking step on purpose: **AC-S7**'s all or some decision is computed over the rows that survive here, so building them the other way round bakes in the wrong count. Satisfies **AC-S8**, **AC-S8a**, **AC-S9**.
-6. Mark stale input rows in the forecast table, per row when some of the surviving rows are affected and as one note when all of them are. Satisfies **AC-S7**.
+5. Filter forecasts whose `targetTime` has passed, and split the empty state into elapsed and never issued, drawing that distinction from an unbounded `findFirst` rather than from the loaded rows. This lands **before** the marking step on purpose: **AC-S7**'s all or some decision is computed over the rows that survive here, so building them the other way round bakes in the wrong count. Satisfies **AC-S8**, **AC-S8a**, **AC-S9**.
+6. Mark stale rows in the forecast table, on either count: an input older than the threshold, or an `issuedAt` older than it. Per row when some of the surviving rows are affected, and as one note above the table when all of them are. Satisfies **AC-S5a**, **AC-S7**.
 7. Confirm the pipeline is untouched: the prediction and baseline suites unchanged and green, and no write path added. Satisfies **AC-S10**.
 
 ## Consequences
