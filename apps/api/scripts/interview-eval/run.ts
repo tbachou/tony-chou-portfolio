@@ -53,11 +53,19 @@ import {
   hashCorpus,
   type CorpusManifest,
 } from '../../src/modules/conversation/retrieval/corpus';
-import { RETRIEVAL_STRICT_ENV } from '../../src/modules/conversation/retrieval/search-knowledge';
+import {
+  RETRIEVAL_STRICT_ENV,
+  retrievalStrictFromEnv,
+} from '../../src/modules/conversation/retrieval/search-knowledge';
 import {
   openReadOnly,
   search as searchIndex,
 } from '../../src/modules/conversation/retrieval/vector-store';
+import { checkIndexPopulation } from '../../src/modules/conversation/retrieval/index-health';
+import {
+  canSaveBaseline,
+  evaluateRunOutcome,
+} from '../../src/modules/conversation/eval/run-outcome';
 import { JUDGE_MODEL } from './scorers/judge-client';
 
 function arg(name: string): string | undefined {
@@ -264,8 +272,9 @@ async function retrievalPreflight(repoRoot: string): Promise<string> {
   }
 
   // AC-9, cause 3: prove the credentials actually work, with one real query.
+  const index = openReadOnly();
   try {
-    await searchIndex(openReadOnly(), 'preflight reachability probe');
+    await searchIndex(index, 'preflight reachability probe');
   } catch (error) {
     console.error(
       '\u274c The retrieval index is not reachable, so this run would score as though\n' +
@@ -274,8 +283,29 @@ async function retrievalPreflight(repoRoot: string): Promise<string> {
     process.exit(1);
   }
 
+  // Reachable is not the same as populated, and the difference is the whole
+  // hole: a query against an EMPTY index returns [] without throwing, every
+  // search then reports "no match", which is a normal outcome rather than a
+  // failure, and strict mode never fires. corpus.json cannot catch it either,
+  // because it hashes the repo's documents rather than the index's contents.
+  let population;
+  try {
+    population = checkIndexPopulation(await index.info(), manifest.chunkCount);
+  } catch (error) {
+    console.error(
+      '\u274c Could not read the index statistics, so this run cannot prove retrieval is\n' +
+        `   populated (AC-9): ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  }
+  if (!population.ok) {
+    console.error(`\u274c Retrieval preflight: ${population.message}`);
+    process.exit(1);
+  }
+
   console.log(
-    `Corpus:   ${actual.slice(0, 12)}\u2026 (${manifest.chunkCount} chunks, ${manifest.documents.length} documents), index reachable`,
+    `Corpus:   ${actual.slice(0, 12)}\u2026 (${manifest.chunkCount} chunks, ${manifest.documents.length} documents), ` +
+      `index reachable with ${population.vectorCount} vectors`,
   );
   return actual;
 }
@@ -466,10 +496,12 @@ async function main(): Promise<void> {
 
   // --save-baseline: a deliberate local step (AC-9); CI never passes it.
   if (process.argv.includes('--save-baseline')) {
-    if (run.meta.partial) {
-      console.error(
-        '❌ refusing --save-baseline on a partial run (capped or aborted): the baseline must be a full-set run.',
-      );
+    const baselineVerdict = canSaveBaseline({
+      partial: run.meta.partial,
+      generationErrors: aggregate(run.cases).generationErrors,
+    });
+    if (!baselineVerdict.ok) {
+      console.error(`❌ ${baselineVerdict.message}`);
       process.exit(1);
     }
     const noiseFrom = arg('noise-from');
@@ -531,6 +563,21 @@ async function main(): Promise<void> {
   console.log(`Wrote ${scoreboardPath}\n`);
 
   printSummary(run);
+
+  // AC-9, the half the preflight cannot cover. A retrieval failure DURING a
+  // run (a transient outage, a rate limit) is caught by generateTurnPair,
+  // recorded as a generation error, and leaves `partial` false because the
+  // case still produced a result. Without this the run wrote its results,
+  // regenerated the scoreboard and exited 0, so nothing downstream could tell
+  // it apart from a run that measured what it claims to.
+  const outcome = evaluateRunOutcome({
+    strictRetrieval: retrievalStrictFromEnv(),
+    generationErrors: aggregate(run.cases).generationErrors,
+  });
+  if (outcome.exitCode !== 0) {
+    console.error(`\n\u274c ${outcome.message}`);
+    process.exitCode = outcome.exitCode;
+  }
 }
 
 function logCase(result: CaseResult): void {
