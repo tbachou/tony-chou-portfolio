@@ -52,11 +52,13 @@ docker rm -f mig; unset DATABASE_URL
 
 ## Agent skills
 
-- [nestjs-best-practices](../../.claude/skills/nestjs-best-practices/): `kadajett/agent-nestjs-skills`, module/DI/security patterns
-- [prisma-database-setup](../../.claude/skills/prisma-database-setup/): `prisma/skills`, provider configuration
-- [prisma-postgres](../../.claude/skills/prisma-postgres/): `prisma/skills`, hosted Postgres operations
-- [better-auth-best-practices](../../.claude/skills/better-auth-best-practices/): `better-auth/skills`, auth server/client config
-- [javascript-typescript-jest](../../.claude/skills/javascript-typescript-jest/): `github/awesome-copilot`, Jest testing patterns
+Installed globally, not committed here (spec 0014); `skills-lock.json` at the repo root is the list.
+
+- `nestjs-best-practices`: `kadajett/agent-nestjs-skills`, module/DI/security patterns
+- `prisma-database-setup`: `prisma/skills`, provider configuration
+- `prisma-postgres`: `prisma/skills`, hosted Postgres operations
+- `better-auth-best-practices`: `better-auth/skills`, auth server/client config
+- `javascript-typescript-jest`: `github/awesome-copilot`, Jest testing patterns
 
 ## Related specs
 
