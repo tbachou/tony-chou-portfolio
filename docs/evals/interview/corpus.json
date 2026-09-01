@@ -1,0 +1,159 @@
+{
+  "corpusHash": "01dd57837b3370672f0c5c492e119535284eae2b5a7a7269904355978e021ae3",
+  "chunkCount": 584,
+  "embeddedAt": "2026-08-31T23:49:15.070Z",
+  "documents": [
+    {
+      "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
+      "hash": "d06e83e2369299ebb3df47f71797446543ae5a5bfc59f036290bf70f3890e3bf"
+    },
+    {
+      "path": "docs/evals/interview/0012-phase-two-public-evals-page.md",
+      "hash": "7a9764a46ee3f1c090d820ecf9ad76956861f3973f30e6d6768837932971fd07"
+    },
+    {
+      "path": "docs/specs/_root/0001-backend-ai-stack/index.md",
+      "hash": "8c5d5311d1750a3c61c37c8ff8e5c859014dc57e7461dabfcffd5f8e8fade589"
+    },
+    {
+      "path": "docs/specs/_root/0002-conversation-engine-and-usage-dashboard/index.md",
+      "hash": "417754721585a684a9573ac3cb551ea1a2ba9b0e64d68d1f96457a4544aa9c15"
+    },
+    {
+      "path": "docs/specs/_root/0002-conversation-engine-and-usage-dashboard/verify.md",
+      "hash": "2b6dd8a17a3e97141bbc8f03a9f363d1a525d97cc8996bcd63eaf6510f6f89f6"
+    },
+    {
+      "path": "docs/specs/_root/0003-frontend-deployment-platform.md",
+      "hash": "1c22566f179620e031170450e3d6e2aa72f28f0c2ef0cc06a84e5d60ce276f8b"
+    },
+    {
+      "path": "docs/specs/_root/0004-beta-climbing-rehab-planner/index.md",
+      "hash": "a9449ed805ba872566503a00439df8e9b492913f6473b21839b818914abb362c"
+    },
+    {
+      "path": "docs/specs/_root/0004-beta-climbing-rehab-planner/verify.md",
+      "hash": "a74d8696aa2a461ee8308d5d58575b79a64c6c439597708391d9c2bd5e70416c"
+    },
+    {
+      "path": "docs/specs/_root/0005-aws-genai-integration/0005-aws-foundation.md",
+      "hash": "1a36bab46d28545425cc675db5e7b231555d0ea82b5133051e4fa7f25edad778"
+    },
+    {
+      "path": "docs/specs/_root/0005-aws-genai-integration/0005-beta-guardrails.md",
+      "hash": "71972e3860b74f87f819caaf5de8bb9cd7965dffc90464503c456890969f6001"
+    },
+    {
+      "path": "docs/specs/_root/0005-aws-genai-integration/0005-classifier-flow.md",
+      "hash": "f5ed995a3b60a9d0471d4ffd4c20d4483b63f4d6e3f29b51c945950670af8887"
+    },
+    {
+      "path": "docs/specs/_root/0005-aws-genai-integration/0005-feedback-intake.md",
+      "hash": "8cd24dc208db25392cff0ffa7107faf60ea05137d2619106f8bc15969154df4f"
+    },
+    {
+      "path": "docs/specs/_root/0005-aws-genai-integration/0005-provider-swap.md",
+      "hash": "b95bdfd32decea9240121cc674aa4321f5000de5e165a6894e86e9476bc6cc85"
+    },
+    {
+      "path": "docs/specs/_root/0005-aws-genai-integration/index.md",
+      "hash": "d64b9b97551d8d2ff102d873f0522c2abde269786b01b2481e299292f969a882"
+    },
+    {
+      "path": "docs/specs/_root/0006-grade-guesser-daily-game.md",
+      "hash": "f7bdf3b0b10e8209071a37c653e963d381f10248fb051e9b0a2247932ff6844d"
+    },
+    {
+      "path": "docs/specs/_root/0007-agent-skills-storage-distribution/index.md",
+      "hash": "a33f0fea2862a6282a60ff436418fa23376a81f911dac4526383179a3a0859f8"
+    },
+    {
+      "path": "docs/specs/_root/0007-agent-skills-storage-distribution/verify.md",
+      "hash": "2e8fdd0e55c3aa4932df236184c40be30a269a71cc35de5d9a4dea02e5e20f7c"
+    },
+    {
+      "path": "docs/specs/_root/0008-beta-clinical-evidence-check/index.md",
+      "hash": "e3c73f3819878267076f630195d03141e06502d504c6ce28ac1a04bae651a7ff"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-falling-denominator.md",
+      "hash": "52b69fa879628dd4da9b9e4e74b6198e61dd7f80cb544f1bd480cabd11e2e92f"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-falling-regime.md",
+      "hash": "17b02ce9b58fa23c1dffcf2ebaf5f97b39010702e857ddad8dc04a5f88055b59"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-forecast-rain.md",
+      "hash": "24902269c5e8b2b3483b29013f17e2bf508dfd8c985fe8cb04e3f2929c269430"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-hindcast-seeding.md",
+      "hash": "37f481d3c19dbcc98670361617210bdfdddf23e1a35b897c1fc8e15902f4bb99"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-prediction-intervals.md",
+      "hash": "116fed8f2c5f1aeb78bb56562946c2fcd9a888d5a4b5f99d1da4165a9bc17220"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/findings/2026-08-27-falling-threshold-misses-tail.md",
+      "hash": "3a17052e38ceb8e24f5a062fcb755ccfde16942b2b83675cd76adc51d89cfe19"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/findings/2026-08-27-recession-regime.md",
+      "hash": "68b38a7e0830f716e4289b5fbd4cadd66e1ccb318405ae2a52bb16bac27b0827"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/findings/2026-08-28-falling-denominator-sweep.md",
+      "hash": "fe4da32fb1f0224afdfed114c7b3a9b0d247a70c1ec9e2837344259707353e73"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/index.md",
+      "hash": "56aca7f6a1ef06915cd69791b99ad55a7a9062d4232b49bf4431c77f5cbfba1b"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/verify.md",
+      "hash": "2989987497c8246f9be6e037d364bf00a3a59c5697885404c701fada0d5c390a"
+    },
+    {
+      "path": "docs/specs/_root/0011-interview-simulator-eval-suite/index.md",
+      "hash": "06988f03b225d1c4de7e85e02eddc312ce808f5b186622799bc078c234741afe"
+    },
+    {
+      "path": "docs/specs/_root/0011-interview-simulator-eval-suite/verify.md",
+      "hash": "368566bbb11263130874719d0d13019fff2cb9349d6f363a888e54e7372c575c"
+    },
+    {
+      "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-context-engineering-pass.md",
+      "hash": "d6b2136702560297b69e71cb8254e4222c80bf2be7318e0903900b4be42035f5"
+    },
+    {
+      "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-public-evals-page.md",
+      "hash": "1a6155157d605870502b1af430054961e4d27d4167d6453fd1abf19de30a519c"
+    },
+    {
+      "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-search-portfolio-retrieval.md",
+      "hash": "77b6d0d9c069bfbc73279d5810404ffa8496ff356b428ef325669d8022e95644"
+    },
+    {
+      "path": "docs/specs/_root/0012-grounded-portfolio-agent/findings/2026-08-31-grounding-embellishment.md",
+      "hash": "a7ae432ce542554f63a22281c808f8d2d71db1b4cca8ee065798dc6030b17edb"
+    },
+    {
+      "path": "docs/specs/_root/0012-grounded-portfolio-agent/index.md",
+      "hash": "360f522387d57bf4ada350d03874b5560fec2a06464d94f6328f37e7ebace740"
+    },
+    {
+      "path": "docs/specs/_root/0012-grounded-portfolio-agent/verify.md",
+      "hash": "881ce030f7be2e034d4a45659af7d14b4c120c221a0e3a02c50314bd45167740"
+    },
+    {
+      "path": "docs/specs/_root/0013-credential-check-second-layer.md",
+      "hash": "9110318ec1ef23b90b236b1a36106b32a3f0cda80fe25ecff582091c2077e971"
+    },
+    {
+      "path": "docs/specs/_root/0014-agent-skill-storage/index.md",
+      "hash": "ab06b104e188ffa081b4ec24c6c753852a3c469012e2dbf629b6ee2b725365c8"
+    }
+  ]
+}

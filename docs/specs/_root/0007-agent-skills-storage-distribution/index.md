@@ -1,9 +1,11 @@
 # 0007. Agent skills storage and distribution
 
 **Date**: 2026-08-22
-**Status**: Accepted
+**Status**: Superseded by [0014](../0014-agent-skill-storage/index.md)
 
 ## Summary
+
+> **Superseded on 2026-08-31 by [0014](../0014-agent-skill-storage/index.md).** The vendoring decision below fixed a genuinely broken checkout and its CI check still stands, but it was later found to have created the failure it was meant to prevent: two copies of each authored skill, one of which had drifted to a weaker version of a safety gate. 0014 keeps the seven authored skills committed and removes the twenty third party ones, which also closes a licensing question this spec never considered. Read this as the record of what was broken in August and why five mechanisms were replaced.
 
 Every agent skill in this repo is committed as real files, and nothing is fetched or restored to make a checkout work. That replaces five different storage mechanisms that had grown up side by side, two of which produced a broken checkout: a fresh clone got 29 working skills, 5 dangling symlinks, and 2 skills that were simply absent. Agent worktrees fare better only because the worktree bootstrap step links the gitignored directory in, a workaround that exists solely because the storage is broken; the 2 gitignored skills are missing there too. `skills-lock.json` stays, but changes job from restoring skills to recording where each one came from, and a CI check fails the build when the layout drifts again. Separately, the 7 workflow skills move to their own private repo (`claude-workflow-skills`) so portfolio, Panel and Carryover stop keeping hand copies that silently diverge.
 

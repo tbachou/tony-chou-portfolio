@@ -134,6 +134,63 @@ Three findings worth keeping even though the spec died:
 
 The decisive argument against building is arithmetic rather than principle. With roughly four usable ranges across three injuries, the auditability this spec was built to deliver is obtainable by writing four citations into `drafter.md` and stating plainly where none exists. The machinery would have existed to hold four facts.
 
+## Second sweep, 2026-08-31, the broader question, and why the rejection stands
+
+The 2026-08-22 sweep above asked one narrow question, what week the final stage begins, and the
+answer killed the spec. On 2026-08-31 the idea came back in a different form: rather than an
+offline checker over week timelines, would **retrieval** (RAG) over a clinical corpus be a better
+fit for Beta? The objection to re running the search was that the earlier sweep might have been
+too narrow, and that a corpus can be too thin for one question while being rich enough for
+another. That is a fair objection, so it was tested rather than dismissed from the record.
+
+**The broader question.** Beta asserts far more than timelines. Its drafter makes claims of five
+kinds: exercise selection per injury and stage, concrete dosing, progression criteria (a pain
+monitoring model, no more than about 3 out of 10 during activity, settling by the next morning),
+pain behavior adjustments, and contraindications. Much of that is general tendon and
+rehabilitation science rather than climbing specific, and general sports medicine is far better
+represented in open access than climbing papers are. So the second sweep searched all five claim
+types across all three injuries, applying the same `CC0` / `CC-BY` / `CC-BY-SA` bar and the review
+reporting technique this file recommends.
+
+**Result: six confirmed open licensed sources, unevenly spread.**
+
+| Claim area | Confirmed sources | What they can ground |
+|---|---|---|
+| Shoulder, rotator cuff related pain | 2 | Phase structure, three set dosing, RPE based intensity, pain threshold progression, referral trigger |
+| General tendon loading | 2 | The rationale for isometric loading in a progressive programme. **No dosing numbers**; one review states protocols were too heterogeneous to standardise |
+| General red flags | 1 | Constant, non mechanical pain at rest as a stop and refer signal, which matches Beta's existing rule |
+| Elbow tendinopathy | 1 | Dosing numbers only. Progression criteria explicitly described as not standardised in the field |
+| **Finger pulley** | 1 | The timeline source already found in the first sweep. **Nothing on exercise selection or dosing** |
+
+**Why the rejection stands, on the broader question too.** The climbing specific injury, the one
+Beta exists for, still has nothing usable beyond a single timeline citation. Two of the six
+sources state internally that the field lacks standardised dosing, so they cannot ground the
+numbers Beta prints. And the arithmetic is the same one that decided this the first time:
+retrieval earns its complexity when there is enough volume and redundancy that finding the right
+passage is real work. Six sources are fewer than a person can hand verify in an afternoon. The
+correct move remains what this file already concluded, write the citations into `drafter.md` by
+hand, and leave finger pulley exercise selection and the elbow progression rule explicitly
+uncited rather than implying grounding that does not exist.
+
+**A new near miss, recorded so it is not counted later.** The International Journal of Sports
+Physical Therapy publishes a lateral elbow rehabilitation programme with exactly the exercise,
+dosing and progression content Beta needs. IJSPT's standard licence is **CC BY-NC**, which fails
+the bar. It looks usable and is not, the same shape as the three shoulder papers in the first
+sweep. Do not count it.
+
+**Also closed, and not re researched.** The "warms up then fine" pain behavior maps to Cook and
+Purdam's tendon continuum model, standard closed sports medicine literature. Consistent with the
+pattern already established here, it was not pursued.
+
+**What did not pan out**, so nobody repeats it: CC-BY finger pulley exercise and dosing content
+beyond the known timeline review (multiple query variants returned only clinic and blog content
+with no usable licence); IJSPT as a source category (licence bar); Cochrane for elbow (almost
+never CC-BY compatible).
+
+**Status unchanged.** This spec stays rejected. The second sweep is recorded because the question
+was reasonable, was asked in good faith nine days later, and deserves an answer better than a
+memory of the first one.
+
 ## References
 
 **Project sources** (verifiable, in this repo):
