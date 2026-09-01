@@ -163,6 +163,22 @@ export function filterChunksForStory<T extends { text: string }>(
   return chunks.filter((chunk) => evaluateTonyResponse(chunk.text, story).ok);
 }
 
+/**
+ * Makes a string safe to put in a log line: one line, no control or format
+ * characters, bounded length, no stray surrogate.
+ *
+ * Shared by the two strings that reach a log from outside this process, the
+ * model supplied tool name and the provider's error text. Hardening one and
+ * not the other was the gap.
+ */
+export function flattenForLog(value: string, limit = 64): string {
+  return [...value.replace(/[\s\p{Cc}\p{Cf}]+/gu, ' ')]
+    .slice(0, limit)
+    .join('')
+    .replace(/[\uD800-\uDFFF]/gu, '')
+    .trim();
+}
+
 /** Formats chunks for the model. Path first, because attribution needs it. */
 function renderResults(chunks: RetrievedChunk[]): string {
   return chunks
@@ -221,22 +237,17 @@ export function createSearchKnowledgeExecutor(params: {
       // Bounded and flattened before it reaches a log: the name is whatever
       // the model emitted, and model output is derived from a visitor's
       // conversation. AC-13 keeps that out of logs.
-      // `isToolUse` gates only on the block type, so a tool_use block with no
-      // name arrives here as undefined, and calling .replace on it threw from
-      // inside the executor that must not throw, costing the visitor the whole
-      // turn. `||` rather than `??` so an empty name is named too.
+      // Normalise FIRST, then fall back, because a name can be non empty and
+      // still normalise to nothing: whitespace only, a zero width format
+      // character, a lone surrogate. Falling back before this only caught the
+      // literal empty string and left the log line with no subject.
       //
       // The replace covers control and format characters, not just \s: an
-      // escape sequence in model derived text can rewrite or hide a terminal
-      // line, and \s matches neither ESC nor NUL. Split by code point so the
-      // truncation cannot manufacture a lone surrogate, and drop any surrogate
-      // that arrived alone in the input, which splitting alone does not do.
-      const safeName = [
-        ...String(call.name || 'unnamed').replace(/[\s\p{Cc}\p{Cf}]+/gu, ' '),
-      ]
-        .slice(0, 64)
-        .join('')
-        .replace(/[\uD800-\uDFFF]/gu, '');
+      // escape sequence in model derived text can rewrite or hide a line in a
+      // terminal reading the logs, and \s matches neither ESC nor NUL. Split
+      // by code point so truncation cannot manufacture a lone surrogate, and
+      // drop any that arrived alone in the input.
+      const safeName = flattenForLog(String(call.name ?? '')) || 'unnamed';
       params.onFailure(`unknown tool requested: ${safeName}`);
       return `Unknown tool: ${safeName}`;
     }
@@ -282,37 +293,34 @@ export function createSearchKnowledgeExecutor(params: {
       // instantly are different problems and the log should tell them apart.
       stats.latenciesMs.push(Date.now() - startedAt);
       // AC-8: never fails the turn, never reaches the visitor, always logged.
-      // The cause only. The query is visitor adjacent content and AC-13 keeps
-      // it out of every log.
       stats.failures += 1;
-      const cause =
+
+      // No attempt is made to say whose fault this is. Three versions of a
+      // classifier here were each wrong in a different direction: every fetch
+      // failure called our bug, then our own TypeErrors excused for carrying a
+      // cause, then a connection dropped mid response classified as ours.
+      // `instanceof TypeError` cannot tell origin, and the vocabulary of
+      // messages meaning "network" belongs to undici and Upstash rather than
+      // to us, so the list could never be finished. The type and the message
+      // are more useful than a wrong level and cannot be wrong; alert on the
+      // failure RATE, which `stats.failures` already carries.
+      //
+      // Flattened and bounded like the tool name, and for the same reason.
+      // This is third party text: @upstash/vector throws
+      // `new UpstashError(`${body.error}`)`, the HTTP response body verbatim,
+      // so neither its length nor its characters are ours to trust. Hardening
+      // one string into this log while adding another unhardened one beside it
+      // was the inconsistency.
+      //
+      // The query is never part of it. That is AC-13, and it holds because
+      // nothing here interpolates the query, not because the provider's text
+      // is known to omit it.
+      const cause = flattenForLog(
         error instanceof Error
           ? `${error.name}: ${error.message}`
-          : 'unknown retrieval error';
-      // A TypeError from a bad refactor and a genuine Upstash outage used to
-      // produce an identical model facing string and an identical count, with
-      // only the free text warn to tell them apart and nothing alerting on it.
-      // AC-8 requires not failing the turn; it does not require erasing the
-      // distinction.
-      //
-      // The TypeError test has to come SECOND, and getting that order wrong
-      // inverted this check entirely. @upstash/vector uses fetch, and WHATWG
-      // fetch rejects with a TypeError ("fetch failed", with the real reason
-      // on `cause`) for every genuine network failure, so treating TypeError
-      // as our bug reported every real outage as a defect in this code and
-      // left the network bucket almost unreachable.
-      //
-      // No attempt is made to say whose fault this is. Three versions of a
-      // classifier here were each wrong in a different direction: it called
-      // every fetch failure our bug, then excused our own TypeErrors that
-      // carried a cause, then mis bucketed a connection dropped mid response
-      // as ours. `instanceof TypeError` cannot tell origin, and the list of
-      // messages that mean "network" belongs to undici and Upstash rather
-      // than to us, so it can never be finished.
-      //
-      // The constructor name and the message are more useful than a wrong
-      // level, and cannot be wrong. Alert on the failure RATE instead, which
-      // `stats.failures` already carries.
+          : 'unknown retrieval error',
+        200,
+      );
       params.onFailure(cause);
       if (params.failLoudly) {
         // The one place the seam's "an executor must not throw" rule is broken

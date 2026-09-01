@@ -357,13 +357,37 @@ describe('createSearchKnowledgeExecutor', () => {
     expect(stats.unknownTool).toBe(1);
   });
 
-  it('names an empty tool name rather than logging nothing', async () => {
+  it.each([
+    ['an empty string', ''],
+    ['whitespace only', '   '],
+    ['a zero width format character', '\u200b'],
+    ['a lone surrogate', '\uD83D'],
+    ['undefined', undefined],
+  ])('always names the tool, given %s', async (_label, name) => {
     const { execute, onFailure } = makeExecutor();
 
-    // '' ?? 'unnamed' is '', so a nullish fallback logged no subject at all.
-    await execute({ name: '', input: {} });
+    // The fallback has to run AFTER normalisation. A name can be non empty and
+    // still normalise to nothing, and falling back first caught only the
+    // literal empty string, leaving the log line with no subject.
+    await execute({ name: name as unknown as string, input: {} });
 
     expect(onFailure).toHaveBeenCalledWith('unknown tool requested: unnamed');
+  });
+
+  it('bounds and flattens the provider error text too', async () => {
+    // Third party text: @upstash/vector throws the HTTP response body
+    // verbatim, so its length and characters are not ours to trust. The tool
+    // name was hardened and this was not, which was the inconsistency.
+    const nasty = new Error('bad\u001b[2K\rWARN fake line');
+    nasty.name = 'X'.repeat(10_000);
+    searchMock.mockRejectedValueOnce(nasty);
+    const { execute, onFailure } = makeExecutor();
+
+    await execute(call());
+
+    const [cause] = onFailure.mock.calls[0] as [string];
+    expect(cause.length).toBeLessThanOrEqual(200);
+    expect([...cause].some((c) => c.charCodeAt(0) < 0x20)).toBe(false);
   });
 
   it('strips control characters, not only whitespace', async () => {

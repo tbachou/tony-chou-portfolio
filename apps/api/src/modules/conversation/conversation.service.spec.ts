@@ -478,6 +478,50 @@ describe('ConversationService.generateTurnPair', () => {
     warn.mockRestore();
   });
 
+  it('warns with the error type and message when retrieval fails', async () => {
+    // The line an operator actually sees. Nothing asserted it, so making the
+    // service's onFailure a no-op, dropping the cause, or downgrading warn to
+    // debug all left the suite green.
+    process.env.UPSTASH_VECTOR_REST_URL = 'https://example-vector.upstash.io';
+    process.env.UPSTASH_VECTOR_REST_TOKEN = 'read-only-token';
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    h.anthropic.runToolConversation.mockImplementationOnce(
+      async (params: { executeTool: (c: unknown) => Promise<string> }) => {
+        // Drive the real executor the service built, with a tool the model
+        // was never offered, so onFailure fires through the production path.
+        await params.executeTool({ name: 'nope', input: {} });
+        return {
+          text: 'an answer',
+          inputTokens: 1,
+          outputTokens: 1,
+          toolCallCount: 1,
+          stoppedOnIterationCap: false,
+          stoppedOnMaxTokens: false,
+        };
+      },
+    );
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(
+      lines.some((l) => l.startsWith('searchKnowledge failed: unknown tool requested: nope')),
+    ).toBe(true);
+    warn.mockRestore();
+  });
+
   it('does not touch the counters when nothing was billed', async () => {
     const h = makeHarness();
     h.anthropic.streamMessage.mockRejectedValue(new Error('upstream down'));
