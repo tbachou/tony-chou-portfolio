@@ -93,16 +93,23 @@ class CachingProvider implements AiProvider {
    * `AiProvider`: a stub that always threw would turn a future Beta change
    * into a corpus run failing for a reason that has nothing to do with Beta.
    *
-   * But it refuses outside `live`, because a replay run reaching this method
-   * would make a real model call while presenting itself as a replay. That is
-   * new spend rather than a broken contract (the coach is deliberately live
-   * too, see streamMessage below), and the harm is that it would be SILENT.
-   * The sibling harness makes the same situation loud, and so does this.
+   * But it refuses in `replay`, where a real model call would be made inside a
+   * run presenting itself as a replay. That is new spend rather than a broken
+   * contract (the coach is deliberately live too, see streamMessage below),
+   * and the harm is that it would be SILENT. The sibling harness makes the
+   * same situation loud, and so does this.
+   *
+   * `record` is deliberately NOT refused: a record run IS a live run that
+   * happens to save what it spends, so there is no misreporting to prevent.
+   * An earlier version refused it too, with a message describing replay.
+   *
+   * `async` so a caller writing `.catch(...)` gets a rejection rather than a
+   * synchronous throw, which is what the sibling harness does.
    */
-  runToolConversation(
+  async runToolConversation(
     params: RunToolConversationParams,
   ): Promise<RunToolConversationResult> {
-    if (this.mode !== 'live') {
+    if (this.mode === 'replay') {
       throw new Error(
         `CachingProvider: a tool loop call arrived in ${this.mode} mode. Beta made none when ` +
           'this wrapper was written, so nothing here caches or replays it, and running it ' +

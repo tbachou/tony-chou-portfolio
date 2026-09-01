@@ -3,6 +3,7 @@ import { ConversationService } from './conversation.service';
 import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AiProvider } from '../anthropic/ai-provider.interface';
+import { runToolConversation } from '../anthropic/tool-conversation';
 import type { DailyUsageService } from '../daily-usage/daily-usage.service';
 import type {
   HistoryTurn,
@@ -270,12 +271,34 @@ describe('ConversationService.generateTurnPair', () => {
       inputTokens: 20,
       outputTokens: 10,
     });
-    // What runToolConversation throws once two iterations have been billed.
-    const failure = new Error('529 overloaded');
-    Object.defineProperty(failure, '__toolLoopUsage', {
-      value: { inputTokens: 2400, outputTokens: 180 },
-      enumerable: false,
-    });
+    // Built by the REAL tool loop rather than by faking its mechanism: the
+    // usage now lives in a module-private WeakMap, so a test that attaches it
+    // by hand would pass while the production contract was broken.
+    let upstreamCalls = 0;
+    const failure = await runToolConversation(
+      () => {
+        upstreamCalls += 1;
+        if (upstreamCalls <= 2) {
+          return Promise.resolve({
+            content: [
+              { type: 'tool_use', id: `tu_${upstreamCalls}`, name: 't', input: {} },
+            ],
+            stop_reason: 'tool_use',
+            usage: { input_tokens: 1200, output_tokens: 90 },
+          });
+        }
+        return Promise.reject(new Error('529 overloaded'));
+      },
+      'model-x',
+      {
+        system: 's',
+        userMessage: 'u',
+        maxTokens: 600,
+        tools: [{ name: 't', description: 'd', inputSchema: {} }],
+        executeTool: async () => 'r',
+        maxIterations: 4,
+      },
+    ).catch((error: unknown) => error);
     h.anthropic.runToolConversation.mockRejectedValueOnce(failure);
 
     await h.service.generateTurnPair({
@@ -288,7 +311,9 @@ describe('ConversationService.generateTurnPair', () => {
 
     // The turn failed, but the money was still spent, so the daily cap has to
     // move. Otherwise a persistently failing turn burns budget invisibly.
-    expect(h.dailyUsage.incrementOp).toHaveBeenCalledWith(0, 2580);
+    // 2 loop iterations at 1200+90, plus the interviewer's 20+10, which was
+    // itself being dropped until the running total was hoisted.
+    expect(h.dailyUsage.incrementOp).toHaveBeenCalledWith(0, 2580 + 30);
     expect(h.events.map(([event]) => event)).toContain('turn_error');
     expect(h.prisma.conversationTurn.delete).toHaveBeenCalled();
   });

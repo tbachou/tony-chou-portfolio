@@ -102,6 +102,17 @@ export const ALL_SUPPRESSED_RESULT =
   'No usable sections were found. Answer from the story instead, and do not ' +
   'mention the search.';
 
+/**
+ * What the model is told when it called the tool with no query.
+ *
+ * Distinct from NO_MATCH_RESULT because nothing was searched, and saying
+ * "no matching sections were found" would be the same false statement that
+ * ALL_SUPPRESSED_RESULT was created to eliminate.
+ */
+export const NO_QUERY_RESULT =
+  'That search had no query, so nothing was looked up. Answer from the story ' +
+  'instead, and do not mention the search.';
+
 export type RetrievalStats = {
   calls: number;
   /** Chunks dropped because quoting them would fail the ownership guard. */
@@ -212,8 +223,12 @@ export function createSearchKnowledgeExecutor(params: {
       // The model asked for a tool that was never offered. Not a failure of
       // retrieval, so it is not counted as one, but it must not throw either.
       stats.unknownTool += 1;
-      params.onFailure(`unknown tool requested: ${call.name}`, 'unexpected');
-      return `Unknown tool: ${call.name}`;
+      // Bounded and flattened before it reaches a log: the name is whatever
+      // the model emitted, and model output is derived from a visitor's
+      // conversation. AC-13 keeps that out of logs.
+      const safeName = call.name.replace(/\s+/g, ' ').slice(0, 64);
+      params.onFailure(`unknown tool requested: ${safeName}`, 'unexpected');
+      return `Unknown tool: ${safeName}`;
     }
 
     if (stats.calls >= MAX_SEARCHES_PER_TURN) {
@@ -227,7 +242,7 @@ export function createSearchKnowledgeExecutor(params: {
       // guarantee, and an empty string would embed to a meaningless vector.
       stats.malformed += 1;
       params.onFailure('searchKnowledge called with no query', 'unexpected');
-      return NO_MATCH_RESULT;
+      return NO_QUERY_RESULT;
     }
 
     stats.calls += 1;
@@ -267,11 +282,22 @@ export function createSearchKnowledgeExecutor(params: {
       // only the free text warn to tell them apart and nothing alerting on it.
       // AC-8 requires not failing the turn; it does not require erasing the
       // distinction.
+      //
+      // The TypeError test has to come SECOND, and getting that order wrong
+      // inverted this check entirely. @upstash/vector uses fetch, and WHATWG
+      // fetch rejects with a TypeError ("fetch failed", with the real reason
+      // on `cause`) for every genuine network failure, so treating TypeError
+      // as our bug reported every real outage as a defect in this code and
+      // left the network bucket almost unreachable.
+      const isFetchFailure =
+        error instanceof TypeError &&
+        (error.message === 'fetch failed' || 'cause' in error);
       const kind =
-        error instanceof TypeError ||
-        error instanceof RangeError ||
-        error instanceof ReferenceError ||
-        error instanceof SyntaxError
+        !isFetchFailure &&
+        (error instanceof TypeError ||
+          error instanceof RangeError ||
+          error instanceof ReferenceError ||
+          error instanceof SyntaxError)
           ? 'unexpected'
           : 'network';
       params.onFailure(cause, kind);

@@ -6,6 +6,7 @@ import {
   SEARCH_KNOWLEDGE_TOOL,
   UNAVAILABLE_RESULT,
   ALL_SUPPRESSED_RESULT,
+  NO_QUERY_RESULT,
   RETRIEVAL_STRICT_ENV,
   retrievalStrictFromEnv,
 } from './search-knowledge';
@@ -163,12 +164,12 @@ describe('createSearchKnowledgeExecutor', () => {
   it('does not spend a search on a missing or empty query', async () => {
     const { execute, stats, onFailure } = makeExecutor();
 
-    expect(await execute(call('   '))).toBe(NO_MATCH_RESULT);
+    expect(await execute(call('   '))).toBe(NO_QUERY_RESULT);
     expect(await execute({ name: SEARCH_KNOWLEDGE_TOOL.name, input: {} })).toBe(
-      NO_MATCH_RESULT,
+      NO_QUERY_RESULT,
     );
     expect(await execute({ name: SEARCH_KNOWLEDGE_TOOL.name, input: null })).toBe(
-      NO_MATCH_RESULT,
+      NO_QUERY_RESULT,
     );
 
     // An empty string embeds to a meaningless vector, so it is refused before
@@ -299,6 +300,44 @@ describe('createSearchKnowledgeExecutor', () => {
     // most worth seeing: the tool was called and did nothing.
     expect(stats.malformed).toBe(1);
     expect(stats.unknownTool).toBe(1);
+  });
+
+  it('classifies a fetch failure as network, not as a bug in our own code', async () => {
+    // @upstash/vector uses fetch, and WHATWG fetch rejects with a TypeError on
+    // every genuine network failure. Treating TypeError as "unexpected" made a
+    // real outage log as our bug, which is exactly backwards.
+    const fetchFailure = new TypeError('fetch failed');
+    Object.defineProperty(fetchFailure, 'cause', {
+      value: new Error('getaddrinfo ENOTFOUND'),
+    });
+    searchMock.mockRejectedValueOnce(fetchFailure);
+    const outage = makeExecutor();
+
+    await outage.execute(call());
+
+    expect(outage.onFailure).toHaveBeenCalledWith('fetch failed', 'network');
+  });
+
+  it('tells the model a query was missing rather than that nothing matched', async () => {
+    const { execute, stats } = makeExecutor();
+
+    const result = await execute(call('   '));
+
+    // "No matching sections were found" is false when nothing was searched:
+    // the same conflation ALL_SUPPRESSED_RESULT was created to eliminate.
+    expect(result).toBe(NO_QUERY_RESULT);
+    expect(stats.malformed).toBe(1);
+    expect(searchMock).not.toHaveBeenCalled();
+  });
+
+  it('bounds a model-supplied tool name before it reaches a log', async () => {
+    const { execute, onFailure } = makeExecutor();
+
+    await execute({ name: `evil${'x'.repeat(500)}\nsecond line`, input: {} });
+
+    const [cause] = onFailure.mock.calls[0] as [string, string];
+    expect(cause.length).toBeLessThan(120);
+    expect(cause).not.toContain('\n');
   });
 
   it('separates a bug in our own code from an outage upstream', async () => {

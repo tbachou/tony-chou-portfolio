@@ -72,25 +72,28 @@ export type CreateMessage = (
   options: { timeout?: number; maxRetries?: number },
 ) => Promise<ProviderMessage>;
 
-/** Where the tokens spent before a failure are stashed on the thrown error. */
-const USAGE_KEY = '__toolLoopUsage';
-
 type CarriedUsage = { inputTokens: number; outputTokens: number };
 
 /**
- * Attaches the tokens already billed to the error being thrown.
+ * Tokens billed before a throw, keyed by the error object itself.
  *
- * The properties go ONTO the original error rather than into a wrapper: the
- * caller matches on the provider SDK's own error types (`classifyUpstreamError`)
- * and shows `error.message` to the client, and a wrapper would break both.
+ * A WeakMap rather than a property on the error, because the error belongs to
+ * the provider's SDK and is not ours to modify. `Object.defineProperty` throws
+ * on a frozen, sealed or otherwise non extensible object, and it would have
+ * thrown from inside a catch block: the provider's error, its type (so
+ * `classifyUpstreamError` stops matching it), its message and the usage would
+ * all have been replaced by "Cannot define property __toolLoopUsage". Every
+ * SDK error checked was extensible, so this was latent rather than live, but
+ * not mutating a foreign object at all is simply the correct shape.
+ *
+ * Weak so a stashed entry cannot keep a dead error alive.
  */
+const usageByError = new WeakMap<object, CarriedUsage>();
+
+/** Records the tokens already billed against the error being thrown. */
 function attachUsage(error: unknown, usage: CarriedUsage): unknown {
   if (error !== null && typeof error === 'object') {
-    Object.defineProperty(error, USAGE_KEY, {
-      value: usage,
-      enumerable: false,
-      configurable: true,
-    });
+    usageByError.set(error, usage);
   }
   return error;
 }
@@ -106,8 +109,7 @@ function attachUsage(error: unknown, usage: CarriedUsage): unknown {
  */
 export function usageFromError(error: unknown): CarriedUsage | null {
   if (error === null || typeof error !== 'object') return null;
-  const carried = (error as Record<string, unknown>)[USAGE_KEY];
-  return (carried as CarriedUsage | undefined) ?? null;
+  return usageByError.get(error) ?? null;
 }
 
 function isToolUse(block: ContentBlock): block is ToolUseBlock {
@@ -190,7 +192,13 @@ export async function runToolConversation(
     // reached the caller as though the model had simply answered nothing.
     if (message.stop_reason === 'max_tokens' && toolUses.length > 0) {
       return {
-        text: textOf(message),
+        // Empty on purpose, NOT the partial text. The premise that there is
+        // never any text here was wrong: the model routinely writes a preamble
+        // before calling a tool, so this branch returned a mid sentence
+        // fragment that was streamed to the visitor and persisted as the
+        // answer. Returning '' routes it to the caller's existing blank answer
+        // path, which falls back to the story's framing.
+        text: '',
         inputTokens,
         outputTokens,
         toolCallCount,

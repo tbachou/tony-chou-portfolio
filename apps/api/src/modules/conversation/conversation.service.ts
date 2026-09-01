@@ -239,6 +239,12 @@ export class ConversationService {
     const { conversationId, turnIndex, isFinal, story, interviewerTurnId } =
       prepared;
 
+    // Everything actually billed this turn, so a failure can still charge it
+    // against the daily cap. The tool loop's own tokens ride on the thrown
+    // error; the interviewer's are only here, and were being dropped.
+    let billedTokens = 0;
+    let committed = false;
+
     try {
       emit('turn_start', { role: 'interviewer' });
       const interviewerResult = await this.anthropic.streamMessage({
@@ -252,6 +258,9 @@ export class ConversationService {
         maxTokens: 150,
         onToken: (text) => emit('token', { text }),
       });
+
+      billedTokens +=
+        interviewerResult.inputTokens + interviewerResult.outputTokens;
 
       // The interviewer has no guard of its own, so a blank question would be
       // persisted as-is and then dropped from later transcripts, leaving an
@@ -372,6 +381,7 @@ export class ConversationService {
         this.dailyUsage.incrementOp(2, interviewerTokenCount + tonyTokenCount),
       ]);
 
+      committed = true;
       emit('turn_end', { conversationId, turnIndex, isFinal });
       this.logProviderCall('ok');
     } catch (error) {
@@ -381,18 +391,21 @@ export class ConversationService {
       // calls that never reached the counters, letting a persistently failing
       // turn burn budget while DAILY_TOKEN_CAP never moved.
       const spent = usageFromError(error);
-      if (spent && spent.inputTokens + spent.outputTokens > 0) {
-        const total = spent.inputTokens + spent.outputTokens;
+      if (spent) billedTokens += spent.inputTokens + spent.outputTokens;
+      // `committed` guards the one path that would double count: the
+      // transaction already charged the full turn, so a failure after it must
+      // not charge it again.
+      if (!committed && billedTokens > 0) {
         try {
           // Awaited in a try rather than chained with .catch, because
           // incrementOp returns a PrismaPromise and this must not depend on
           // that being a real promise.
-          await this.dailyUsage.incrementOp(0, total);
+          await this.dailyUsage.incrementOp(0, billedTokens);
         } catch {
           // Best effort: the turn already failed, and losing the counter
           // update must not replace the real error with a database one.
           this.logger.warn(
-            `Failed to record ${total} tokens spent by a failed turn`,
+            `Failed to record ${billedTokens} tokens spent by a failed turn`,
           );
         }
       }

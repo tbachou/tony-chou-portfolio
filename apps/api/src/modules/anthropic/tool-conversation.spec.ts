@@ -253,6 +253,63 @@ describe('runToolConversation', () => {
     expect(result.text).toBe('');
   });
 
+  it('discards the preamble of a truncated tool call rather than answering with it', async () => {
+    // The premise of the first fix was wrong: Claude routinely writes a
+    // preamble before calling a tool, so textOf() returns a mid sentence
+    // fragment rather than ''. Flagging it was not enough, because nothing
+    // acted on the flag: the fragment was streamed to the visitor and written
+    // to ConversationTurn, poisoning every transcript rebuilt afterwards.
+    const { create } = recordingCreate([
+      {
+        content: [
+          {
+            type: 'text',
+            text: 'Good question. Let me pull up what I wrote — the spec said',
+          },
+          { type: 'tool_use', id: 'tu_1', name: TOOL.name, input: {} },
+        ],
+        stop_reason: 'max_tokens',
+        usage: usage(),
+      },
+    ]);
+
+    const result = await runToolConversation(create, 'model-x', base);
+
+    // Empty, so the caller's existing blank-answer path handles it. A partial
+    // sentence is not an answer, and there is no version of it worth keeping.
+    expect(result.text).toBe('');
+    expect(result.stoppedOnMaxTokens).toBe(true);
+  });
+
+  it('survives a frozen provider error without replacing it', async () => {
+    // defineProperty on a non-extensible object throws, and it would have
+    // thrown from inside the catch, destroying the provider's error, its type
+    // (so classifyUpstreamError stops matching), its message and the usage.
+    const frozen = Object.freeze(new Error('Overloaded'));
+    let call = 0;
+    const create: CreateMessage = () => {
+      call += 1;
+      if (call === 1) {
+        return Promise.resolve({
+          ...toolMessage([{ id: 'tu_1' }]),
+          usage: usage(600, 0),
+        });
+      }
+      return Promise.reject(frozen);
+    };
+
+    const thrown = await runToolConversation(create, 'model-x', base).catch(
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBe(frozen);
+    expect((thrown as Error).message).toBe('Overloaded');
+    expect(usageFromError(thrown)).toEqual({
+      inputTokens: 600,
+      outputTokens: 0,
+    });
+  });
+
   it('does not flag a normal answer that happens to run out of tokens', async () => {
     const { create } = recordingCreate([
       {
