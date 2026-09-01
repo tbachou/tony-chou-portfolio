@@ -9,7 +9,10 @@ import {
   publicPredictions,
   publicScoredErrors,
   rollingSkill,
+  isStale,
+  isStaleForecast,
   DISPLAY_TIMEZONE,
+  STALE_AFTER_HOURS,
   HORIZON_HOURS,
   SKILL_DEFAULT_WINDOW_DAYS,
   SKILL_WINDOW_DAYS,
@@ -25,6 +28,17 @@ import { streamflowDb } from '@/lib/streamflow-db';
 import { HydrographPanel } from './HydrographPanel';
 import { CalibrationPanel } from './CalibrationPanel';
 import { DataSources, NOT_A_FLOOD_FORECAST } from './DataSources';
+import {
+  ELAPSED_FORECASTS_NOTE,
+  EVER_ISSUED_UNKNOWN_NOTE,
+  NOAA_WATER_URL,
+  REDIRECT,
+  STALE_INGEST_NOTE,
+  USGS_GAUGE_URL,
+  staleForecastLegend,
+  STALE_FORECAST_MARKER_LABEL,
+  staleReadingNote,
+} from './staleness-copy';
 import { rangeSource } from './range-source';
 import { SkillChart } from './SkillChart';
 
@@ -51,7 +65,8 @@ export const metadata: Metadata = {
 // the asOf control is that the answer depends on when you ask.
 export const dynamic = 'force-dynamic';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 /**
  * Where the record begins. Coverage is asked over the whole of it rather than
@@ -125,6 +140,38 @@ function relativeAge(from: Date, to: Date): string {
   return `${Math.round(hours / 24)} days ago`;
 }
 
+/**
+ * The escape hatch, rendered in every state where the page has stopped being
+ * current rather than only beside the reading. A reader can reach the stopped
+ * pipeline state with a perfectly fresh number on screen, so attaching this
+ * to the reading warning alone left the two states that most need it silent.
+ */
+function Redirect() {
+  return (
+    <>
+      {REDIRECT.lead}{' '}
+      <a
+        href={USGS_GAUGE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="terminal-select text-term-ink"
+      >
+        {REDIRECT.usgs} <span aria-hidden="true">↗</span>
+      </a>
+      {REDIRECT.mid}{' '}
+      <a
+        href={NOAA_WATER_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="terminal-select text-term-ink"
+      >
+        {REDIRECT.noaa} <span aria-hidden="true">↗</span>
+      </a>
+      {REDIRECT.emergency}
+    </>
+  );
+}
+
 export default async function StreamflowPage() {
   const prisma = streamflowDb();
 
@@ -135,10 +182,22 @@ export default async function StreamflowPage() {
   const from = new Date(now.getTime() - OBSERVATIONS_DEFAULT_WINDOW_DAYS * DAY_MS);
 
   const skillFrom = new Date(now.getTime() - SKILL_DEFAULT_WINDOW_DAYS * DAY_MS);
-  // Two days back is enough to hold the most recent six hourly slot even if a
-  // scheduled run was skipped, without reading the whole prediction history to
-  // show six rows.
-  const forecastsFrom = new Date(now.getTime() - 2 * DAY_MS);
+  // One longest horizon back, derived rather than written, for the same
+  // reason the staleness threshold is. A forecast is still about the future
+  // while `issuedAt + horizonHours > now`, so the live set reaches back
+  // exactly one longest horizon and any shorter window hides rows AC-S8
+  // would have kept. At the two days this was, against a 72 hour horizon,
+  // that gap was 24 hours wide: an outage between 49 and 71 hours old left
+  // the last slot's 72 hour rows targeting the future and outside the query,
+  // so the table emptied and the empty state asserted that every forecast on
+  // record had elapsed while two live ones sat in the store. Both pre deploy
+  // audit passes found it independently. Widening cannot change a healthy
+  // render, because the table shows the newest claim per forecaster and
+  // horizon and the extra rows are older ones the same dedup discards.
+  // AC-S8b.
+  const forecastsFrom = new Date(
+    now.getTime() - Math.max(...HORIZON_HOURS) * HOUR_MS,
+  );
 
   // allSettled rather than all: one panel's query failing should cost that
   // panel and say so, not take the whole page down with it. The hydrograph
@@ -149,8 +208,10 @@ export default async function StreamflowPage() {
     totalResult,
     oldestRecordResult,
     newestReadingResult,
+    lastIngestResult,
     lastRunResult,
     recentForecastsResult,
+    everIssuedResult,
     scoredErrorsResult,
     liveIntervalsResult,
     backtestIntervalsResult,
@@ -170,12 +231,33 @@ export default async function StreamflowPage() {
     // Ingest jobs only. Scoring runs hourly and ingestion every six hours, so
     // the newest run of any kind is usually a scoring pass, which would sit
     // under a paragraph describing how readings arrive and contradict it.
+    // Health only, and deliberately NOT the row the panel below displays.
+    // The rescan runs even when ingest fails (its workflow step is
+    // `if: !cancelled()`) and a rescan with nothing to re-poll records `OK`,
+    // so the newest row of the combined set is a fresh success for as long as
+    // ingest is broken. Reading health off that set made AC-S4 structurally
+    // unsatisfiable: the criterion says "the most recent INGEST run", and the
+    // combined query cannot express it. Found by the pre deploy audit.
+    prisma.pipelineRun.findFirst({
+      where: { job: 'USGS_INGEST' },
+      orderBy: { startedAt: 'desc' },
+      select: { status: true, startedAt: true },
+    }),
     prisma.pipelineRun.findFirst({
       where: { job: { in: ['USGS_INGEST', 'USGS_RESCAN'] } },
       orderBy: { startedAt: 'desc' },
       select: { job: true, status: true, startedAt: true, rowsWritten: true },
     }),
     publicPredictions(prisma, { gaugeId: gauge.id, issuedFrom: forecastsFrom }),
+    // Unbounded by the two day window on purpose. Whether the pipeline has
+    // EVER issued cannot be answered from the loaded rows: every slot writes
+    // all three horizons, so "all loaded rows elapsed" is a shape the
+    // scheduler cannot produce, which made the elapsed state unreachable and
+    // sent a stopped pipeline to the never issued copy. AC-S9.
+    prisma.prediction.findFirst({
+      where: { gaugeId: gauge.id, hindcast: false },
+      select: { id: true },
+    }),
     publicScoredErrors(prisma, gauge.id, skillFrom, now),
     // Coverage over the whole record rather than the skill window: the
     // question is whether the ranges have ever meant what they claim, and
@@ -194,6 +276,12 @@ export default async function StreamflowPage() {
   const oldestRecord = settled('oldest record', oldestRecordResult, null);
   const newestReading = settled('newest reading', newestReadingResult, null);
   const lastRun = settled('last pipeline run', lastRunResult, null);
+  const lastIngest = settled<{ status: string; startedAt: Date } | null>(
+    'last ingest run',
+    lastIngestResult,
+    null,
+  );
+  const lastIngestFailed = failed(lastIngestResult);
   const recentForecasts = settled('recent forecasts', recentForecastsResult, []);
   const scoredErrors = settled('scored errors', scoredErrorsResult, []);
   const liveCoverage = calibration(settled('live coverage', liveIntervalsResult, []));
@@ -220,6 +308,73 @@ export default async function StreamflowPage() {
       a.horizonHours - b.horizonHours ||
       a.modelVersion.name.localeCompare(b.modelVersion.name),
   );
+
+  // A forecast whose target has passed is not a forecast any more, it is a
+  // result waiting to be scored, and the scoring surfaces already show those.
+  // Leaving it here put a past instant under a present tense heading.
+  // AC-S8.
+  const liveForecasts = currentForecasts.filter(
+    (forecast) => forecast.targetTime.getTime() > now.getTime(),
+  );
+  // Whether this gauge has EVER had a forecast, read without the two day
+  // bound the table uses, because the loaded rows cannot answer it: every
+  // slot writes all three horizons, so a surviving 72 hour row is always
+  // still live and "all loaded rows elapsed" is a shape the scheduler cannot
+  // produce. AC-S9.
+  //
+  // `everIssuedFailed` is the half that matters. `settled` returns its
+  // fallback on rejection, so without it a failed probe is indistinguishable
+  // from a store that never issued, and the page states the never issued
+  // sentence as fact. Same false sentence AC-S9 exists to prevent, reached
+  // down the failure path rather than the logic path.
+  const hasEverIssued = settled<{ id: string } | null>(
+    'ever issued probe',
+    everIssuedResult,
+    null,
+  );
+  const everIssuedFailed = failed(everIssuedResult);
+
+  // The reading's own age. Only evaluated when the read succeeded; a failed
+  // read keeps its existing message and says nothing about staleness. AC-S11.
+  const readingIsStale = newestReading
+    ? isStale(newestReading.validTime, now, STALE_AFTER_HOURS)
+    : false;
+
+  // `readingIsStale` is ORed in, and without it the page contradicts itself
+  // for a six hour window after a single missed ingest: the reading crosses
+  // the threshold and is flagged, while the forecasts built from that very
+  // reading stay unmarked until their own age crosses it too. Whatever the
+  // page says about the reading it must say about anything derived from it.
+  //
+  // Both of these read `liveForecasts`, the SURVIVORS of the AC-S8 filter,
+  // never `currentForecasts`. The order is load bearing: with four stale and
+  // two elapsed, the survivors are four of four and earn one note, while
+  // counting before the filter reads four of six and would wrongly print a
+  // marker on every row. AC-S8a.
+  const staleForecastIds = new Set(
+    liveForecasts
+      .filter(
+        (forecast) =>
+          readingIsStale ||
+          isStaleForecast(rows, forecast.issuedAt, now, STALE_AFTER_HOURS),
+      )
+      .map((forecast) => forecast.id),
+  );
+  const everyForecastStale =
+    liveForecasts.length > 0 && staleForecastIds.size === liveForecasts.length;
+
+  // Not just `status !== 'OK'`. A scheduler that stops entirely writes no new
+  // row, so the newest row stays an old success and the status keeps saying
+  // the pipeline is healthy while nothing has run for weeks. AC-S4.
+  // Three findings, not two. A failed read is not evidence about the
+  // pipeline, and asserting otherwise contradicted the run panel's own "the
+  // schedule itself is unaffected" in the same render. AC-S4, AC-S11.
+  const ingestNotCompleting = lastIngestFailed
+    ? false
+    : lastIngest
+      ? lastIngest.status !== 'OK' ||
+        isStale(lastIngest.startedAt, now, STALE_AFTER_HOURS)
+      : true;
 
   const skill = rollingSkill(scoredErrors, skillFrom, now).map((series) => ({
     modelName: series.modelName,
@@ -299,8 +454,9 @@ export default async function StreamflowPage() {
             <div className="mt-6 border-t border-term-border pt-5">
               <p className="text-term-xs text-term-muted">latest reading</p>
               <p className="mt-2 text-term-sm text-term-body">
-                The latest reading could not be read just now. The gauge and the ingest job are
-                unaffected; this is the page failing to ask.
+                The latest reading could not be read just now. This is the page failing
+                to ask, and it says nothing about the gauge or the ingest job.{' '}
+                <Redirect />
               </p>
             </div>
           )}
@@ -321,6 +477,13 @@ export default async function StreamflowPage() {
                   {newestReading.qualifier.toLowerCase()}
                 </span>
               </p>
+              {readingIsStale && (
+                <p className="mt-3 max-w-2xl border-l border-term-error pl-3 text-term-sm text-term-body">
+                  {staleReadingNote(relativeAge(newestReading.validTime, now))}
+                  {ingestNotCompleting ? ` ${STALE_INGEST_NOTE}` : ''}{' '}
+                  <Redirect />
+                </p>
+              )}
               <p className="mt-3 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
                 {NOT_A_FLOOD_FORECAST}
               </p>
@@ -381,11 +544,31 @@ export default async function StreamflowPage() {
             worth what it beats, and both are harder to beat than they sound.
           </p>
 
-          {currentForecasts.length === 0 ? (
-            <p className="mt-6 border border-term-border px-4 py-10 text-center text-term-sm text-term-muted">
+          {everyForecastStale && (
+            <p className="mt-6 max-w-2xl border-l border-term-error pl-3 text-term-sm text-term-body">
+              {staleForecastLegend(STALE_AFTER_HOURS)} <Redirect />
+            </p>
+          )}
+
+          {liveForecasts.length === 0 ? (
+            <p className="mt-6 border border-term-border px-4 py-10 text-term-sm text-term-body">
               {recentForecastsResult.status === 'rejected'
-                ? 'The forecast table could not be read just now. Nothing else on this page depends on it, so the rest is still current.'
-                : 'No forecast has been issued yet. The pipeline issues one per forecaster per horizon every six hours.'}
+                ? 'The forecast table could not be read just now. Nothing else on this page depends on it; this is the page failing to ask.'
+                : everIssuedFailed
+                  ? EVER_ISSUED_UNKNOWN_NOTE
+                  : hasEverIssued || recentForecasts.length > 0
+                    ? ELAPSED_FORECASTS_NOTE
+                    : 'No forecast has been issued yet. The pipeline issues one per forecaster per horizon every six hours.'}
+              {/* Only where the page has stopped being current. A store that
+                  genuinely never issued is not a stale state, and a failed
+                  table read already has its own message. */}
+              {(everIssuedFailed || hasEverIssued) &&
+                recentForecastsResult.status !== 'rejected' && (
+                  <>
+                    {' '}
+                    <Redirect />
+                  </>
+                )}
             </p>
           ) : (
             /* A scroll container a keyboard can reach and a screen reader
@@ -421,7 +604,7 @@ export default async function StreamflowPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {currentForecasts.map((forecast) => (
+                  {liveForecasts.map((forecast) => (
                     <tr
                       key={forecast.id}
                       className="border-b border-term-border/50"
@@ -457,6 +640,26 @@ export default async function StreamflowPage() {
                             &dagger;
                           </span>
                         )}
+                        {/* The glyph is hidden and the meaning is spoken.
+                            `title` on a role-less span is not an accessible
+                            name, and `‡` is punctuation a screen reader does
+                            not read out, so the marker as first built was
+                            silent to the one reader who cannot see the table.
+                            The text is the legend itself rather than a
+                            paraphrase, so the two cannot drift. AC-S7a. */}
+                        {!everyForecastStale &&
+                          staleForecastIds.has(forecast.id) && (
+                            <span
+                              className="ml-2 text-term-xs"
+                              title={staleForecastLegend(STALE_AFTER_HOURS)}
+                            >
+                              <span aria-hidden="true">&Dagger;</span>
+                              <span className="sr-only">
+                                {' '}
+                                {STALE_FORECAST_MARKER_LABEL}
+                              </span>
+                            </span>
+                          )}
                       </td>
                     </tr>
                   ))}
@@ -465,13 +668,20 @@ export default async function StreamflowPage() {
             </div>
           )}
 
-          {currentForecasts.length > 0 && (
+          {liveForecasts.length > 0 && (
             <p className="mt-4 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
               {NOT_A_FLOOD_FORECAST}
             </p>
           )}
 
-          {currentForecasts.some(
+          {!everyForecastStale && staleForecastIds.size > 0 && (
+            <p className="mt-4 max-w-2xl text-term-sm text-term-body">
+              <span aria-hidden="true">&Dagger; </span>
+              {staleForecastLegend(STALE_AFTER_HOURS)}
+            </p>
+          )}
+
+          {liveForecasts.some(
             (forecast) => rangeSource(forecast) === 'pooled',
           ) && (
             <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
@@ -484,7 +694,7 @@ export default async function StreamflowPage() {
             </p>
           )}
 
-          {currentForecasts.some(
+          {liveForecasts.some(
             (forecast) => rangeSource(forecast) === 'placeholder',
           ) && (
             <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
@@ -504,7 +714,7 @@ export default async function StreamflowPage() {
             as long as the ranges do. Held back only when there is no forecast
             on screen, since it explains ranges and there are none to explain.
           */}
-          {currentForecasts.length > 0 && (
+          {liveForecasts.length > 0 && (
             <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
               Ranges were seeded by a backtest before this pipeline issued
               anything live: every forecaster was replayed across the archived
@@ -623,8 +833,9 @@ export default async function StreamflowPage() {
 
           {lastRunFailed && (
             <p className="mt-6 text-term-sm text-term-body">
-              The run history could not be read just now, so the job below is not shown. The
-              schedule itself is unaffected.
+              The run history could not be read just now, so the job below is not shown.
+              This is the page failing to ask; it says nothing about whether the schedule
+              ran.
             </p>
           )}
 
