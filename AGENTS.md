@@ -19,10 +19,13 @@ npm run dev:api                              # NestJS on :3001 (or .claude/launc
 npm run dev:web                              # Next.js on :3000 (or launch.json "web")
 npm run lint                                 # ESLint flat config, whole repo
 npx tsc --noEmit -p apps/api/tsconfig.json   # typecheck api (same for apps/web)
+npm test                                     # ALL four suites: api, streamflow, web, feedback-classifier
 npm test --workspace=apps/api                # Jest (all mocked, no DB/network)
 npm run check:evals                          # validate docs/evals/interview/published.json
 cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotchas first)
 ```
+
+**Run `npm test` at the root, not one workspace.** Four workspaces have tests and they use two runners: `apps/api` and `apps/streamflow` and `infra/lambda/feedback-classifier` on jest, `apps/web` on vitest. `npm test --workspaces --if-present` runs all of them, does not stop at the first failing workspace, and exits non zero if any failed. Until 2026-09-01 there was no root script, and a whole review of a branch ran `npm test --workspace=apps/api` throughout and reported that count as though it were the suite; CI caught a web failure the review never saw. CI runs the four explicitly, so a NEW workspace with tests is picked up by the root script automatically but must still be added to `ci.yml` by hand.
 
 ## Git
 
