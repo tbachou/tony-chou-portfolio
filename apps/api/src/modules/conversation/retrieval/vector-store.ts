@@ -54,6 +54,26 @@ export const TOP_K = 3;
  * read to check it answers the question rather than merely coming from a
  * plausible file. Four points do not separate two distributions.
  *
+ * **Evidence added 2026-09-01, while writing AC-14's cases.** Probing the live
+ * 607 chunk index separated two populations more clearly than the original
+ * four probes did:
+ *
+ *   0.787  "did the context engineering change improve the eval scores"   hit
+ *   0.741  "specced a feature then decided it should not be built"        hit
+ *   0.709  "a change that shipped but did not move the measured scores"   hit
+ *   0.647  "how do you handle being on call and your rotation"            MISS
+ *   0.644  "what is your approach to salary negotiation"                  MISS
+ *   0.569  "favourite holiday destination and what you cook"              MISS
+ *
+ * The two misses at 0.644 and 0.647 are the problem: they are plausible
+ * professional questions this corpus does not answer, and at 0.62 each one
+ * returns three loosely related chunks about credential checks and provider
+ * swaps. Genuine hits sit at 0.71 and above, so something near 0.68 to 0.70
+ * would separate them. That is still six points rather than a sweep, and it is
+ * recorded here as evidence rather than acted on, because changing the value
+ * changes what every eval run retrieves and the calibration belongs with the
+ * run that measures it.
+ *
  * A real value needs a labelled set, and AC-14's golden cases are one: they are
  * questions with known correct answers, written for this purpose. Measure
  * precision and recall across thresholds when they land, and replace this.

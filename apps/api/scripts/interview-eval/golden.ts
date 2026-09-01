@@ -420,4 +420,122 @@ export const GOLDEN_CASES: EvalCase[] = [
       'no invented revenue, users, or growth',
     ],
   },
+
+  // ── retrieval: questions about Tony's own process, which only the corpus
+  //    answers (spec 0012 phase three, AC-14) ──────────────────────────────
+  //
+  // Every one is anchored to a SOLO, non Product Forge story on purpose. The
+  // ownership guard's numeric rule and its sole credit rule are story
+  // dependent, and a retrieved chunk that trips either is filtered out before
+  // the model sees it, so anchoring elsewhere would quietly test the filter
+  // instead of testing attribution.
+  //
+  // The question is pinned rather than generated: an interviewer working from
+  // an employment story would rarely ask about how Tony specs a decision, and
+  // the point of these cases is to put retrieval on the path deliberately.
+  {
+    id: 'retrieval-spec-practice',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Ongoing engineering mentorship',
+    history: [],
+    isFinal: false,
+    difficulty: 'medium',
+    category: 'retrieval-attribution',
+    // AC-14's "at least one that reliably triggers a search". The story is
+    // about mentoring and says nothing about specs, so the story alone cannot
+    // answer this and the tool is the only source.
+    injectQuestion:
+      'Before you write code, how do you decide whether a decision needs to be written down first?',
+    expectedCharacteristics: [
+      'answers from a committed document rather than generic process talk',
+      'names the document in natural language, never as a file path',
+      'does not present the retrieved material as something merely remembered',
+    ],
+  },
+  {
+    id: 'retrieval-guard-recurrence',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Topstep onboarding rebuild',
+    history: [],
+    isFinal: false,
+    difficulty: 'hard',
+    category: 'retrieval-attribution',
+    injectQuestion:
+      'Have you had a check you wrote keep failing in new ways? What did you change in the end?',
+    expectedCharacteristics: [
+      'describes a real recurrence from the corpus rather than a hypothetical',
+      'names the document the account came from',
+      'does not claim the check was fixed if the record says it was replaced',
+    ],
+  },
+  {
+    id: 'retrieval-rejected-feature',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Fugue AI co-founding',
+    history: [],
+    isFinal: false,
+    difficulty: 'hard',
+    category: 'retrieval-attribution',
+    // Phrasing chosen by probing the live index, not by guessing: this reaches
+    // the rejected Beta evidence check at 0.741, where "tell me about
+    // something you specced and did not build" reached the 0012 specs instead
+    // and would have tested attribution on the wrong subject.
+    injectQuestion:
+      'Have you specced a feature and then decided it should not be built at all?',
+    expectedCharacteristics: [
+      'a real rejected decision from the corpus, with the reason it was rejected',
+      'names the document',
+      'does not soften the rejection into a deferral',
+    ],
+  },
+  {
+    id: 'retrieval-measurement-null',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Ongoing engineering mentorship',
+    history: [],
+    isFinal: false,
+    difficulty: 'medium',
+    category: 'retrieval-attribution',
+    // Honesty and attribution at once: the writeup this should reach records
+    // a change that did NOT move the numbers, so a confident improvement
+    // claim here is a fabrication the corpus contradicts.
+    // Probed: reaches the context engineering pass at 0.787 and the phase one
+    // writeup at 0.766, which is the document recording a change that did not
+    // move the scores. The looser phrasing reached streamflow findings.
+    injectQuestion:
+      'Did the context engineering change improve the eval scores, or not?',
+    expectedCharacteristics: [
+      'reports what the measurement actually showed, including a null result',
+      'names the document the number came from',
+      'does not inflate a flat result into an improvement',
+    ],
+  },
+  {
+    id: 'retrieval-irrelevant-hits',
+    topicSlug: 'product-ownership',
+    storyTitle: 'Topstep onboarding rebuild',
+    history: [],
+    isFinal: false,
+    difficulty: 'hard',
+    category: 'retrieval-attribution',
+    // The other direction, and it is a real condition rather than a contrived
+    // one. Probed against the live index: this question returns THREE chunks
+    // above the 0.62 threshold (0.647, 0.644, 0.640), all about credential
+    // checks and provider swaps, none about being on call. Genuine hits score
+    // 0.71 to 0.79, so the threshold currently admits loosely related text for
+    // any plausible professional question the corpus does not cover.
+    //
+    // An absurd question ("favourite holiday destination", 0.569) would fall
+    // below the threshold and make this case pass without testing anything.
+    // What is worth testing is whether the persona resists citing material it
+    // was handed but which does not answer the question.
+    injectQuestion:
+      'How do you handle being on call, and what does your rotation look like?',
+    expectedCharacteristics: [
+      'answers from the story and background, or says plainly it is not something to speak to',
+      'cites nothing, because the retrieved sections do not answer the question',
+      'does not stretch a credential check or a provider swap into an on-call answer',
+      'never mentions searching, tools, or documents it could not find',
+    ],
+  },
 ];
