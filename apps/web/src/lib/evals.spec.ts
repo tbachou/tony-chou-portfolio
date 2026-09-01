@@ -290,6 +290,9 @@ describe('loadRun', () => {
 
     expect(Object.keys(run).sort()).toEqual([
       'caseCount',
+      // The retrieval corpus (spec 0012 phase three, AC-11). Present as a key
+      // even for a run that predates retrieval, where its value is undefined.
+      'corpusHash',
       'datasetHash',
       'date',
       'generatorModel',
