@@ -1,7 +1,7 @@
 {
-  "corpusHash": "5eedba4aa05dbed5e6f644667a6ee6d5b147fe4e4db8b8e4d925337b8a7278ab",
-  "chunkCount": 580,
-  "embeddedAt": "2026-09-01T01:59:11.553Z",
+  "corpusHash": "ec34821daefa3552cfc5d3a6d2e3ac871c55b0c87c7684ef8aaccd332f6d6c6b",
+  "chunkCount": 607,
+  "embeddedAt": "2026-09-01T17:23:36.417Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
@@ -85,7 +85,7 @@
     },
     {
       "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-forecast-rain.md",
-      "hash": "24902269c5e8b2b3483b29013f17e2bf508dfd8c985fe8cb04e3f2929c269430"
+      "hash": "b67c5545c8ad461a35fb930e333af5156dea1da16ae6785b7aa27d8975d2c79f"
     },
     {
       "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-hindcast-seeding.md",
@@ -94,6 +94,10 @@
     {
       "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-prediction-intervals.md",
       "hash": "116fed8f2c5f1aeb78bb56562946c2fcd9a888d5a4b5f99d1da4165a9bc17220"
+    },
+    {
+      "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/0010-staleness-disclosure.md",
+      "hash": "ff99063b8218fb528d5f60510e6ba6b6eb2de8a5929b95939c698e41bc3f3e2c"
     },
     {
       "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/findings/2026-08-27-falling-threshold-misses-tail.md",
@@ -109,7 +113,7 @@
     },
     {
       "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/index.md",
-      "hash": "56aca7f6a1ef06915cd69791b99ad55a7a9062d4232b49bf4431c77f5cbfba1b"
+      "hash": "2edff67b78000aa6887facc709c2769b684dfd5f88d1ab30cca43841f4ba70a3"
     },
     {
       "path": "docs/specs/_root/0010-streamflow-forecast-pipeline/verify.md",
