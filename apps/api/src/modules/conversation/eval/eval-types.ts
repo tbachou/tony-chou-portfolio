@@ -68,6 +68,16 @@ export type RunMeta = {
   judgeModel: string;
   caseCount: number;
   datasetHash: string;
+  /**
+   * The corpus the retrieval index was built from (spec 0012 phase three,
+   * AC-11), beside `datasetHash`.
+   *
+   * Optional because runs recorded before retrieval existed have none, and the
+   * committed baseline is one of them. Absent means "this run predates
+   * retrieval, or was not recorded"; present and differing means the two runs
+   * are not comparable.
+   */
+  corpusHash?: string;
   /** Tokens summed per model id, so cost can be priced per model. */
   tokensByModel: Record<string, TokenTotals>;
   tokenTotals: TokenTotals;

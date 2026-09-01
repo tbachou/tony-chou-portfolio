@@ -49,6 +49,25 @@ services:
       # setting and a first party id otherwise (grade.constants.ts).
       - key: AI_PROVIDER
         value: bedrock
+      # Retrieval strictness, pinned OFF here on purpose (spec 0012 phase
+      # three). The eval runner sets RETRIEVAL_STRICT=1 so a run fails rather
+      # than quietly scoring as though retrieval worked (AC-9). Production
+      # wants the opposite: a failed search must never cost a visitor their
+      # turn (AC-8). Declared rather than left absent so a dashboard value
+      # cannot flip production silently, which is the same shape of
+      # invisible-configuration bug the AI_PROVIDER note above records.
+      - key: RETRIEVAL_STRICT
+        value: '0'
+      # The Upstash index, READ ONLY token. sync: false because the values are
+      # dashboard-only. The write token must never appear here: the embed
+      # script is the only thing that writes, and it runs on a developer
+      # machine (AC-10). Absent values are not a crash — retrieval degrades and
+      # the persona answers from the story alone — so the only signal that this
+      # is misconfigured is that the feature quietly does nothing.
+      - key: UPSTASH_VECTOR_REST_URL
+        sync: false
+      - key: UPSTASH_VECTOR_REST_TOKEN
+        sync: false
       # Required by the boot guard whenever AI_PROVIDER=bedrock — the factory
       # fails startup if any is missing rather than failing at first request.
       # Declared as sync: false so the repo records that they exist; the values

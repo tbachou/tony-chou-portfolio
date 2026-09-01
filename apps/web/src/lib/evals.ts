@@ -194,7 +194,12 @@ const runMetaSchema = z
     generatorModel: z.string().min(1),
     judgeModel: z.string().min(1),
     caseCount: z.number().int().nonnegative(),
-    datasetHash: z.string().min(1)
+    datasetHash: z.string().min(1),
+    /**
+     * The retrieval corpus (spec 0012 phase three, AC-11). Optional because
+     * every run recorded before retrieval existed has none.
+     */
+    corpusHash: z.string().min(1).optional()
   })
   .loose();
 
@@ -225,6 +230,7 @@ export type RunSummary = {
   judgeModel: string;
   caseCount: number;
   datasetHash: string;
+  corpusHash?: string;
   perDimension: Record<Dimension, DimensionAggregate>;
 };
 
@@ -265,6 +271,7 @@ function summarise(results: ParsedResults): RunSummary {
     judgeModel: meta.judgeModel,
     caseCount: meta.caseCount,
     datasetHash: meta.datasetHash,
+    corpusHash: meta.corpusHash,
     perDimension
   };
 }
@@ -428,6 +435,18 @@ function checkRecordedDelta(
 ): void {
   if (baseline === null) return;
   if (baseline.datasetHash !== run.datasetHash) return;
+  // AC-11: two runs are comparable only when both hashes match. A run with no
+  // corpusHash predates retrieval, and the committed baseline is one of those,
+  // so a missing value means "unknown" and the delta stays checkable on the
+  // dataset hash alone. Two runs that both name a corpus and disagree are not
+  // comparable, and their recorded delta is not something to verify.
+  if (
+    baseline.corpusHash !== undefined &&
+    run.corpusHash !== undefined &&
+    baseline.corpusHash !== run.corpusHash
+  ) {
+    return;
+  }
 
   for (const dimension of DIMENSIONS) {
     const runMean = run.perDimension[dimension].mean;

@@ -78,6 +78,21 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * Is retrieval configured at all?
+ *
+ * Checked before the tool is offered rather than after it is called. Without
+ * this the model spends a whole extra round trip to be told the search is
+ * unavailable, on every turn where it decides to search, in a deployment that
+ * could have known at startup. The degrade path (AC-8) still exists for a
+ * failure that happens once retrieval IS configured.
+ */
+export function isRetrievalConfigured(): boolean {
+  return Boolean(
+    process.env.UPSTASH_VECTOR_REST_URL && process.env.UPSTASH_VECTOR_REST_TOKEN,
+  );
+}
+
 /** Query only. Used by the API and by the eval harness. */
 export function openReadOnly(): Index {
   return new Index({

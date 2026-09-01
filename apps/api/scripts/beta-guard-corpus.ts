@@ -50,9 +50,12 @@ import type {
   ForceToolCallResult,
   StreamMessageParams,
   StreamMessageResult,
+  RunToolConversationParams,
+  RunToolConversationResult,
   UpstreamErrorClassification,
 } from '../src/modules/anthropic/ai-provider.interface';
 import { CORPUS, type CorpusProfile } from './beta-guard-corpus.profiles';
+import { toolLoopRefusalReason } from '../src/modules/anthropic/harness-replay';
 
 /**
  * Wraps the real provider so the screener and drafter can be recorded once
@@ -83,6 +86,46 @@ class CachingProvider implements AiProvider {
   // profiles run concurrently: the first full --concurrency 3 run captured
   // only 15 plans out of 29, and recorded `null` for a profile whose firing
   // proved its caution was non-empty.
+
+  /**
+   * Beta makes no tool loop calls today, so there is nothing to cache here.
+   *
+   * Delegated rather than stubbed so this wrapper stays a faithful
+   * `AiProvider`: a stub that always threw would turn a future Beta change
+   * into a corpus run failing for a reason that has nothing to do with Beta.
+   *
+   * But it refuses in `replay`, where a real model call would be made inside a
+   * run presenting itself as a replay. That is new spend rather than a broken
+   * contract (the coach is deliberately live too, see streamMessage below),
+   * and the harm is that it would be SILENT. The sibling harness makes the
+   * same situation loud, and so does this.
+   *
+   * `record` is deliberately NOT refused: a record run IS a live run that
+   * happens to save what it spends, so there is no misreporting to prevent.
+   * An earlier version refused it too, with a message describing replay.
+   *
+   * `async` so a caller writing `.catch(...)` gets a rejection rather than a
+   * synchronous throw, which is what the sibling harness does.
+   */
+  /**
+   * Beta makes no tool loop calls today, so there is nothing to cache here.
+   *
+   * Delegated rather than stubbed so this stays a faithful `AiProvider`: a
+   * stub that always threw would turn a future Beta change into a corpus run
+   * failing for a reason that has nothing to do with Beta. The mode rule lives
+   * in `harness-replay.ts` because jest does not collect anything under
+   * `scripts/`, and an untested condition here already regressed once.
+   *
+   * `async` so a caller using `.catch` gets a rejection rather than a
+   * synchronous throw.
+   */
+  async runToolConversation(
+    params: RunToolConversationParams,
+  ): Promise<RunToolConversationResult> {
+    const refusal = toolLoopRefusalReason(this.mode);
+    if (refusal) throw new Error(`CachingProvider: ${refusal}`);
+    return this.real.runToolConversation(params);
+  }
 
   async forceToolCall(params: ForceToolCallParams): Promise<ForceToolCallResult> {
     const role = params.model === DRAFTER_MODEL ? 'drafter' : 'screener';
