@@ -2,7 +2,7 @@
 
 ## Overview
 
-Public no-auth API on Render (free tier) powering the portfolio's AI features: the interview simulator (`/conversation`), Beta the return-to-climbing planner (`/beta`), and Grade Guesser the daily climbing-grade game (`/grade`, behind `GRADE_GAME_ENABLED`), plus a better-auth-protected internal admin (`/internal/*`, including the Grade Guesser photo pool). Every AI feature follows the same shape: a module under `src/modules/<name>`, agent prompts as markdown skill files on disk, forced tool calls for structured output, SSE streaming to the client.
+Public no-auth API on Render (**Starter plan, $7/month** — not the free tier, whatever older notes say; verified against the live service 2026-09-01, which is why there is no cold start spin down) powering the portfolio's AI features: the interview simulator (`/conversation`), Beta the return-to-climbing planner (`/beta`), and Grade Guesser the daily climbing-grade game (`/grade`, behind `GRADE_GAME_ENABLED`), plus a better-auth-protected internal admin (`/internal/*`, including the Grade Guesser photo pool). Every AI feature follows the same shape: a module under `src/modules/<name>`, agent prompts as markdown skill files on disk, forced tool calls for structured output, SSE streaming to the client.
 
 ## Stack
 
