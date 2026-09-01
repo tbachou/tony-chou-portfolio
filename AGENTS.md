@@ -3,7 +3,7 @@
 ## Stack
 
 - **Language / Runtime**: TypeScript, Node >= 22 (hard requirement: Node 20 dies with ERR_REQUIRE_ESM via better-auth)
-- **Monorepo**: npm workspaces — `apps/web` (Next.js 15, React 19, Tailwind, React Three Fiber), `apps/api` (NestJS 11, Prisma 7 on Prisma Postgres, Anthropic SDK), `packages/shared` (zod request schemas + shared types; builds to `dist/`)
+- **Monorepo**: npm workspaces — `apps/web` (Next.js 15, React 19, Tailwind, React Three Fiber), `apps/api` (NestJS 11, Prisma 7 on Prisma Postgres, Anthropic SDK), `apps/streamflow` (forecast pipeline, Prisma 7 on its own Postgres, jest; builds to `dist/`, which web imports), `packages/shared` (zod request schemas + shared types; builds to `dist/`)
 - **Package manager**: npm
 - Mirrors the architecture specs: [0001](docs/specs/_root/0001-backend-ai-stack/index.md) (backend/AI stack) and [0003](docs/specs/_root/0003-frontend-deployment-platform.md) (frontend/deploy)
 
@@ -22,6 +22,7 @@ npx tsc --noEmit -p apps/api/tsconfig.json   # typecheck api (same for apps/web)
 npm test                                     # ALL four suites: api, streamflow, web, feedback-classifier
 npm test --workspace=apps/api                # Jest (all mocked, no DB/network)
 npm run check:evals                          # validate docs/evals/interview/published.json
+npm run check:corpus --workspace=apps/api    # docs/specs changed? the retrieval manifest must match
 cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotchas first)
 ```
 
@@ -67,6 +68,7 @@ MCP servers: render (render-oss/render-mcp-server, recommended — deploy status
 
 - [apps/web/AGENTS.md](apps/web/AGENTS.md): Next.js site — terminal theme, Beta identity, SSE clients
 - [apps/api/AGENTS.md](apps/api/AGENTS.md): NestJS API — modules, agent pipelines, rate limits, DB gotchas
+- [apps/streamflow/AGENTS.md](apps/streamflow/AGENTS.md): the forecast pipeline — bitemporal store, cron jobs, the `dist/` boundary web imports
 - [packages/shared/AGENTS.md](packages/shared/AGENTS.md): the request contracts both sides validate against, and the shared types
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
