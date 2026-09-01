@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "skills": {
     "agent-brief": {
       "kind": "authored",
@@ -18,24 +18,15 @@
     },
     "aws-iam": {
       "kind": "registry",
-      "source": "aws/agent-toolkit-for-aws",
-      "sourceType": "github",
-      "skillPath": "skills/core-skills/aws-iam/SKILL.md",
-      "computedHash": "fb0889f9605143d5ad851bd247bae30f9f64e7d00b523aa69497658e0f64f29f"
+      "source": "aws/agent-toolkit-for-aws"
     },
     "aws-serverless": {
       "kind": "registry",
-      "source": "aws/agent-toolkit-for-aws",
-      "sourceType": "github",
-      "skillPath": "skills/core-skills/aws-serverless/SKILL.md",
-      "computedHash": "4c8a79594f256b611c0005d1df0b1aa9ccdc3248272f9467048b4a2647add526"
+      "source": "aws/agent-toolkit-for-aws"
     },
     "better-auth-best-practices": {
       "kind": "registry",
-      "source": "better-auth/skills",
-      "sourceType": "github",
-      "skillPath": "better-auth/best-practices/SKILL.md",
-      "computedHash": "2a42322e2e1e3763c9fa73807275267edee2cce64ade72f22ef074a9a12dccb9"
+      "source": "better-auth/skills"
     },
     "check": {
       "kind": "authored",
@@ -44,10 +35,7 @@
     },
     "codebase-design": {
       "kind": "registry",
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/engineering/codebase-design/SKILL.md",
-      "computedHash": "9f457cc65ef2d70eb5b8a44a4dae2b139840078b6596a67ee8c4e95f5a0e6f5c"
+      "source": "mattpocock/skills"
     },
     "debug": {
       "kind": "authored",
@@ -60,32 +48,21 @@
       "syncedCommit": null
     },
     "github-actions-hardening": {
-      "kind": "registry",
+      "kind": "vendored",
       "source": "wshobson/agents",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "b6c613de4eb98639d0ae611358b1eebb39cbbb72a4b516d0f6b490f54c148eb0"
+      "reason": "Upstream no longer publishes this skill. Checked 2026-08-31: wshobson/agents lists 181 skills and none is github-actions-hardening. It was a real registry install (b436d69, 2026-08-19), so it was removed or renamed upstream after that. Kept vendored under the exception in spec 0014 because there is nowhere to install it from."
     },
     "github-actions-templates": {
       "kind": "registry",
-      "source": "wshobson/agents",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "a772e5fbc9cf2bfde8c2c4c7915d7c98ff218376dc767b0ca20e13dc93b30e48"
+      "source": "wshobson/agents"
     },
     "javascript-typescript-jest": {
       "kind": "registry",
-      "source": "github/awesome-copilot",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "bc2f026724127b395e5fe517a45bd415d810f1cdc43a700563d297cee74e2309"
+      "source": "github/awesome-copilot"
     },
     "nestjs-best-practices": {
       "kind": "registry",
-      "source": "kadajett/agent-nestjs-skills",
-      "sourceType": "github",
-      "skillPath": "skills/nestjs-best-practices/SKILL.md",
-      "computedHash": "f697e4a8fc1d9649a930678638a839443b5abf223f350aaf021a7b66c1d66159"
+      "source": "kadajett/agent-nestjs-skills"
     },
     "predeploy-audit": {
       "kind": "authored",
@@ -94,86 +71,51 @@
     },
     "prisma-database-setup": {
       "kind": "registry",
-      "source": "prisma/skills",
-      "sourceType": "github",
-      "skillPath": "prisma-database-setup/SKILL.md",
-      "computedHash": "096a453686e4fa09e7632434e42c44358f7291945d61bb9b060e5e2de1dc33ba"
+      "source": "prisma/skills"
     },
     "prisma-postgres": {
       "kind": "registry",
-      "source": "prisma/skills",
-      "sourceType": "github",
-      "skillPath": "prisma-postgres/SKILL.md",
-      "computedHash": "bd29d626f40b079ba41273b4cee241b8ca5cecf81342abc20dd0747acbfbdb30"
+      "source": "prisma/skills"
     },
     "react-markdown": {
-      "source": "mikkelkrogsholm/dev-skills",
-      "sourceType": "github",
-      "skillPath": "react-markdown/SKILL.md",
-      "computedHash": "47756f9a6ec27fcc771dbda12722ad95ddfa05b9afca903ea8777dbc9641dec9"
+      "kind": "registry",
+      "source": "mikkelkrogsholm/dev-skills"
     },
     "tailwindcss-advanced-layouts": {
       "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "1dc314c7613cc884223ab96797b0df9a624ab34222280fa0b2f8526239835d6f"
+      "source": "josiahsiegel/claude-plugin-marketplace"
     },
     "tailwindcss-animations": {
       "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "96c4cb412e155e39d85a5268b68faa03bfa4516e119d650a4baaaed14b1bedea"
+      "source": "josiahsiegel/claude-plugin-marketplace"
     },
     "tailwindcss-debugging": {
       "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "048bef19709601717246e1127e68168db2408ef5213587f0d7a97c4017cfc4aa"
+      "source": "josiahsiegel/claude-plugin-marketplace"
     },
     "tailwindcss-mobile-first": {
       "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "4b9b337e8fa7443f642929dc61bbe2a001fa59d66ae7e5e6e5c4fa909a2b6fe6"
+      "source": "josiahsiegel/claude-plugin-marketplace"
     },
     "tailwindcss-performance": {
       "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "b094ca86f2c4731cabf7cbb3ae3b74dd8c5778df8297468521a61d0d1f14b3e3"
+      "source": "josiahsiegel/claude-plugin-marketplace"
     },
     "tailwindcss-responsive-darkmode": {
       "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace",
-      "sourceType": "github",
-      "skillPath": null,
-      "computedHash": "ce895515081ffddaa8df56bde3a4c7baf6cc6604d62b50fa1e7f746bbff848b7"
+      "source": "josiahsiegel/claude-plugin-marketplace"
     },
     "terraform-style-guide": {
       "kind": "registry",
-      "source": "hashicorp/agent-skills",
-      "sourceType": "github",
-      "skillPath": "plugins/terraform/skills/terraform-style-guide/SKILL.md",
-      "computedHash": "381763131997a8706ba7d34707ee739ba2099ca9a0964a474c51af93a340d49b"
+      "source": "hashicorp/agent-skills"
     },
     "vercel-react-best-practices": {
       "kind": "registry",
-      "source": "vercel-labs/agent-skills",
-      "sourceType": "github",
-      "skillPath": "skills/react-best-practices/SKILL.md",
-      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
+      "source": "vercel-labs/agent-skills"
     },
     "writing-for-agents": {
       "kind": "registry",
-      "source": "mattpocock/skills",
-      "sourceType": "github",
-      "skillPath": "skills/productivity/writing-for-agents/SKILL.md",
-      "computedHash": "0071124a923559493bc8924a90fb87bceb048d31ad2ce785fa4281d7c506bfa7"
+      "source": "mattpocock/skills"
     }
   }
 }

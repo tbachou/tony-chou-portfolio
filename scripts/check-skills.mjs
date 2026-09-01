@@ -1,68 +1,50 @@
 #!/usr/bin/env node
 /**
- * Skill layout check (spec 0007).
+ * Skill layout check (spec 0014, replacing spec 0007's).
  *
- * Fails when the `.claude/skills/` layout drifts back toward any of the five
- * storage mechanisms that produced a broken checkout: a committed symlink into
- * a gitignored directory, a skill gitignored by name, a duplicate copy, a
- * restore-on-install lock file, or a hand copy.
+ * 0007 vendored every skill and this check enforced that. 0014 splits them by
+ * authorship: the skills Tony wrote stay committed here, and third party ones
+ * are installed per machine into `~/.claude/skills/` and never committed. So
+ * the check now enforces a shape with TWO valid states rather than one, and
+ * the interesting rule is the new one: a `registry` skill must NOT have a
+ * directory here. That is the regression this file exists to catch, because
+ * running `npx skills add` inside the repo silently puts the files back.
  *
  * Every rule is decidable from a plain checkout with NO network calls, which is
  * the point: a check that reached the registry could flake on the registry
  * being down, and would then be disabled, and the layout would rot again.
  *
- * Run locally (`npm run check:skills`) and in CI. Local first is deliberate:
- * CI here runs on push to main and there is no PR flow, so a CI-only check
- * fires after the drift has already reached every worktree.
+ * Run locally (`npm run check:skills`) and in CI.
  */
 
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, lstatSync, existsSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 
 const SKILLS_DIR = '.claude/skills';
 const MANIFEST = 'skills-lock.json';
 
-/** Git's mode for a symlink blob. The failure this whole spec exists to kill. */
+/** Git's mode for a symlink blob. The failure 0007 existed to kill. */
 const SYMLINK_MODE = '120000';
+
+/**
+ * The only values `kind` may take.
+ *
+ * - `authored`  Tony's own. Committed here, and a directory is required.
+ * - `registry`  Someone else's. Installed globally, and a directory is a failure.
+ * - `vendored`  A registry skill with nowhere to install it from. The escape
+ *               hatch in 0014, which requires a directory AND a `reason`.
+ *
+ * Fails closed: an entry with a missing or unrecognised `kind` is a failure,
+ * not a skip. Without that, the registry rule below is a test on a value, so
+ * an entry with no `kind` would satisfy it vacuously while holding vendored
+ * third party content. That was the live state of `react-markdown` before 0014.
+ */
+const KINDS_REQUIRING_DIRECTORY = new Set(['authored', 'vendored']);
+const VALID_KINDS = new Set(['authored', 'registry', 'vendored']);
 
 function git(args) {
   return execFileSync('git', args, { encoding: 'utf8' });
-}
-
-/** Every file in a skill directory, as repo-relative paths, sorted. */
-export function skillFiles(dir) {
-  const out = [];
-  const walk = (current) => {
-    for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    )) {
-      const full = join(current, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) out.push(full);
-    }
-  };
-  walk(dir);
-  // Sort on the POSIX form so the hash is identical on Windows.
-  return out.sort((a, b) => a.split(sep).join('/').localeCompare(b.split(sep).join('/')));
-}
-
-/**
- * sha256 over a skill directory: sorted relative paths, then contents.
- *
- * Paths are folded in as well as contents so that renaming a file changes the
- * hash. Hashing contents alone would call a rename identical.
- */
-export function computeSkillHash(dir) {
-  const hash = createHash('sha256');
-  for (const file of skillFiles(dir)) {
-    hash.update(relative(dir, file).split(sep).join('/'));
-    hash.update('\0');
-    hash.update(readFileSync(file));
-    hash.update('\0');
-  }
-  return hash.digest('hex');
 }
 
 export function listSkillDirs() {
@@ -94,9 +76,9 @@ function checkNotIgnored(failures, dirs) {
     const path = `${SKILLS_DIR}/${name}`;
     try {
       // `--no-index` is load bearing, not tidiness. Without it git refuses to
-      // report a TRACKED path as ignored, and after this migration every skill
-      // is tracked, so this rule would be permanently dead in exactly the state
-      // the spec creates. Verified by deliberately re-adding a gitignore line.
+      // report a TRACKED path as ignored, and every committed skill is tracked,
+      // so this rule would be permanently dead in exactly the state the spec
+      // creates. Verified by deliberately re-adding a gitignore line.
       execFileSync('git', ['check-ignore', '--no-index', '-q', path], { stdio: 'ignore' });
       failures.push(`${path} is matched by a gitignore rule, so it is absent from a fresh clone.`);
     } catch {
@@ -120,12 +102,44 @@ function checkManifest(failures, dirs) {
   }
   const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
   const entries = manifest.skills ?? {};
+
+  // Directory side: unchanged. Anything committed here must be declared.
   for (const name of dirs) {
     if (!entries[name]) failures.push(`${name} has no ${MANIFEST} entry.`);
   }
-  for (const name of Object.keys(entries)) {
-    if (!dirs.includes(name)) {
-      failures.push(`${MANIFEST} names "${name}", which is not a directory under ${SKILLS_DIR}.`);
+
+  // Entry side: branches on kind, which is the half 0014 changed. Before this,
+  // any entry without a directory failed, which is precisely the state every
+  // registry entry is now meant to be in, so the old rule would have failed
+  // permanently after the migration.
+  for (const [name, entry] of Object.entries(entries)) {
+    const kind = entry?.kind;
+    if (!kind || !VALID_KINDS.has(kind)) {
+      failures.push(
+        `${MANIFEST} entry "${name}" has ${kind ? `an unrecognised kind "${kind}"` : 'no kind'}. ` +
+          `Expected one of: ${[...VALID_KINDS].join(', ')}.`,
+      );
+      continue; // Kind is unusable, so the rules below cannot be judged.
+    }
+
+    const hasDirectory = dirs.includes(name);
+
+    if (KINDS_REQUIRING_DIRECTORY.has(kind) && !hasDirectory) {
+      failures.push(`${MANIFEST} names "${name}" as ${kind}, but there is no directory under ${SKILLS_DIR}.`);
+    }
+
+    if (kind === 'registry' && hasDirectory) {
+      failures.push(
+        `${SKILLS_DIR}/${name} is committed, but ${MANIFEST} declares it registry, which is installed globally and never committed. ` +
+          `Running \`npx skills add\` inside the repo does this. Delete the directory and install it with \`-g\`.`,
+      );
+    }
+
+    if (kind === 'vendored' && !entry.reason) {
+      failures.push(
+        `${MANIFEST} entry "${name}" is vendored but records no reason. ` +
+          `Vendoring is the exception in spec 0014, so the reason has to be visible rather than silent.`,
+      );
     }
   }
 }
@@ -140,14 +154,14 @@ export function runChecks() {
   return { dirs, failures };
 }
 
-// Run-if-main, so the manifest generator can import the hash function.
+// Run-if-main, so the rules stay importable by a test.
 if (process.argv[1] && process.argv[1].endsWith('check-skills.mjs')) {
   const { dirs, failures } = runChecks();
   if (failures.length > 0) {
     console.error(`Skill layout check FAILED (${failures.length} problem(s)):\n`);
     for (const failure of failures) console.error(`  - ${failure}`);
-    console.error(`\nSee docs/specs/_root/0007-agent-skills-storage-distribution/index.md`);
+    console.error(`\nSee docs/specs/_root/0014-agent-skill-storage/index.md`);
     process.exit(1);
   }
-  console.log(`Skill layout check passed: ${dirs.length} skills, all committed real files with manifest entries.`);
+  console.log(`Skill layout check passed: ${dirs.length} committed skills, all declared in ${MANIFEST}.`);
 }
