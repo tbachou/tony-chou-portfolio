@@ -43,6 +43,15 @@ import type { JudgeUsage } from './scorers/judge-client';
 class CapturingProvider implements AiProvider {
   interviewerText: string | null = null;
   tonyText: string | null = null;
+  /**
+   * Every searchKnowledge result handed back to the model this turn, in order.
+   *
+   * Captured by wrapping the executor the SERVICE built, rather than by
+   * plumbing anything through production code: the grounding judge needs the
+   * retrieved text, because a fact drawn correctly from a retrieved document
+   * is not in the story summary and would otherwise be scored as invented.
+   */
+  retrievedResults: string[] = [];
   usage: JudgeUsage = { inputTokens: 0, outputTokens: 0 };
 
   constructor(
@@ -91,7 +100,14 @@ class CapturingProvider implements AiProvider {
         'CapturingProvider: runToolConversation with an unrecognized system prompt; production tool wiring changed and the harness must be updated',
       );
     }
-    const result = await this.real.runToolConversation(params);
+    const result = await this.real.runToolConversation({
+      ...params,
+      executeTool: async (toolCall) => {
+        const output = await params.executeTool(toolCall);
+        this.retrievedResults.push(output);
+        return output;
+      },
+    });
     this.usage.inputTokens += result.inputTokens;
     this.usage.outputTokens += result.outputTokens;
     this.tonyText = result.text;
@@ -210,6 +226,8 @@ export type GenerationCapture = {
   interviewerQuestion: string | null;
   tonyRaw: string | null;
   tonyEmitted: string | null;
+  /** searchKnowledge results this turn, in order. Empty when it never searched. */
+  retrieved: string[];
   usage: JudgeUsage;
 };
 
@@ -257,6 +275,7 @@ async function generateOnce(
     interviewerQuestion: capture.interviewerText,
     tonyRaw: capture.tonyText,
     tonyEmitted: errorMessage === null ? tonyEmitted : null,
+    retrieved: capture.retrievedResults,
     usage: capture.usage,
   };
 }
@@ -328,7 +347,11 @@ export async function runCase(
   // 3 × --concurrency small judge calls in flight).
   const [honesty, grounding, persona] = await Promise.all([
     scoreHonesty({ tonyRaw: capture.tonyRaw, story: prepared.story }),
-    scoreGrounding({ tonyRaw: capture.tonyRaw, story: prepared.story }),
+    scoreGrounding({
+      tonyRaw: capture.tonyRaw,
+      story: prepared.story,
+      retrieved: capture.retrieved,
+    }),
     scorePersona({
       interviewerQuestion: capture.interviewerQuestion,
       tonyRaw: capture.tonyRaw,
