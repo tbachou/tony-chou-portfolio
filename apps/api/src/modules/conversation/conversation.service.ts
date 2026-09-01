@@ -17,7 +17,10 @@ import {
   SEARCH_KNOWLEDGE_TOOL,
   type RetrievalStats,
 } from './retrieval/search-knowledge';
-import { openReadOnly } from './retrieval/vector-store';
+import {
+  isRetrievalConfigured,
+  openReadOnly,
+} from './retrieval/vector-store';
 import {
   CREDENTIAL_GUARD_FALLBACK,
   CREDENTIAL_GUARD_REASON,
@@ -264,6 +267,14 @@ export class ConversationService {
       // Retrieval is offered to the Tony generation only (AC-4). The
       // interviewer above gets no tools: it asks questions from the topic and
       // has nothing to look up.
+      //
+      // And it is offered only when it is actually configured. Otherwise the
+      // model spends a whole extra round trip per searching turn to be told
+      // the search is unavailable, in a deployment that knew at startup. With
+      // no credentials this path is byte for byte the generation that ran
+      // before retrieval existed.
+      const retrievalEnabled = isRetrievalConfigured();
+      if (!retrievalEnabled) this.warnRetrievalUnconfiguredOnce();
       const retrieval = createSearchKnowledgeExecutor({
         openIndex: openReadOnly,
         // The guard filter is story aware, because the guard is: the Product
@@ -294,9 +305,12 @@ export class ConversationService {
         // a few of these tokens on the tool call itself and still has the full
         // budget for the answer that follows.
         maxTokens: 600,
-        tools: [SEARCH_KNOWLEDGE_TOOL],
+        tools: retrievalEnabled ? [SEARCH_KNOWLEDGE_TOOL] : [],
         executeTool: retrieval.execute,
-        maxIterations: MAX_TOOL_ITERATIONS,
+        // One model turn when nothing is offered: with no tools there is
+        // nothing to come back for, and a larger number would only matter if
+        // the model could ask for something.
+        maxIterations: retrievalEnabled ? MAX_TOOL_ITERATIONS : 1,
       });
 
       this.logRetrieval(retrieval.stats, tonyGenerated.stoppedOnIterationCap);
@@ -410,6 +424,25 @@ export class ConversationService {
           stoppedOnIterationCap,
         },
       }),
+    );
+  }
+
+  /**
+   * Says once, not per turn, that retrieval is switched off by configuration.
+   *
+   * Per turn would be noise in a deployment that is never going to have
+   * credentials; never would repeat the failure this whole phase keeps
+   * hitting, where a capability quietly does nothing and no signal exists.
+   */
+  private warnedRetrievalUnconfigured = false;
+
+  private warnRetrievalUnconfiguredOnce(): void {
+    if (this.warnedRetrievalUnconfigured) return;
+    this.warnedRetrievalUnconfigured = true;
+    this.logger.warn(
+      'searchKnowledge is not offered: UPSTASH_VECTOR_REST_URL / ' +
+        'UPSTASH_VECTOR_REST_TOKEN are not set, so the persona answers from the ' +
+        'story alone. Set them to enable retrieval.',
     );
   }
 

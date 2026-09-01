@@ -54,7 +54,8 @@ export type ToolLoopRequest = {
   max_tokens: number;
   system: { type: 'text'; text: string; cache_control: { type: 'ephemeral' } }[];
   messages: { role: 'user' | 'assistant'; content: unknown }[];
-  tools: {
+  /** Omitted entirely when no tools are offered, rather than sent empty. */
+  tools?: {
     name: string;
     description: string;
     input_schema: Record<string, unknown>;
@@ -115,11 +116,16 @@ export async function runToolConversation(
           },
         ],
         messages,
-        tools: params.tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.inputSchema,
-        })),
+        // Omitted rather than sent as [] when nothing is offered: an empty
+        // tools array is a different request from no tools at all, and this
+        // path exists precisely to be identical to a plain generation.
+        ...(params.tools.length > 0 && {
+          tools: params.tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.inputSchema,
+          })),
+        }),
       },
       {
         ...(params.timeoutMs !== undefined && { timeout: params.timeoutMs }),

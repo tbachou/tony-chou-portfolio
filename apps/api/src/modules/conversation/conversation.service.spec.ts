@@ -171,6 +171,67 @@ describe('ConversationService.generateTurnPair', () => {
     expect(h.prisma.conversationTurn.delete).not.toHaveBeenCalled();
   });
 
+  describe('retrieval is offered only when it is configured', () => {
+    const upstashEnv = {
+      UPSTASH_VECTOR_REST_URL: 'https://example-vector.upstash.io',
+      UPSTASH_VECTOR_REST_TOKEN: 'read-only-token',
+    };
+
+    it('offers no tools at all when the Upstash credentials are absent', async () => {
+      delete process.env.UPSTASH_VECTOR_REST_URL;
+      delete process.env.UPSTASH_VECTOR_REST_TOKEN;
+      const h = makeHarness();
+      h.anthropic.streamMessage.mockResolvedValueOnce({
+        text: 'q',
+        inputTokens: 1,
+        outputTokens: 1,
+      });
+
+      await h.service.generateTurnPair({
+        topic,
+        prepared,
+        history: [],
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      // Without this the model spends an extra round trip per searching turn
+      // to be told the search is unavailable, in a deployment that knew at
+      // startup. With no tools the generation is what it was before retrieval.
+      const params = h.anthropic.runToolConversation.mock.calls[0][0] as {
+        tools: unknown[];
+        maxIterations: number;
+      };
+      expect(params.tools).toEqual([]);
+      expect(params.maxIterations).toBe(1);
+    });
+
+    it('offers searchKnowledge when they are present', async () => {
+      Object.assign(process.env, upstashEnv);
+      const h = makeHarness();
+      h.anthropic.streamMessage.mockResolvedValueOnce({
+        text: 'q',
+        inputTokens: 1,
+        outputTokens: 1,
+      });
+
+      await h.service.generateTurnPair({
+        topic,
+        prepared,
+        history: [],
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      const params = h.anthropic.runToolConversation.mock.calls[0][0] as {
+        tools: { name: string }[];
+        maxIterations: number;
+      };
+      expect(params.tools.map((t) => t.name)).toEqual(['searchKnowledge']);
+      expect(params.maxIterations).toBeGreaterThan(1);
+    });
+  });
+
   it('a blank interviewer question fails the turn rather than persisting an empty row', async () => {
     const h = makeHarness();
     // A blank question would be stored as-is and then dropped from later
