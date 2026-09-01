@@ -191,12 +191,7 @@ export function createSearchKnowledgeExecutor(params: {
   openIndex: () => Index;
   /** The story under discussion. The guard filter below is story aware. */
   story: StoryModel;
-  /**
-   * `kind` separates an outage from a bug in our own code. Both degrade, but
-   * only one is someone else's problem, and before this they produced an
-   * identical model facing string and an identical failure count.
-   */
-  onFailure: (cause: string, kind: 'network' | 'unexpected') => void;
+  onFailure: (cause: string) => void;
   /**
    * AC-9. When true a retrieval failure throws instead of degrading, which
    * aborts the generation and fails the eval case loudly. Production leaves
@@ -226,16 +221,23 @@ export function createSearchKnowledgeExecutor(params: {
       // Bounded and flattened before it reaches a log: the name is whatever
       // the model emitted, and model output is derived from a visitor's
       // conversation. AC-13 keeps that out of logs.
-      // String() first, and surrogate safe. `isToolUse` gates only on the
-      // block type, so a tool_use block with no name arrives here as
-      // undefined, and calling .replace on it threw from inside the executor
-      // that must not throw, costing the visitor the whole turn. Splitting by
-      // code point rather than code unit keeps a lone surrogate out of the
-      // log, which this codebase already treats as a hazard elsewhere.
-      const safeName = [...String(call.name ?? 'unnamed').replace(/\s+/g, ' ')]
+      // `isToolUse` gates only on the block type, so a tool_use block with no
+      // name arrives here as undefined, and calling .replace on it threw from
+      // inside the executor that must not throw, costing the visitor the whole
+      // turn. `||` rather than `??` so an empty name is named too.
+      //
+      // The replace covers control and format characters, not just \s: an
+      // escape sequence in model derived text can rewrite or hide a terminal
+      // line, and \s matches neither ESC nor NUL. Split by code point so the
+      // truncation cannot manufacture a lone surrogate, and drop any surrogate
+      // that arrived alone in the input, which splitting alone does not do.
+      const safeName = [
+        ...String(call.name || 'unnamed').replace(/[\s\p{Cc}\p{Cf}]+/gu, ' '),
+      ]
         .slice(0, 64)
-        .join('');
-      params.onFailure(`unknown tool requested: ${safeName}`, 'unexpected');
+        .join('')
+        .replace(/[\uD800-\uDFFF]/gu, '');
+      params.onFailure(`unknown tool requested: ${safeName}`);
       return `Unknown tool: ${safeName}`;
     }
 
@@ -249,7 +251,7 @@ export function createSearchKnowledgeExecutor(params: {
       // The schema says query is required, but the schema is a request, not a
       // guarantee, and an empty string would embed to a meaningless vector.
       stats.malformed += 1;
-      params.onFailure('searchKnowledge called with no query', 'unexpected');
+      params.onFailure('searchKnowledge called with no query');
       return NO_QUERY_RESULT;
     }
 
@@ -284,7 +286,9 @@ export function createSearchKnowledgeExecutor(params: {
       // it out of every log.
       stats.failures += 1;
       const cause =
-        error instanceof Error ? error.message : 'unknown retrieval error';
+        error instanceof Error
+          ? `${error.name}: ${error.message}`
+          : 'unknown retrieval error';
       // A TypeError from a bad refactor and a genuine Upstash outage used to
       // produce an identical model facing string and an identical count, with
       // only the free text warn to tell them apart and nothing alerting on it.
@@ -298,31 +302,18 @@ export function createSearchKnowledgeExecutor(params: {
       // as our bug reported every real outage as a defect in this code and
       // left the network bucket almost unreachable.
       //
-      // One list, of the error types that mean a bug HERE. Everything else is
-      // theirs, which is the safer default: over reporting an outage as our
-      // defect is what the previous two versions of this did.
+      // No attempt is made to say whose fault this is. Three versions of a
+      // classifier here were each wrong in a different direction: it called
+      // every fetch failure our bug, then excused our own TypeErrors that
+      // carried a cause, then mis bucketed a connection dropped mid response
+      // as ours. `instanceof TypeError` cannot tell origin, and the list of
+      // messages that mean "network" belongs to undici and Upstash rather
+      // than to us, so it can never be finished.
       //
-      // Two absences are deliberate, and both are real Upstash outage shapes
-      // that arrive looking like our mistakes:
-      //
-      //   TypeError('fetch failed')  WHATWG fetch's rejection for every
-      //                              genuine network failure, rethrown
-      //                              unchanged by @upstash/vector. Excluded by
-      //                              message, not by carrying a `cause`: an
-      //                              earlier version accepted any TypeError
-      //                              with a cause and so excused TypeErrors
-      //                              thrown deliberately in our own code.
-      //   SyntaxError                the SDK calls res.json() BEFORE checking
-      //                              res.ok, so a 502 whose body is an HTML
-      //                              error page surfaces as a JSON parse
-      //                              failure. Inside this catch the only JSON
-      //                              parsed is the SDK's own response.
-      const isOurBug =
-        (error instanceof TypeError && error.message !== 'fetch failed') ||
-        error instanceof RangeError ||
-        error instanceof ReferenceError;
-      const kind = isOurBug ? 'unexpected' : 'network';
-      params.onFailure(cause, kind);
+      // The constructor name and the message are more useful than a wrong
+      // level, and cannot be wrong. Alert on the failure RATE instead, which
+      // `stats.failures` already carries.
+      params.onFailure(cause);
       if (params.failLoudly) {
         // The one place the seam's "an executor must not throw" rule is broken
         // on purpose. It aborts the generation, which is the point: an eval

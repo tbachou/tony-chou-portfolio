@@ -291,12 +291,11 @@ export class ConversationService {
         // Forge numeric rule and the sole credit rule fire only for some
         // stories.
         story,
-        onFailure: (cause, kind) =>
-          // An unexpected error is a bug here, not an outage upstream, so it
-          // is logged at error level where something can alert on it.
-          kind === 'unexpected'
-            ? this.logger.error(`searchKnowledge failed unexpectedly: ${cause}`)
-            : this.logger.warn(`searchKnowledge unavailable: ${cause}`),
+        // One level, carrying the error's type and message. Deciding whether
+        // a failure is ours or theirs was tried three times and was wrong
+        // three times; the rate in `stats.failures` is the thing to alert on.
+        onFailure: (cause) =>
+          this.logger.warn(`searchKnowledge failed: ${cause}`),
         // Production degrades (AC-8); the eval harness sets this and fails
         // loudly instead (AC-9), because a run that silently drops retrieval
         // still costs money and still reports scores.

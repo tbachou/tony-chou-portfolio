@@ -378,6 +378,106 @@ describe('ConversationService.generateTurnPair', () => {
     expect(h.dailyUsage.incrementOp).toHaveBeenCalledTimes(1);
   });
 
+  it('counts Tony\'s tokens when a failure lands between the call and the write', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: 'a real answer',
+      inputTokens: 400,
+      outputTokens: 300,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: false,
+    });
+
+    // Several statements sit between the billed call and the transaction: the
+    // retrieval log, the guard, the emit loop. Each is a window where these
+    // tokens are spent and uncounted, which is why the accumulate belongs
+    // immediately after the call rather than just before the write.
+    const emit = (event: string, data: unknown) => {
+      if (event === 'token') throw new Error('client vanished mid-stream');
+      h.events.push([event, data]);
+    };
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit,
+    });
+
+    expect(h.dailyUsage.incrementOp).toHaveBeenCalledWith(0, 30 + 700);
+  });
+
+  it('blames the token budget, not the guard, when a tool call is truncated', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: '',
+      inputTokens: 10,
+      outputTokens: 10,
+      toolCallCount: 1,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: true,
+    });
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    // The guard does reject the empty text, but the cause is the token
+    // budget. Logging it as a guard failure sends an operator after the wrong
+    // thing, which is the misattribution this whole phase started with.
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(lines.some((l) => l.includes('truncated mid tool call'))).toBe(true);
+    expect(lines.some((l) => l.includes('Ownership guard fired'))).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('still blames the guard for a genuine guard failure', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: '   ',
+      inputTokens: 10,
+      outputTokens: 10,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: false,
+    });
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(lines.some((l) => l.includes('Ownership guard fired'))).toBe(true);
+    warn.mockRestore();
+  });
+
   it('does not touch the counters when nothing was billed', async () => {
     const h = makeHarness();
     h.anthropic.streamMessage.mockRejectedValue(new Error('upstream down'));

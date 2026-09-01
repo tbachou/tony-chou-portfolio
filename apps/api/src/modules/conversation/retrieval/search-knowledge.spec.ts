@@ -121,8 +121,7 @@ describe('createSearchKnowledgeExecutor', () => {
     expect(result).toBe(UNAVAILABLE_RESULT);
     expect(stats.failures).toBe(1);
     expect(onFailure).toHaveBeenCalledWith(
-      'getaddrinfo ENOTFOUND upstash',
-      'network',
+      'Error: getaddrinfo ENOTFOUND upstash',
     );
   });
 
@@ -252,7 +251,7 @@ describe('createSearchKnowledgeExecutor', () => {
     // which the test above pins.
     await expect(execute(call())).rejects.toThrow(/upstream 503/);
     expect(stats.failures).toBe(1);
-    expect(onFailure).toHaveBeenCalledWith('upstream 503', 'network');
+    expect(onFailure).toHaveBeenCalledWith('Error: upstream 503');
   });
 
   it('reads strict mode from the environment, defaulting to degrade', () => {
@@ -302,46 +301,33 @@ describe('createSearchKnowledgeExecutor', () => {
     expect(stats.unknownTool).toBe(1);
   });
 
-  describe('classifying a failure as theirs or ours', () => {
-    async function kindOf(error: unknown): Promise<string> {
+  describe('what a failure reports', () => {
+    async function causeOf(error: unknown): Promise<string> {
       searchMock.mockRejectedValueOnce(error);
       const { execute, onFailure } = makeExecutor();
       await execute(call());
-      return (onFailure.mock.calls[0] as [string, string])[1];
+      return (onFailure.mock.calls[0] as [string])[0];
     }
 
-    it("treats fetch's TypeError as network", async () => {
-      // WHATWG fetch rejects with exactly this for every genuine network
-      // failure, and @upstash/vector rethrows it unchanged.
-      expect(await kindOf(new TypeError('fetch failed'))).toBe('network');
-    });
-
-    it('treats a JSON parse failure as network', async () => {
-      // The SDK calls res.json() BEFORE checking res.ok, so a 502 whose body
-      // is an HTML error page arrives as a parse failure.
-      expect(
-        await kindOf(
-          new SyntaxError(`Unexpected token '<', "<html>502 " is not valid JSON`),
-        ),
-      ).toBe('network');
-    });
-
-    it('still treats a TypeError from our own code as ours', async () => {
-      expect(await kindOf(new TypeError('x is not a function'))).toBe(
-        'unexpected',
+    it('names the error type as well as the message', async () => {
+      // No judgement about whose fault it is: three versions of a classifier
+      // here were each wrong in a different direction. The type and message
+      // are more useful than a wrong level and cannot be wrong.
+      expect(await causeOf(new TypeError('fetch failed'))).toBe(
+        'TypeError: fetch failed',
       );
+      // The mid-response disconnect that the last classifier called our bug.
+      expect(await causeOf(new TypeError('terminated'))).toBe(
+        'TypeError: terminated',
+      );
+      expect(
+        await causeOf(new SyntaxError('Unexpected token < is not valid JSON')),
+      ).toBe('SyntaxError: Unexpected token < is not valid JSON');
+      expect(await causeOf(new Error('Forbidden'))).toBe('Error: Forbidden');
     });
 
-    it('does not excuse our TypeError just because it carries a cause', async () => {
-      // An earlier version accepted any TypeError with a `cause` as a network
-      // failure, which swept up TypeErrors thrown deliberately in our own code
-      // and inverted the split in the other direction.
-      const ours = new TypeError('bad argument', { cause: new Error('why') });
-      expect(await kindOf(ours)).toBe('unexpected');
-    });
-
-    it('treats an unrecognised error as theirs', async () => {
-      expect(await kindOf(new Error('Forbidden'))).toBe('network');
+    it('survives a thrown non-error', async () => {
+      expect(await causeOf('just a string')).toBe('unknown retrieval error');
     });
   });
 
@@ -365,8 +351,45 @@ describe('createSearchKnowledgeExecutor', () => {
 
     const result = await execute({ name: undefined as unknown as string, input: {} });
 
-    expect(result).toContain('Unknown tool');
+    // The exact string, so dropping the fallback fails rather than passing on
+    // "Unknown tool: undefined".
+    expect(result).toBe('Unknown tool: unnamed');
     expect(stats.unknownTool).toBe(1);
+  });
+
+  it('names an empty tool name rather than logging nothing', async () => {
+    const { execute, onFailure } = makeExecutor();
+
+    // '' ?? 'unnamed' is '', so a nullish fallback logged no subject at all.
+    await execute({ name: '', input: {} });
+
+    expect(onFailure).toHaveBeenCalledWith('unknown tool requested: unnamed');
+  });
+
+  it('strips control characters, not only whitespace', async () => {
+    const { execute, onFailure } = makeExecutor();
+
+    // \s matches neither ESC nor NUL, and an escape sequence in model derived
+    // text can rewrite or hide a line in a terminal reading the logs.
+    await execute({ name: 'a\u001b[31mRED\u001b[0m\u0000b', input: {} });
+
+    const [cause] = onFailure.mock.calls[0] as [string];
+    // Built from char codes rather than a literal control-character class,
+    // which eslint's no-control-regex rejects for good reason.
+    const controls = [...cause].some((c) => c.charCodeAt(0) < 0x20);
+    expect(controls).toBe(false);
+    expect(cause).toBe('unknown tool requested: a [31mRED [0m b');
+  });
+
+  it('drops a lone surrogate that arrived in the input', async () => {
+    const { execute, onFailure } = makeExecutor();
+
+    await execute({ name: '\uD83Dorphan', input: {} });
+
+    const [cause] = onFailure.mock.calls[0] as [string];
+    // Splitting by code point avoids CREATING one; it does not remove one
+    // that was already there.
+    expect(/[\uD800-\uDFFF]/.test(cause)).toBe(false);
   });
 
   it('flattens newlines in a tool name even when it is short', async () => {
@@ -378,7 +401,7 @@ describe('createSearchKnowledgeExecutor', () => {
     // the log-injection defence, so it needs an input only it can handle.
     await execute({ name: 'search\nERROR fake log line', input: {} });
 
-    const [cause] = onFailure.mock.calls[0] as [string, string];
+    const [cause] = onFailure.mock.calls[0] as [string];
     expect(cause).toBe('unknown tool requested: search ERROR fake log line');
   });
 
@@ -387,7 +410,7 @@ describe('createSearchKnowledgeExecutor', () => {
 
     await execute({ name: 'x'.repeat(200), input: {} });
 
-    const [cause] = onFailure.mock.calls[0] as [string, string];
+    const [cause] = onFailure.mock.calls[0] as [string];
     expect(cause).toBe(`unknown tool requested: ${'x'.repeat(64)}`);
   });
 
@@ -396,29 +419,11 @@ describe('createSearchKnowledgeExecutor', () => {
 
     await execute({ name: `${'x'.repeat(63)}\u{1F525}tail`, input: {} });
 
-    const [cause] = onFailure.mock.calls[0] as [string, string];
+    const [cause] = onFailure.mock.calls[0] as [string];
     // A lone surrogate reaching a log is a hazard this codebase already
     // guards against elsewhere.
     expect(cause).toContain('\u{1F525}');
     expect(/[\uD800-\uDFFF]/.test(cause.replace(/\u{1F525}/gu, ''))).toBe(false);
-  });
-
-  it('separates a bug in our own code from an outage upstream', async () => {
-    searchMock.mockRejectedValueOnce(new TypeError("Cannot read properties of null"));
-    const bug = makeExecutor();
-    await bug.execute(call());
-    expect(bug.onFailure).toHaveBeenCalledWith(
-      expect.stringContaining('Cannot read properties'),
-      'unexpected',
-    );
-
-    searchMock.mockRejectedValueOnce(new Error('getaddrinfo ENOTFOUND'));
-    const outage = makeExecutor();
-    await outage.execute(call());
-    expect(outage.onFailure).toHaveBeenCalledWith(
-      expect.stringContaining('ENOTFOUND'),
-      'network',
-    );
   });
 
   it('never puts the query text in anything it reports (AC-13)', async () => {
