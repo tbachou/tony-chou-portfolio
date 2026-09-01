@@ -48,6 +48,7 @@ export type { ScoredError, SkillPoint, SkillSeries } from './forecast/skill';
 // flag instead of a boolean the caller can forget.
 export { gradedIntervals } from './forecast/predictions.repository';
 export { calibration } from './forecast/calibration';
+export { isStale, isStaleInput, inputReadingFor } from './forecast/staleness';
 export type {
   CalibrationReport,
   CoverageGroup,
@@ -55,7 +56,7 @@ export type {
   IntervalSource,
 } from './forecast/calibration';
 export { HORIZON_HOURS, MIN_BUCKET_ERRORS, SKILL_DEFAULT_WINDOW_DAYS } from './config';
-export { GAUGE, DISPLAY_TIMEZONE } from './config';
+export { GAUGE, DISPLAY_TIMEZONE, STALE_AFTER_HOURS } from './config';
 export type {
   KnowabilityAxis,
   Qualifier,
