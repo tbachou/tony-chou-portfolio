@@ -318,6 +318,66 @@ describe('ConversationService.generateTurnPair', () => {
     expect(h.prisma.conversationTurn.delete).toHaveBeenCalled();
   });
 
+  it('records both generations when the transaction itself fails', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: 'a real answer',
+      inputTokens: 5000,
+      outputTokens: 2500,
+      toolCallCount: 1,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: false,
+    });
+    h.prisma.$transaction.mockRejectedValueOnce(new Error('deadlock detected'));
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    // Both generations completed and were billed before the write failed, and
+    // a Prisma error carries no tool loop usage, so nothing else could
+    // recover them: 30 + 7500.
+    expect(h.dailyUsage.incrementOp).toHaveBeenLastCalledWith(0, 7530);
+  });
+
+  it('does not double count when the failure comes after a committed turn', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    // The transaction succeeds, charging the full turn, and the failure
+    // happens afterwards. Charging again from the catch would bill it twice.
+    let emitted = 0;
+    const emit = (event: string, data: unknown) => {
+      emitted += 1;
+      if (event === 'turn_end') throw new Error('client disconnected');
+      h.events.push([event, data]);
+    };
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit,
+    });
+
+    expect(emitted).toBeGreaterThan(0);
+    // Only the transaction's own increment, never a second one from the catch.
+    expect(h.dailyUsage.incrementOp).toHaveBeenCalledTimes(1);
+  });
+
   it('does not touch the counters when nothing was billed', async () => {
     const h = makeHarness();
     h.anthropic.streamMessage.mockRejectedValue(new Error('upstream down'));

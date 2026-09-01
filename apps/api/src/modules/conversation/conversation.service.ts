@@ -355,6 +355,11 @@ export class ConversationService {
         interviewerResult.inputTokens + interviewerResult.outputTokens;
       const tonyTokenCount =
         tonyGenerated.inputTokens + tonyGenerated.outputTokens;
+      // Added BEFORE the transaction, because a transaction that fails leaves
+      // these tokens billed and uncounted. They cannot be recovered from the
+      // error either: a Prisma failure carries no tool loop usage, so
+      // usageFromError returns null for it.
+      billedTokens += tonyTokenCount;
 
       await this.prisma.$transaction([
         this.prisma.conversationTurn.update({
