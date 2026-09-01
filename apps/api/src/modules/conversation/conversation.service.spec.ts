@@ -263,6 +263,51 @@ describe('ConversationService.generateTurnPair', () => {
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('records tokens already billed when the tool loop throws part way', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    // What runToolConversation throws once two iterations have been billed.
+    const failure = new Error('529 overloaded');
+    Object.defineProperty(failure, '__toolLoopUsage', {
+      value: { inputTokens: 2400, outputTokens: 180 },
+      enumerable: false,
+    });
+    h.anthropic.runToolConversation.mockRejectedValueOnce(failure);
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    // The turn failed, but the money was still spent, so the daily cap has to
+    // move. Otherwise a persistently failing turn burns budget invisibly.
+    expect(h.dailyUsage.incrementOp).toHaveBeenCalledWith(0, 2580);
+    expect(h.events.map(([event]) => event)).toContain('turn_error');
+    expect(h.prisma.conversationTurn.delete).toHaveBeenCalled();
+  });
+
+  it('does not touch the counters when nothing was billed', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockRejectedValue(new Error('upstream down'));
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+
+    expect(h.dailyUsage.incrementOp).not.toHaveBeenCalled();
+  });
+
   it('error path: releases the reserved slot and emits turn_error instead of turn_end', async () => {
     const h = makeHarness();
     h.anthropic.streamMessage.mockRejectedValue(new Error('upstream down'));

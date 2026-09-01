@@ -1,5 +1,6 @@
 import {
   runToolConversation,
+  usageFromError,
   type CreateMessage,
   type ProviderMessage,
   type ToolLoopRequest,
@@ -221,6 +222,91 @@ describe('runToolConversation', () => {
     const result = await runToolConversation(create, 'model-x', base);
 
     expect(result.text).toBe('one two');
+  });
+
+  it('reports a truncated tool call instead of silently answering nothing', async () => {
+    // Reachable under maxTokens: the model starts a tool_use block and is cut
+    // off. stop_reason is 'max_tokens', not 'tool_use', so the old code took
+    // the "answered in plain text" branch, textOf() found no text blocks and
+    // returned '', the visitor got the guard fallback, and the only log line
+    // blamed the ownership guard. No retrieval line at all.
+    const { create } = recordingCreate([
+      {
+        content: [
+          { type: 'tool_use', id: 'tu_1', name: TOOL.name, input: { query: 'x' } },
+        ],
+        stop_reason: 'max_tokens',
+        usage: usage(),
+      },
+    ]);
+    const executeTool = jest.fn();
+
+    const result = await runToolConversation(create, 'model-x', {
+      ...base,
+      executeTool,
+    });
+
+    // Not executed: a truncated tool_use block may carry incomplete input, so
+    // running it is worse than reporting it.
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.stoppedOnMaxTokens).toBe(true);
+    expect(result.text).toBe('');
+  });
+
+  it('does not flag a normal answer that happens to run out of tokens', async () => {
+    const { create } = recordingCreate([
+      {
+        content: [{ type: 'text', text: 'a long answer cut off' }],
+        stop_reason: 'max_tokens',
+        usage: usage(),
+      },
+    ]);
+
+    const result = await runToolConversation(create, 'model-x', base);
+
+    // Text truncation is the pre-existing, accepted behaviour: the answer is
+    // real, just short. Only a truncated TOOL CALL is the new outcome.
+    expect(result.stoppedOnMaxTokens).toBe(false);
+    expect(result.text).toBe('a long answer cut off');
+  });
+
+  it('carries the tokens already billed when a later iteration throws', async () => {
+    // Pre-change this lost at most one call's tokens. With maxIterations 4 it
+    // loses up to three, and generateTurnPair's catch then never increments
+    // the daily counters, so a persistently failing third iteration burns
+    // money while DAILY_TOKEN_CAP never moves.
+    let call = 0;
+    const create: CreateMessage = () => {
+      call += 1;
+      if (call <= 2) {
+        return Promise.resolve({
+          ...toolMessage([{ id: `tu_${call}` }]),
+          usage: usage(1200, 90),
+        });
+      }
+      return Promise.reject(new Error('529 overloaded'));
+    };
+
+    const thrown = await runToolConversation(create, 'model-x', base).catch(
+      (error: unknown) => error,
+    );
+
+    expect((thrown as Error).message).toContain('529 overloaded');
+    // Two iterations at 1200 in + 90 out were really billed.
+    expect(usageFromError(thrown)).toEqual({
+      inputTokens: 2400,
+      outputTokens: 180,
+    });
+  });
+
+  it('reports no usage for an error that never reached the provider', async () => {
+    const create: CreateMessage = () => Promise.reject(new Error('bad request'));
+
+    const thrown = await runToolConversation(create, 'model-x', base).catch(
+      (error: unknown) => error,
+    );
+
+    expect(usageFromError(thrown)).toEqual({ inputTokens: 0, outputTokens: 0 });
   });
 
   it('marks the system block cacheable and passes the tools through', async () => {

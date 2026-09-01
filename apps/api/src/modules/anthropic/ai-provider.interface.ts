@@ -123,6 +123,12 @@ export type RunToolConversationResult = StreamMessageResult & {
   toolCallCount: number;
   /** True when maxIterations was hit with the model still asking for tools. */
   stoppedOnIterationCap: boolean;
+  /**
+   * True when the model was cut off by max_tokens PART WAY THROUGH a tool
+   * call. Distinct from an answer that merely ran long: here there is no
+   * answer at all, and the tool was not run.
+   */
+  stoppedOnMaxTokens: boolean;
 };
 
 export interface AiProvider {

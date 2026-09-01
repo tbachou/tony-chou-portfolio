@@ -72,6 +72,44 @@ export type CreateMessage = (
   options: { timeout?: number; maxRetries?: number },
 ) => Promise<ProviderMessage>;
 
+/** Where the tokens spent before a failure are stashed on the thrown error. */
+const USAGE_KEY = '__toolLoopUsage';
+
+type CarriedUsage = { inputTokens: number; outputTokens: number };
+
+/**
+ * Attaches the tokens already billed to the error being thrown.
+ *
+ * The properties go ONTO the original error rather than into a wrapper: the
+ * caller matches on the provider SDK's own error types (`classifyUpstreamError`)
+ * and shows `error.message` to the client, and a wrapper would break both.
+ */
+function attachUsage(error: unknown, usage: CarriedUsage): unknown {
+  if (error !== null && typeof error === 'object') {
+    Object.defineProperty(error, USAGE_KEY, {
+      value: usage,
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return error;
+}
+
+/**
+ * The tokens billed before a tool loop threw, or null if this error did not
+ * come from one.
+ *
+ * Without this the caller's catch has no idea anything was spent, so a loop
+ * that failed on its third iteration billed two calls that never reached the
+ * daily counters. Pre change that lost one call at most; with several
+ * iterations it silently loses several.
+ */
+export function usageFromError(error: unknown): CarriedUsage | null {
+  if (error === null || typeof error !== 'object') return null;
+  const carried = (error as Record<string, unknown>)[USAGE_KEY];
+  return (carried as CarriedUsage | undefined) ?? null;
+}
+
 function isToolUse(block: ContentBlock): block is ToolUseBlock {
   return block.type === 'tool_use';
 }
@@ -103,6 +141,7 @@ export async function runToolConversation(
   let outputTokens = 0;
   let toolCallCount = 0;
 
+  try {
   for (let iteration = 0; iteration < params.maxIterations; iteration += 1) {
     const message = await create(
       {
@@ -144,6 +183,22 @@ export async function runToolConversation(
 
     const toolUses = message.content.filter(isToolUse);
 
+    // Cut off part way through a tool call. Reported rather than executed: a
+    // truncated tool_use block can carry incomplete input, so running it is
+    // worse than saying so. Folding this into the branch below is what made it
+    // silent, because there are no text blocks to return and the empty string
+    // reached the caller as though the model had simply answered nothing.
+    if (message.stop_reason === 'max_tokens' && toolUses.length > 0) {
+      return {
+        text: textOf(message),
+        inputTokens,
+        outputTokens,
+        toolCallCount,
+        stoppedOnIterationCap: false,
+        stoppedOnMaxTokens: true,
+      };
+    }
+
     if (message.stop_reason !== 'tool_use' || toolUses.length === 0) {
       return {
         text: textOf(message),
@@ -151,6 +206,7 @@ export async function runToolConversation(
         outputTokens,
         toolCallCount,
         stoppedOnIterationCap: false,
+        stoppedOnMaxTokens: false,
       };
     }
 
@@ -180,6 +236,11 @@ export async function runToolConversation(
     }
     messages.push({ role: 'user', content: results });
   }
+  } catch (error) {
+    // Rethrown unchanged apart from the usage rider, so the caller still sees
+    // the provider's own error type and message.
+    throw attachUsage(error, { inputTokens, outputTokens });
+  }
 
   // The cap was hit with the model still asking for tools. Returning empty
   // beats throwing: the caller's guard and fallback already handle a weak
@@ -191,5 +252,6 @@ export async function runToolConversation(
     outputTokens,
     toolCallCount,
     stoppedOnIterationCap: true,
+    stoppedOnMaxTokens: false,
   };
 }

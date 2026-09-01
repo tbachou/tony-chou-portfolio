@@ -6,6 +6,7 @@ import {
   resolveConfiguredProvider,
   type AiProvider,
 } from '../anthropic/ai-provider.interface';
+import { usageFromError } from '../anthropic/tool-conversation';
 import { ConversationRole } from '../../generated/prisma/enums';
 import { Prisma } from '../../generated/prisma/client';
 import type { StoryModel, TopicModel } from '../../generated/prisma/models';
@@ -313,7 +314,11 @@ export class ConversationService {
         maxIterations: retrievalEnabled ? MAX_TOOL_ITERATIONS : 1,
       });
 
-      this.logRetrieval(retrieval.stats, tonyGenerated.stoppedOnIterationCap);
+      this.logRetrieval(
+        retrieval.stats,
+        tonyGenerated.stoppedOnIterationCap,
+        tonyGenerated.stoppedOnMaxTokens,
+      );
 
       const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
       let tonyText = tonyGenerated.text;
@@ -366,6 +371,28 @@ export class ConversationService {
       emit('turn_end', { conversationId, turnIndex, isFinal });
       this.logProviderCall('ok');
     } catch (error) {
+      // Tokens billed before the failure still cost money, so they still count
+      // against the daily cap. The tool loop can make several calls, and
+      // without this a loop that failed on its third iteration billed two
+      // calls that never reached the counters, letting a persistently failing
+      // turn burn budget while DAILY_TOKEN_CAP never moved.
+      const spent = usageFromError(error);
+      if (spent && spent.inputTokens + spent.outputTokens > 0) {
+        const total = spent.inputTokens + spent.outputTokens;
+        try {
+          // Awaited in a try rather than chained with .catch, because
+          // incrementOp returns a PrismaPromise and this must not depend on
+          // that being a real promise.
+          await this.dailyUsage.incrementOp(0, total);
+        } catch {
+          // Best effort: the turn already failed, and losing the counter
+          // update must not replace the real error with a database one.
+          this.logger.warn(
+            `Failed to record ${total} tokens spent by a failed turn`,
+          );
+        }
+      }
+
       // Release the reserved slot so a retry of the same call can re-claim it.
       await this.prisma.conversationTurn
         .delete({ where: { id: interviewerTurnId } })
@@ -404,8 +431,14 @@ export class ConversationService {
   private logRetrieval(
     stats: RetrievalStats,
     stoppedOnIterationCap: boolean,
+    stoppedOnMaxTokens: boolean,
   ): void {
-    if (stats.calls === 0 && stats.capped === 0 && !stoppedOnIterationCap) {
+    if (
+      stats.calls === 0 &&
+      stats.capped === 0 &&
+      !stoppedOnIterationCap &&
+      !stoppedOnMaxTokens
+    ) {
       return;
     }
     this.logger.log(
@@ -422,6 +455,10 @@ export class ConversationService {
           latenciesMs: stats.latenciesMs,
           sourcePaths: stats.sourcePaths,
           stoppedOnIterationCap,
+          // The model was cut off mid tool call, so it neither searched nor
+          // answered. Without this the turn looked like an ownership guard
+          // failure, which is a different problem with a different fix.
+          stoppedOnMaxTokens,
         },
       }),
     );
