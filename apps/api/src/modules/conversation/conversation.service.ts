@@ -11,6 +11,13 @@ import { Prisma } from '../../generated/prisma/client';
 import type { StoryModel, TopicModel } from '../../generated/prisma/models';
 import { loadConversationSkill } from './skill-loader';
 import {
+  createSearchKnowledgeExecutor,
+  MAX_TOOL_ITERATIONS,
+  SEARCH_KNOWLEDGE_TOOL,
+  type RetrievalStats,
+} from './retrieval/search-knowledge';
+import { openReadOnly } from './retrieval/vector-store';
+import {
   CREDENTIAL_GUARD_FALLBACK,
   CREDENTIAL_GUARD_REASON,
   evaluateTonyResponse,
@@ -253,7 +260,16 @@ export class ConversationService {
       // Buffered, not live: the ownership guard below must see the complete
       // response before anything reaches the client, so onToken here only
       // accumulates internally (via AnthropicService's return value), never emits.
-      const tonyGenerated = await this.anthropic.streamMessage({
+      // Retrieval is offered to the Tony generation only (AC-4). The
+      // interviewer above gets no tools: it asks questions from the topic and
+      // has nothing to look up.
+      const retrieval = createSearchKnowledgeExecutor({
+        openIndex: openReadOnly,
+        onFailure: (cause) =>
+          this.logger.warn(`searchKnowledge unavailable: ${cause}`),
+      });
+
+      const tonyGenerated = await this.anthropic.runToolConversation({
         system: loadConversationSkill('tony'),
         userMessage: buildTonyUserMessage(
           story,
@@ -264,9 +280,17 @@ export class ConversationService {
         // 600 leaves room for a slightly long answer to finish. At 400 the
         // model's longer answers truncated mid-sentence (spec 0011's eval
         // caught it: persona judge scored the cut-off answers 0).
+        //
+        // This is per model turn, not per generation. A searching turn spends
+        // a few of these tokens on the tool call itself and still has the full
+        // budget for the answer that follows.
         maxTokens: 600,
-        onToken: () => undefined,
+        tools: [SEARCH_KNOWLEDGE_TOOL],
+        executeTool: retrieval.execute,
+        maxIterations: MAX_TOOL_ITERATIONS,
       });
+
+      this.logRetrieval(retrieval.stats, tonyGenerated.stoppedOnIterationCap);
 
       const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
       let tonyText = tonyGenerated.text;
@@ -343,6 +367,39 @@ export class ConversationService {
    * provider-swap child, AC-P5): { provider, model, outcome }. Not full
    * parity with Beta's per-agent logging — that stays out of scope here.
    */
+  /**
+   * One structured line per turn that offered retrieval (AC-13).
+   *
+   * Records the fact of each call, how many results came back, how long it
+   * took, and which documents were returned. It records NO query text: the
+   * query is model generated from a visitor's conversation, and the umbrella's
+   * AC-4 keeps visitor content out of every log and every table.
+   *
+   * Silent when the model chose not to search, which is the common case and is
+   * not an event.
+   */
+  private logRetrieval(
+    stats: RetrievalStats,
+    stoppedOnIterationCap: boolean,
+  ): void {
+    if (stats.calls === 0 && stats.capped === 0 && !stoppedOnIterationCap) {
+      return;
+    }
+    this.logger.log(
+      JSON.stringify({
+        retrieval: {
+          calls: stats.calls,
+          capped: stats.capped,
+          failures: stats.failures,
+          resultCounts: stats.resultCounts,
+          latenciesMs: stats.latenciesMs,
+          sourcePaths: stats.sourcePaths,
+          stoppedOnIterationCap,
+        },
+      }),
+    );
+  }
+
   private logProviderCall(outcome: 'ok' | 'error'): void {
     const { provider, model } = resolveConfiguredProvider();
     this.logger.log(JSON.stringify({ provider, model, outcome }));

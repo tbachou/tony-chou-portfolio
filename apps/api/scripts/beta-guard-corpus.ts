@@ -50,6 +50,8 @@ import type {
   ForceToolCallResult,
   StreamMessageParams,
   StreamMessageResult,
+  RunToolConversationParams,
+  RunToolConversationResult,
   UpstreamErrorClassification,
 } from '../src/modules/anthropic/ai-provider.interface';
 import { CORPUS, type CorpusProfile } from './beta-guard-corpus.profiles';
@@ -83,6 +85,18 @@ class CachingProvider implements AiProvider {
   // profiles run concurrently: the first full --concurrency 3 run captured
   // only 15 plans out of 29, and recorded `null` for a profile whose firing
   // proved its caution was non-empty.
+
+  /**
+   * Beta makes no tool loop calls, so there is nothing to cache here. It is
+   * delegated rather than thrown so that this wrapper stays a faithful
+   * `AiProvider`: a stub that throws would turn a future Beta change into a
+   * corpus run that fails for a reason that has nothing to do with Beta.
+   */
+  runToolConversation(
+    params: RunToolConversationParams,
+  ): Promise<RunToolConversationResult> {
+    return this.real.runToolConversation(params);
+  }
 
   async forceToolCall(params: ForceToolCallParams): Promise<ForceToolCallResult> {
     const role = params.model === DRAFTER_MODEL ? 'drafter' : 'screener';

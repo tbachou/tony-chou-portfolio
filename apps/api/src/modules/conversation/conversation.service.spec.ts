@@ -66,7 +66,20 @@ function makeHarness() {
       delete: jest.fn().mockResolvedValue(undefined),
     },
   };
-  const anthropic = { streamMessage: jest.fn(), forceToolCall: jest.fn() };
+  const anthropic = {
+    streamMessage: jest.fn(),
+    forceToolCall: jest.fn(),
+    // The Tony generation runs through here now (0012 phase three AC-4); only
+    // the interviewer still uses streamMessage. Defaulted so the many tests
+    // that only care about the interviewer do not each have to stub it.
+    runToolConversation: jest.fn().mockResolvedValue({
+      text: 'a',
+      inputTokens: 1,
+      outputTokens: 1,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+    }),
+  };
   const dailyUsage = {
     assertCapNotExceeded: jest.fn().mockResolvedValue(undefined),
     incrementOp: jest.fn((count: number, tokens: number) => ({
@@ -108,17 +121,18 @@ describe('ConversationService.generateTurnPair', () => {
 
   it('happy path: emits the full event sequence and commits both turns via one transaction', async () => {
     const h = makeHarness();
-    h.anthropic.streamMessage
-      .mockResolvedValueOnce({
-        text: 'What drove the rebuild?',
-        inputTokens: 20,
-        outputTokens: 10,
-      })
-      .mockResolvedValueOnce({
-        text: 'Faster.',
-        inputTokens: 30,
-        outputTokens: 40,
-      });
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'What drove the rebuild?',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: 'Faster.',
+      inputTokens: 30,
+      outputTokens: 40,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+    });
 
     await h.service.generateTurnPair({
       topic,
@@ -141,7 +155,9 @@ describe('ConversationService.generateTurnPair', () => {
       'turn_end',
       { conversationId: 'conv-1', turnIndex: 0, isFinal: false },
     ]);
-    expect(h.anthropic.streamMessage).toHaveBeenCalledTimes(2);
+    // One interviewer call on streamMessage, one Tony call on the tool loop.
+    expect(h.anthropic.streamMessage).toHaveBeenCalledTimes(1);
+    expect(h.anthropic.runToolConversation).toHaveBeenCalledTimes(1);
     expect(h.prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(h.prisma.conversationTurn.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'turn-1' } }),
@@ -179,6 +195,7 @@ describe('ConversationService.generateTurnPair', () => {
     ]);
     // Tony is never asked, and the reserved slot is released for a retry.
     expect(h.anthropic.streamMessage).toHaveBeenCalledTimes(1);
+    expect(h.anthropic.runToolConversation).not.toHaveBeenCalled();
     expect(h.prisma.conversationTurn.delete).toHaveBeenCalledWith({
       where: { id: 'turn-1' },
     });
@@ -212,9 +229,11 @@ describe('ConversationService.generateTurnPair', () => {
       delete process.env.AI_PROVIDER;
       process.env.ANTHROPIC_MODEL = 'claude-sonnet-5';
       const h = makeHarness();
-      h.anthropic.streamMessage
-        .mockResolvedValueOnce({ text: 'q', inputTokens: 1, outputTokens: 1 })
-        .mockResolvedValueOnce({ text: 'a', inputTokens: 1, outputTokens: 1 });
+      h.anthropic.streamMessage.mockResolvedValueOnce({
+        text: 'q',
+        inputTokens: 1,
+        outputTokens: 1,
+      });
       const logSpy = jest.spyOn(Logger.prototype, 'log');
 
       await h.service.generateTurnPair({
@@ -409,9 +428,11 @@ describe('interviewer user message (spec 0012 AC-1, AC-2)', () => {
 
   async function interviewerMessage(history: HistoryTurn[] = []) {
     const h = makeHarness();
-    h.anthropic.streamMessage
-      .mockResolvedValueOnce({ text: 'q', inputTokens: 1, outputTokens: 1 })
-      .mockResolvedValueOnce({ text: 'a', inputTokens: 1, outputTokens: 1 });
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
 
     await h.service.generateTurnPair({
       topic,
@@ -440,9 +461,11 @@ describe('interviewer user message (spec 0012 AC-1, AC-2)', () => {
 
   it('says so plainly when the topic has no other story', async () => {
     const h = makeHarness();
-    h.anthropic.streamMessage
-      .mockResolvedValueOnce({ text: 'q', inputTokens: 1, outputTokens: 1 })
-      .mockResolvedValueOnce({ text: 'a', inputTokens: 1, outputTokens: 1 });
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
 
     await h.service.generateTurnPair({
       topic: { ...topic, stories: [story] } as TopicWithStories,

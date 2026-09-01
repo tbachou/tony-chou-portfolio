@@ -75,9 +75,71 @@ export type UpstreamErrorClassification = {
   retryable: boolean;
 };
 
+/** One tool offered to the model, in the shape both providers' SDKs take. */
+export type ToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+};
+
+/**
+ * Runs one tool call and returns the text handed back to the model as the
+ * tool result.
+ *
+ * The provider knows the protocol; the caller knows the policy. Per turn caps,
+ * degrade behaviour and logging all live in the executor, not in here, so the
+ * seam stays free of any one feature's rules.
+ *
+ * An executor must not throw. A thrown error would abort the whole generation,
+ * which for retrieval would turn a failed search into a failed turn (0012
+ * phase three AC-8 forbids exactly that). Return a string describing the
+ * failure instead, and let the model carry on without it.
+ */
+export type ToolExecutor = (call: {
+  name: string;
+  input: unknown;
+}) => Promise<string>;
+
+export type RunToolConversationParams = {
+  system: string;
+  userMessage: string;
+  maxTokens: number;
+  tools: ToolDefinition[];
+  executeTool: ToolExecutor;
+  /**
+   * Hard stop on model turns. Load bearing rather than defensive: a caller
+   * whose executor refuses further calls (a per turn cap) still returns a
+   * result, so a model that keeps asking would otherwise loop forever at one
+   * upstream call per iteration.
+   */
+  maxIterations: number;
+  model?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
+};
+
+export type RunToolConversationResult = StreamMessageResult & {
+  /** Tool calls the model actually made, summed across iterations. */
+  toolCallCount: number;
+  /** True when maxIterations was hit with the model still asking for tools. */
+  stoppedOnIterationCap: boolean;
+};
+
 export interface AiProvider {
   streamMessage(params: StreamMessageParams): Promise<StreamMessageResult>;
   forceToolCall(params: ForceToolCallParams): Promise<ForceToolCallResult>;
+  /**
+   * A model driven tool loop: the model may call the offered tools, gets
+   * each result back, and keeps going until it answers in plain text.
+   *
+   * Distinct from `forceToolCall`, which compels exactly one call and
+   * returns its arguments without ever running anything. This one runs the
+   * tool and continues the conversation, which is what a retrieval tool
+   * needs (0012 phase three AC-4).
+   */
+  runToolConversation(
+    params: RunToolConversationParams,
+  ): Promise<RunToolConversationResult>;
   /** Maps this provider's own SDK error types into the neutral shape above. */
   classifyUpstreamError(error: unknown): UpstreamErrorClassification | null;
 }
