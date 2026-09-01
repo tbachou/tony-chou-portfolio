@@ -89,6 +89,19 @@ export function retrievalStrictFromEnv(): boolean {
   return process.env[RETRIEVAL_STRICT_ENV] === '1';
 }
 
+/**
+ * What the model is told when matches were found but none may be quoted.
+ *
+ * Distinct from NO_MATCH_RESULT because the two are different events and the
+ * log has to tell them apart: nothing matched is a corpus or threshold
+ * question, everything was withheld is a guard question. The wording still
+ * says "no usable sections" rather than "results were withheld", because the
+ * model reads this and must not narrate the machinery to a visitor.
+ */
+export const ALL_SUPPRESSED_RESULT =
+  'No usable sections were found. Answer from the story instead, and do not ' +
+  'mention the search.';
+
 export type RetrievalStats = {
   calls: number;
   /** Chunks dropped because quoting them would fail the ownership guard. */
@@ -97,6 +110,12 @@ export type RetrievalStats = {
   capped: number;
   /** Calls that threw or reported the index unreachable. */
   failures: number;
+  /** Calls rejected before the index: no query, or an empty one. */
+  malformed: number;
+  /** Calls naming a tool that was never offered. */
+  unknownTool: number;
+  /** Searches where every hit was dropped by the guard filter. */
+  allSuppressed: number;
   /** Every source path returned this turn, in order, for the log line. */
   sourcePaths: string[];
   /** Milliseconds per attempted search, successes and failures alike (AC-13). */
@@ -161,7 +180,12 @@ export function createSearchKnowledgeExecutor(params: {
   openIndex: () => Index;
   /** The story under discussion. The guard filter below is story aware. */
   story: StoryModel;
-  onFailure: (cause: string) => void;
+  /**
+   * `kind` separates an outage from a bug in our own code. Both degrade, but
+   * only one is someone else's problem, and before this they produced an
+   * identical model facing string and an identical failure count.
+   */
+  onFailure: (cause: string, kind: 'network' | 'unexpected') => void;
   /**
    * AC-9. When true a retrieval failure throws instead of degrading, which
    * aborts the generation and fails the eval case loudly. Production leaves
@@ -174,6 +198,9 @@ export function createSearchKnowledgeExecutor(params: {
     suppressed: 0,
     capped: 0,
     failures: 0,
+    malformed: 0,
+    unknownTool: 0,
+    allSuppressed: 0,
     sourcePaths: [],
     latenciesMs: [],
     resultCounts: [],
@@ -184,7 +211,8 @@ export function createSearchKnowledgeExecutor(params: {
     if (call.name !== SEARCH_KNOWLEDGE_TOOL.name) {
       // The model asked for a tool that was never offered. Not a failure of
       // retrieval, so it is not counted as one, but it must not throw either.
-      params.onFailure(`unknown tool requested: ${call.name}`);
+      stats.unknownTool += 1;
+      params.onFailure(`unknown tool requested: ${call.name}`, 'unexpected');
       return `Unknown tool: ${call.name}`;
     }
 
@@ -197,7 +225,8 @@ export function createSearchKnowledgeExecutor(params: {
     if (typeof query !== 'string' || query.trim().length === 0) {
       // The schema says query is required, but the schema is a request, not a
       // guarantee, and an empty string would embed to a meaningless vector.
-      params.onFailure('searchKnowledge called with no query');
+      stats.malformed += 1;
+      params.onFailure('searchKnowledge called with no query', 'unexpected');
       return NO_MATCH_RESULT;
     }
 
@@ -213,7 +242,15 @@ export function createSearchKnowledgeExecutor(params: {
       stats.latenciesMs.push(Date.now() - startedAt);
       stats.resultCounts.push(chunks.length);
       stats.sourcePaths.push(...chunks.map((chunk) => chunk.sourcePath));
-      if (chunks.length === 0) return NO_MATCH_RESULT;
+      if (chunks.length === 0) {
+        // Nothing matched, versus everything matched and was withheld. Same
+        // instruction to the model, different event in the log.
+        if (found.length > 0) {
+          stats.allSuppressed += 1;
+          return ALL_SUPPRESSED_RESULT;
+        }
+        return NO_MATCH_RESULT;
+      }
       return renderResults(chunks);
     } catch (error) {
       // Timed too, because a failure that took ten seconds and one that failed
@@ -225,7 +262,19 @@ export function createSearchKnowledgeExecutor(params: {
       stats.failures += 1;
       const cause =
         error instanceof Error ? error.message : 'unknown retrieval error';
-      params.onFailure(cause);
+      // A TypeError from a bad refactor and a genuine Upstash outage used to
+      // produce an identical model facing string and an identical count, with
+      // only the free text warn to tell them apart and nothing alerting on it.
+      // AC-8 requires not failing the turn; it does not require erasing the
+      // distinction.
+      const kind =
+        error instanceof TypeError ||
+        error instanceof RangeError ||
+        error instanceof ReferenceError ||
+        error instanceof SyntaxError
+          ? 'unexpected'
+          : 'network';
+      params.onFailure(cause, kind);
       if (params.failLoudly) {
         // The one place the seam's "an executor must not throw" rule is broken
         // on purpose. It aborts the generation, which is the point: an eval

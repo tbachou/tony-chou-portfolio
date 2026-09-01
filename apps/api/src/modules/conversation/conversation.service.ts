@@ -282,8 +282,12 @@ export class ConversationService {
         // Forge numeric rule and the sole credit rule fire only for some
         // stories.
         story,
-        onFailure: (cause) =>
-          this.logger.warn(`searchKnowledge unavailable: ${cause}`),
+        onFailure: (cause, kind) =>
+          // An unexpected error is a bug here, not an outage upstream, so it
+          // is logged at error level where something can alert on it.
+          kind === 'unexpected'
+            ? this.logger.error(`searchKnowledge failed unexpectedly: ${cause}`)
+            : this.logger.warn(`searchKnowledge unavailable: ${cause}`),
         // Production degrades (AC-8); the eval harness sets this and fails
         // loudly instead (AC-9), because a run that silently drops retrieval
         // still costs money and still reports scores.
@@ -433,20 +437,29 @@ export class ConversationService {
     stoppedOnIterationCap: boolean,
     stoppedOnMaxTokens: boolean,
   ): void {
-    if (
+    // Fires for anything that happened, not only for a completed search. The
+    // malformed and unknown tool paths skip every other counter, so without
+    // them here the turns most worth seeing were the ones with no log line.
+    const nothingHappened =
       stats.calls === 0 &&
       stats.capped === 0 &&
+      stats.malformed === 0 &&
+      stats.unknownTool === 0 &&
       !stoppedOnIterationCap &&
-      !stoppedOnMaxTokens
-    ) {
-      return;
-    }
+      !stoppedOnMaxTokens;
+    if (nothingHappened) return;
     this.logger.log(
       JSON.stringify({
         retrieval: {
           calls: stats.calls,
           capped: stats.capped,
           failures: stats.failures,
+          malformed: stats.malformed,
+          unknownTool: stats.unknownTool,
+          // Searches where every hit was dropped by the guard filter. Expected
+          // to be non zero for Product Forge stories, whose numeric rule is
+          // broad, so a rising number is only a signal read per story.
+          allSuppressed: stats.allSuppressed,
           // Chunks dropped because quoting them would have failed the
           // ownership guard. Logged rather than silent: a rising number here
           // means the corpus is accumulating text the persona cannot use.

@@ -5,6 +5,7 @@ import {
   NO_MATCH_RESULT,
   SEARCH_KNOWLEDGE_TOOL,
   UNAVAILABLE_RESULT,
+  ALL_SUPPRESSED_RESULT,
   RETRIEVAL_STRICT_ENV,
   retrievalStrictFromEnv,
 } from './search-knowledge';
@@ -118,7 +119,10 @@ describe('createSearchKnowledgeExecutor', () => {
     // is exactly what AC-8 forbids.
     expect(result).toBe(UNAVAILABLE_RESULT);
     expect(stats.failures).toBe(1);
-    expect(onFailure).toHaveBeenCalledWith('getaddrinfo ENOTFOUND upstash');
+    expect(onFailure).toHaveBeenCalledWith(
+      'getaddrinfo ENOTFOUND upstash',
+      'network',
+    );
   });
 
   it('degrades when the credentials are missing rather than failing turn setup', async () => {
@@ -222,7 +226,9 @@ describe('createSearchKnowledgeExecutor', () => {
 
     // Same chunk, two stories: dropped for Product Forge, kept otherwise.
     const forge = makeExecutor(undefined, productForge);
-    expect(await forge.execute(call())).toBe(NO_MATCH_RESULT);
+    // Everything found was withheld by the guard filter, which is now its own
+    // result rather than being reported as "nothing matched".
+    expect(await forge.execute(call())).toBe(ALL_SUPPRESSED_RESULT);
     expect(forge.stats.suppressed).toBe(1);
 
     const personal = makeExecutor();
@@ -245,7 +251,7 @@ describe('createSearchKnowledgeExecutor', () => {
     // which the test above pins.
     await expect(execute(call())).rejects.toThrow(/upstream 503/);
     expect(stats.failures).toBe(1);
-    expect(onFailure).toHaveBeenCalledWith('upstream 503');
+    expect(onFailure).toHaveBeenCalledWith('upstream 503', 'network');
   });
 
   it('reads strict mode from the environment, defaulting to degrade', () => {
@@ -263,6 +269,54 @@ describe('createSearchKnowledgeExecutor', () => {
       if (original === undefined) delete process.env[RETRIEVAL_STRICT_ENV];
       else process.env[RETRIEVAL_STRICT_ENV] = original;
     }
+  });
+
+  it('distinguishes "nothing matched" from "everything was withheld"', async () => {
+    const productForge = { ...story, engagement: 'Product Forge' } as StoryModel;
+    searchMock.mockResolvedValue([
+      chunk('docs/specs/_root/0006-grade-guesser-daily-game.md', 'It cost $0.02 per day.'),
+    ]);
+    const withheld = makeExecutor(undefined, productForge);
+
+    expect(await withheld.execute(call())).toBe(ALL_SUPPRESSED_RESULT);
+    expect(withheld.stats.allSuppressed).toBe(1);
+
+    // Truly nothing matched is a different event with a different cause: a
+    // corpus or threshold question rather than a guard question.
+    searchMock.mockResolvedValue([]);
+    const empty = makeExecutor();
+    expect(await empty.execute(call())).toBe(NO_MATCH_RESULT);
+    expect(empty.stats.allSuppressed).toBe(0);
+  });
+
+  it('counts the paths that used to skip every counter', async () => {
+    const { execute, stats } = makeExecutor();
+
+    await execute(call('   '));
+    await execute({ name: 'deleteEverything', input: {} });
+
+    // Without these the AC-13 log line was suppressed for exactly the turns
+    // most worth seeing: the tool was called and did nothing.
+    expect(stats.malformed).toBe(1);
+    expect(stats.unknownTool).toBe(1);
+  });
+
+  it('separates a bug in our own code from an outage upstream', async () => {
+    searchMock.mockRejectedValueOnce(new TypeError("Cannot read properties of null"));
+    const bug = makeExecutor();
+    await bug.execute(call());
+    expect(bug.onFailure).toHaveBeenCalledWith(
+      expect.stringContaining('Cannot read properties'),
+      'unexpected',
+    );
+
+    searchMock.mockRejectedValueOnce(new Error('getaddrinfo ENOTFOUND'));
+    const outage = makeExecutor();
+    await outage.execute(call());
+    expect(outage.onFailure).toHaveBeenCalledWith(
+      expect.stringContaining('ENOTFOUND'),
+      'network',
+    );
   });
 
   it('never puts the query text in anything it reports (AC-13)', async () => {

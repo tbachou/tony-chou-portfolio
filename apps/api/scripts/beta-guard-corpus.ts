@@ -87,14 +87,29 @@ class CachingProvider implements AiProvider {
   // proved its caution was non-empty.
 
   /**
-   * Beta makes no tool loop calls, so there is nothing to cache here. It is
-   * delegated rather than thrown so that this wrapper stays a faithful
-   * `AiProvider`: a stub that throws would turn a future Beta change into a
-   * corpus run that fails for a reason that has nothing to do with Beta.
+   * Beta makes no tool loop calls today, so there is nothing to cache here.
+   *
+   * Delegated rather than stubbed so this wrapper stays a faithful
+   * `AiProvider`: a stub that always threw would turn a future Beta change
+   * into a corpus run failing for a reason that has nothing to do with Beta.
+   *
+   * But it refuses outside `live`, because a replay run reaching this method
+   * would make a real model call while presenting itself as a replay. That is
+   * new spend rather than a broken contract (the coach is deliberately live
+   * too, see streamMessage below), and the harm is that it would be SILENT.
+   * The sibling harness makes the same situation loud, and so does this.
    */
   runToolConversation(
     params: RunToolConversationParams,
   ): Promise<RunToolConversationResult> {
+    if (this.mode !== 'live') {
+      throw new Error(
+        `CachingProvider: a tool loop call arrived in ${this.mode} mode. Beta made none when ` +
+          'this wrapper was written, so nothing here caches or replays it, and running it ' +
+          'would spend on a live model call inside a run that reports itself as a replay. ' +
+          'Add caching for it before Beta starts using one.',
+      );
+    }
     return this.real.runToolConversation(params);
   }
 
