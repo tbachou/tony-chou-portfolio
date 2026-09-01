@@ -27,6 +27,8 @@ const state = vi.hoisted(() => ({
   lastRun: null as unknown,
   observationsReject: false,
   everIssued: null as unknown,
+  everIssuedReject: false,
+  lastRunReject: false,
 }));
 
 vi.mock('@/lib/streamflow-db', () => ({
@@ -46,9 +48,19 @@ vi.mock('@/lib/streamflow-db', () => ({
       count: async () => 18_849,
       findFirst: async () => state.newestReading,
     },
-    pipelineRun: { findFirst: async () => state.lastRun },
+    pipelineRun: {
+      findFirst: async () => {
+        if (state.lastRunReject) throw new Error('run read failed');
+        return state.lastRun;
+      },
+    },
     // AC-S9's unbounded probe: has this gauge EVER had a forecast?
-    prediction: { findFirst: async () => state.everIssued },
+    prediction: {
+      findFirst: async () => {
+        if (state.everIssuedReject) throw new Error('probe failed');
+        return state.everIssued;
+      },
+    },
   }),
 }));
 
@@ -119,6 +131,8 @@ beforeEach(() => {
   };
   state.observationsReject = false;
   state.everIssued = { id: 'pred-ever' };
+  state.everIssuedReject = false;
+  state.lastRunReject = false;
 });
 afterEach(cleanup);
 
@@ -147,12 +161,12 @@ describe('the reading warning', () => {
     state.lastRun = { ...(state.lastRun as object), status: 'OK' } as unknown;
 
     await renderPage();
-    expect(screen.queryByText(/not completing its runs/i)).toBeNull();
+    expect(screen.queryByText(/No ingest run has completed since then/i)).toBeNull();
     cleanup();
 
     state.lastRun = { ...(state.lastRun as object), status: 'FAILED' } as unknown;
     await renderPage();
-    expect(screen.getByText(/not completing its runs/i)).toBeTruthy();
+    expect(screen.getByText(/No ingest run has completed since then/i)).toBeTruthy();
   });
 
   it('says the pipeline is not completing when the scheduler simply stopped', async () => {
@@ -170,7 +184,7 @@ describe('the reading warning', () => {
 
     await renderPage();
 
-    expect(screen.getByText(/not completing its runs/i)).toBeTruthy();
+    expect(screen.getByText(/No ingest run has completed since then/i)).toBeTruthy();
   });
 
   it('points the reader somewhere else while the data is stale', async () => {
@@ -259,7 +273,7 @@ describe('the stale input marker', () => {
 
     await renderPage();
 
-    expect(screen.queryByText(/had no newer measurement/i)).toBeNull();
+    expect(screen.queryByText(/does not describe the river as it is now/i)).toBeNull();
   });
 
   it('collapses to one note when every surviving row is stale input', async () => {
@@ -273,7 +287,7 @@ describe('the stale input marker', () => {
 
     await renderPage();
 
-    const notes = screen.getAllByText(/had no newer measurement/i);
+    const notes = screen.getAllByText(/does not describe the river as it is now/i);
     expect(notes).toHaveLength(1);
     // and no per row markers alongside it
     expect(screen.queryByText('‡')).toBeNull();
@@ -334,7 +348,53 @@ describe('the stale input marker', () => {
 
     await renderPage();
 
-    expect(screen.getAllByText(/had no newer measurement/i)).toHaveLength(1);
+    expect(screen.getAllByText(/does not describe the river as it is now/i)).toHaveLength(1);
     expect(screen.queryByText('‡')).toBeNull();
+  });
+});
+
+describe('a failed read is never reported as a fact', () => {
+  it('does not claim the pipeline never started when the probe failed', async () => {
+    // The defect this whole class of fix exists for. `settled` returns its
+    // fallback on rejection, so a failed probe used to be indistinguishable
+    // from a store that never issued, and the page said so outright while
+    // holding prediction rows in hand.
+    state.predictions = [];
+    state.everIssuedReject = true;
+
+    await renderPage();
+
+    expect(screen.queryByText(/No forecast has been issued yet/i)).toBeNull();
+    expect(screen.getByText(/could not be read just now/i)).toBeTruthy();
+  });
+
+  it('does not claim the pipeline is broken when the run read failed', async () => {
+    // It used to say "the pipeline is not completing its runs" in the same
+    // render as the panel below saying "the schedule itself is unaffected".
+    state.newestReading = readingAt(30);
+    state.lastRunReject = true;
+
+    await renderPage();
+
+    expect(screen.getByText(/nothing newer has reached this page/i)).toBeTruthy();
+    expect(
+      screen.queryByText(/No ingest run has completed since then/i),
+    ).toBeNull();
+  });
+
+  it('still points somewhere useful when it cannot tell', async () => {
+    state.predictions = [];
+    state.everIssuedReject = true;
+
+    await renderPage();
+
+    // Scoped to the empty state itself: the footer names them too, and the
+    // point of this fix is that the pointer is HERE, in the state a reader
+    // reaches with no forecast on screen.
+    const emptyState = screen.getByText(/could not be read just now/i);
+    expect(
+      emptyState.querySelector('a[href="https://water.noaa.gov/"]'),
+    ).toBeTruthy();
+    expect(emptyState.textContent).toMatch(/emergency services/i);
   });
 });

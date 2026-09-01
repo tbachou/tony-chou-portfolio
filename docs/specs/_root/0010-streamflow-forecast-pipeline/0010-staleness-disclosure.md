@@ -142,10 +142,11 @@ Filtering elapsed rows rather than marking them follows from what the table clai
 | Constant | Text |
 |---|---|
 | `STALE_READING_NOTE` | Last measured {age}, and nothing newer has reached this page since. The river can change a great deal in that time. |
-| `STALE_READING_REDIRECT` | For the level right now see the USGS gauge, and for a flood warning NOAA's National Water Prediction Service. |
-| `STALE_INGEST_NOTE` | The pipeline is not completing its runs, so a newer reading should not be expected shortly. |
+| `REDIRECT` | For the level right now see the USGS gauge, and for a flood warning NOAA's National Water Prediction Service. In an emergency, contact local emergency services. |
+| `STALE_INGEST_NOTE` | No ingest run has completed since then either. |
 | `ELAPSED_FORECASTS_NOTE` | Every forecast on record has passed the time it was predicting, and none newer has been issued. That means the pipeline has stopped, not that it has not started. |
-| `STALE_FORECAST_LEGEND` | Issued more than {hours} hours ago, or from a river reading that old. The forecaster had no newer measurement to work from, so treat it as a claim about a river it could not fully see. |
+| `STALE_FORECAST_LEGEND` | Issued more than {hours} hours ago, or from a river reading that old. Either way it does not describe the river as it is now. |
+| `EVER_ISSUED_UNKNOWN_NOTE` | No current forecast is showing, and the check for whether any has ever been issued could not be read just now. |
 
 Three things about this table are corrections rather than choices, and are written down so they are not undone.
 
@@ -156,6 +157,14 @@ Three things about this table are corrections rather than choices, and are writt
 **`STALE_INGEST_NOTE` covers a stopped scheduler, not only a failed run**, per **AC-S4**, which is why it no longer says "the last ingest run did not complete". It is appended to `STALE_READING_NOTE`, never shown alone: a pipeline fault with fresh data on hand is a maintainer's problem, not a reader's.
 
 The legend is renamed from `STALE_INPUT_LEGEND` because **AC-S5a** widened what it marks: a row now carries it for being old itself, not only for its input being old.
+
+Two rules govern this table, both learned from audit findings rather than chosen up front, and both worth stating because each was broken once.
+
+**A string must be true for every cause that can trigger it.** The legend's second sentence used to say the forecaster "had no newer measurement to work from". When **AC-S5a** is what fired, a one hour old reading is on screen three paragraphs above it, and the page contradicted itself. It is now cause neutral. The same rule caught the per row marker's `title`, which was the one stale string that escaped this table entirely.
+
+**A string must state what is known, not predict what follows.** `STALE_INGEST_NOTE` used to say a newer reading "should not be expected shortly". Ingest runs every six hours and the threshold is nine, so a single skipped run trips it with the next due within three hours, and the sentence was wrong more often than right. It now reports the fact.
+
+**The redirect reaches every state where the page has stopped being current**, which is three: the stale reading, the all stale forecast table, and the stopped or undeterminable empty state. The first version reached only the reading, and a reader can arrive at the other two with a perfectly fresh number on screen. It is deliberately absent from the mixed case, where current rows sit beside stale ones. The emergency clause is part of it and was dropped once already.
 
 **Security model**: unchanged. `/streamflow` is a public read only page with no authentication and no user input. This child adds no endpoint and no parameter.
 
