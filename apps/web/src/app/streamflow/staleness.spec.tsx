@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -85,7 +85,29 @@ vi.mock('@portfolio/streamflow', async (importOriginal) => ({
     if (state.observationsReject) throw new Error('read failed');
     return state.observations;
   },
-  publicPredictions: async () => state.predictions,
+  // Honours `issuedFrom`, because production does. A mock that returns the
+  // whole fixture whatever window it is handed cannot fail on a window bug,
+  // and that is exactly how the AC-S8b gap stayed green through three audit
+  // rounds: the suite could not see the query it was testing.
+  publicPredictions: async (
+    _prisma: unknown,
+    filter: { issuedFrom?: Date } = {},
+  ) =>
+    state.predictions
+      .filter(
+        (row) =>
+          !filter.issuedFrom ||
+          (row as { issuedAt: Date }).issuedAt.getTime() >=
+            (filter.issuedFrom as Date).getTime(),
+      )
+      // Newest first, because production orders by issuedAt desc and the
+      // page's dedup depends on it ("the first of each pair seen is the
+      // current one"). Fixture order happened to agree; a future one need not.
+      .sort(
+        (a, b) =>
+          (b as { issuedAt: Date }).issuedAt.getTime() -
+          (a as { issuedAt: Date }).issuedAt.getTime(),
+      ),
   publicScoredErrors: async () => [],
   gradedIntervals: async () => [],
 }));
@@ -273,6 +295,41 @@ describe('the forecast table', () => {
     expect(screen.queryByText(/No forecast has been issued yet/i)).toBeNull();
   });
 
+  it('shows a 72 hour row still targeting the future during a 60 hour outage', async () => {
+    // AC-S8b. The load window was two days while the longest horizon is
+    // three, so for outages between 49 and 71 hours old the last slot's 72
+    // hour rows were still about the future and outside the query. The table
+    // emptied and the page asserted that EVERY forecast on record had
+    // elapsed, with two live ones sitting in the store. Both audit passes
+    // found this independently.
+    //
+    // The fixture is a whole issue slot, the shape `issuePredictions`
+    // actually writes: all three horizons, issued 60 hours ago.
+    const issuedAt = new Date(Date.now() - 60 * HOUR);
+    state.predictions = [24, 48, 72].map((horizonHours) =>
+      forecast({
+        horizonHours,
+        issuedAt,
+        targetTime: new Date(issuedAt.getTime() + horizonHours * HOUR),
+      }),
+    );
+    state.everIssued = { id: 'pred-from-the-last-slot' };
+
+    await renderPage();
+
+    // The 72 hour row targets now + 12 h, so it is a forecast about the
+    // future and AC-S8 keeps it.
+    expect(screen.getByText('72 h')).toBeTruthy();
+    // The 24 and 48 hour rows target the past and AC-S8 drops them.
+    expect(screen.queryByText('24 h')).toBeNull();
+    expect(screen.queryByText('48 h')).toBeNull();
+    // And the page must not claim everything has elapsed while showing one
+    // that has not.
+    expect(
+      screen.queryByText(/pipeline has stopped, not that it has not started/i),
+    ).toBeNull();
+  });
+
   it('still says never issued when nothing was ever issued', async () => {
     state.predictions = [];
     state.everIssued = null;
@@ -344,7 +401,41 @@ describe('the stale forecast marker', () => {
 
     await renderPage();
 
-    expect(screen.getAllByText('‡').length).toBeGreaterThan(0);
+    // Scoped to the table. Unscoped this also matched the legend paragraph's
+    // own aria-hidden copy of the glyph, so it stayed green with the entire
+    // per row marker block deleted: it was asserting that SOME '‡' existed
+    // on the page, not that a row carried one.
+    const marks = within(screen.getByRole('table')).getAllByText('‡');
+    expect(marks.length).toBeGreaterThan(0);
+  });
+
+  it('speaks the marker to a screen reader, and hides the glyph from one', async () => {
+    // AC-S7a. `title` on a role-less span is not an accessible name and is
+    // not announced, and U+2021 is punctuation a screen reader does not read
+    // at default verbosity, so the marker as first built was silent to
+    // exactly the reader who cannot see the table. This is the per row mode,
+    // the one where marked and unmarked rows sit together and the marker is
+    // the only thing separating them.
+    state.observations = [observationAt(40), observationAt(1)];
+    state.predictions = [
+      forecast({ horizonHours: 24, issuedAt: new Date(Date.now() - 30 * HOUR) }),
+      forecast({ horizonHours: 48, issuedAt: new Date(Date.now() - 0.5 * HOUR) }),
+    ];
+
+    await renderPage();
+
+    // Every rendering of the glyph is hidden from assistive tech.
+    const table = within(screen.getByRole('table'));
+    const glyphs = screen.getAllByText('‡');
+    expect(glyphs.length).toBeGreaterThan(0);
+    expect(
+      glyphs.every((g) => g.getAttribute('aria-hidden') === 'true'),
+    ).toBe(true);
+
+    // And the marker is announced from inside the row, not merely somewhere
+    // on the page. Short on purpose: the legend below carries the reason, and
+    // speaking it in every cell is its own barrier.
+    expect(table.getByText(/Stale forecast\./)).toBeTruthy();
   });
 
   it('counts stale rows AFTER dropping elapsed ones, not before', async () => {
@@ -443,6 +534,37 @@ describe('the page cannot call a reading stale and its forecasts fine', () => {
     expect(screen.getByText(/nothing newer has reached this page/i)).toBeTruthy();
     // ...so it must not present a forecast built from it as fine
     expect(screen.getByText(/may be well off/i)).toBeTruthy();
+  });
+
+  it('states a cause that is actually true when only the reading triggered it', async () => {
+    // The Copy table's first rule, against the third trigger. This is the
+    // same fixture as above, and under it BOTH of the legend's original
+    // clauses were false: the forecast was issued 3h ago (not more than 9),
+    // and its input was 6h01m old when issued (not more than 9). AC-S5
+    // measures input age at issuedAt, so "from a river reading that old"
+    // did not describe this row. Anchoring the clause to now makes it true,
+    // because the input reading is never newer than the newest reading.
+    const readingAge = 9 * HOUR + 60_000;
+    state.newestReading = readingAt(readingAge / HOUR);
+    state.observations = [observationAt(readingAge / HOUR)];
+    state.predictions = [
+      forecast({
+        horizonHours: 72,
+        issuedAt: new Date(Date.now() - 3 * HOUR),
+        targetTime: new Date(Date.now() + 69 * HOUR),
+      }),
+    ];
+
+    await renderPage();
+
+    expect(
+      screen.getByText(
+        /built on a river reading that is now more than .* hours old/i,
+      ),
+    ).toBeTruthy();
+    // The clause that used to be here measured the input at issue time, and
+    // was false for this row.
+    expect(screen.queryByText(/or from a river reading that old/i)).toBeNull();
   });
 });
 

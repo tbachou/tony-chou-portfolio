@@ -36,6 +36,7 @@ import {
   STALE_INGEST_NOTE,
   USGS_GAUGE_URL,
   staleForecastLegend,
+  STALE_FORECAST_MARKER_LABEL,
   staleReadingNote,
 } from './staleness-copy';
 import { rangeSource } from './range-source';
@@ -64,7 +65,8 @@ export const metadata: Metadata = {
 // the asOf control is that the answer depends on when you ask.
 export const dynamic = 'force-dynamic';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 /**
  * Where the record begins. Coverage is asked over the whole of it rather than
@@ -180,10 +182,22 @@ export default async function StreamflowPage() {
   const from = new Date(now.getTime() - OBSERVATIONS_DEFAULT_WINDOW_DAYS * DAY_MS);
 
   const skillFrom = new Date(now.getTime() - SKILL_DEFAULT_WINDOW_DAYS * DAY_MS);
-  // Two days back is enough to hold the most recent six hourly slot even if a
-  // scheduled run was skipped, without reading the whole prediction history to
-  // show six rows.
-  const forecastsFrom = new Date(now.getTime() - 2 * DAY_MS);
+  // One longest horizon back, derived rather than written, for the same
+  // reason the staleness threshold is. A forecast is still about the future
+  // while `issuedAt + horizonHours > now`, so the live set reaches back
+  // exactly one longest horizon and any shorter window hides rows AC-S8
+  // would have kept. At the two days this was, against a 72 hour horizon,
+  // that gap was 24 hours wide: an outage between 49 and 71 hours old left
+  // the last slot's 72 hour rows targeting the future and outside the query,
+  // so the table emptied and the empty state asserted that every forecast on
+  // record had elapsed while two live ones sat in the store. Both pre deploy
+  // audit passes found it independently. Widening cannot change a healthy
+  // render, because the table shows the newest claim per forecaster and
+  // horizon and the extra rows are older ones the same dedup discards.
+  // AC-S8b.
+  const forecastsFrom = new Date(
+    now.getTime() - Math.max(...HORIZON_HOURS) * HOUR_MS,
+  );
 
   // allSettled rather than all: one panel's query failing should cost that
   // panel and say so, not take the whole page down with it. The hydrograph
@@ -320,10 +334,6 @@ export default async function StreamflowPage() {
   );
   const everIssuedFailed = failed(everIssuedResult);
 
-  // Computed over the SURVIVORS, not over `currentForecasts`. The order is
-  // load bearing: with four stale and two elapsed, the survivors are four of
-  // four and earn one note, while counting before the filter reads four of
-  // six and would wrongly print a marker on every row. AC-S8a.
   // The reading's own age. Only evaluated when the read succeeded; a failed
   // read keeps its existing message and says nothing about staleness. AC-S11.
   const readingIsStale = newestReading
@@ -335,6 +345,12 @@ export default async function StreamflowPage() {
   // the threshold and is flagged, while the forecasts built from that very
   // reading stay unmarked until their own age crosses it too. Whatever the
   // page says about the reading it must say about anything derived from it.
+  //
+  // Both of these read `liveForecasts`, the SURVIVORS of the AC-S8 filter,
+  // never `currentForecasts`. The order is load bearing: with four stale and
+  // two elapsed, the survivors are four of four and earn one note, while
+  // counting before the filter reads four of six and would wrongly print a
+  // marker on every row. AC-S8a.
   const staleForecastIds = new Set(
     liveForecasts
       .filter(
@@ -624,13 +640,24 @@ export default async function StreamflowPage() {
                             &dagger;
                           </span>
                         )}
+                        {/* The glyph is hidden and the meaning is spoken.
+                            `title` on a role-less span is not an accessible
+                            name, and `‡` is punctuation a screen reader does
+                            not read out, so the marker as first built was
+                            silent to the one reader who cannot see the table.
+                            The text is the legend itself rather than a
+                            paraphrase, so the two cannot drift. AC-S7a. */}
                         {!everyForecastStale &&
                           staleForecastIds.has(forecast.id) && (
                             <span
                               className="ml-2 text-term-xs"
-                              title="Issued more than the freshness threshold ago, or from a river reading that old, so it was made without the river's current level"
+                              title={staleForecastLegend(STALE_AFTER_HOURS)}
                             >
-                              &Dagger;
+                              <span aria-hidden="true">&Dagger;</span>
+                              <span className="sr-only">
+                                {' '}
+                                {STALE_FORECAST_MARKER_LABEL}
+                              </span>
                             </span>
                           )}
                       </td>

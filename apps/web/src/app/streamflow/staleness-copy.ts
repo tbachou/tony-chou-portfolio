@@ -92,11 +92,42 @@ export const EVER_ISSUED_UNKNOWN_NOTE =
   'No current forecast is showing, and this page could not check whether one has ever been issued. That is the page failing to ask; it is not news about the river.';
 
 /**
- * The marker legend. Its second sentence is cause neutral on purpose: a row
- * earns the marker for being old itself or for its input being old, and
- * naming either one makes the sentence false in the other case.
- * AC-S5, AC-S5a, AC-S7.
+ * The marker legend, and the per row marker's hidden text, which is this
+ * string rather than a paraphrase of it.
+ *
+ * **The second clause is anchored to `now`, not to issue time, and that is
+ * what makes it true.** Three things trigger the marker, not two: a stale
+ * `issuedAt` (AC-S5a), an input already stale when the forecast was issued
+ * (AC-S5), and the page warning about the newest reading at all, which the
+ * per row predicate ORs in. Under that third trigger a forecast issued three
+ * hours ago from a six hour old input is marked, and both of the clauses this
+ * sentence used to carry were false, because AC-S5 measures input age at
+ * `issuedAt`. Measured from now the clause holds under all three, since the
+ * input reading is never newer than the newest reading.
+ *
+ * AC-S5, AC-S5a, AC-S7, AC-S7a.
  */
 export function staleForecastLegend(hours: number): string {
-  return `Issued more than ${hours} hours ago, or from a river reading that old. Either way it was made without the river's current level, and may be well off.`;
+  return `Issued more than ${hours} hours ago, or built on a river reading that is now more than ${hours} hours old. Either way it was made without the river's current level, and may be well off.`;
 }
+
+/**
+ * What a screen reader hears in place of the `‡` in a marked row.
+ *
+ * The glyph alone reaches nobody who cannot see it: `title` on a role-less
+ * span is not an accessible name and is not announced, and U+2021 is
+ * punctuation that is not spoken at default verbosity. In the per row mode
+ * marked and unmarked rows sit together, so without this a blind reader is
+ * read the untrustworthy numbers with nothing to separate them from the
+ * trustworthy ones. AC-S7a.
+ *
+ * **Deliberately short, and deliberately not the legend.** The first fix for
+ * that silence spoke the whole legend in every marked cell, which is 187
+ * characters per row and close to a thousand for a mostly stale table, to
+ * convey one repeated fact. That trades silence for noise and is its own
+ * barrier. This is the marker, matching what a sighted reader gets from the
+ * glyph; the explanation is the legend paragraph below the table, which a
+ * screen reader reads as ordinary text on the way past. Nothing here can
+ * drift from the legend, because it no longer makes the legend's claim.
+ */
+export const STALE_FORECAST_MARKER_LABEL = 'Stale forecast.';
