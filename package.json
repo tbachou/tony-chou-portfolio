@@ -14,6 +14,7 @@
     "dev:api": "npm run start:dev --workspace=apps/api",
     "build:web": "npm run build --workspace=apps/web",
     "build:api": "npm run build --workspace=apps/api",
+    "test": "npm test --workspaces --if-present",
     "build:feedback-classifier": "npm run build --workspace=infra/lambda/feedback-classifier",
     "lint": "eslint . --max-warnings 25",
     "check:skills": "node scripts/check-skills.mjs",
