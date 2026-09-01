@@ -19,6 +19,8 @@ import type {
   ForceToolCallResult,
   StreamMessageParams,
   StreamMessageResult,
+  RunToolConversationParams,
+  RunToolConversationResult,
   UpstreamErrorClassification,
 } from '../../src/modules/anthropic/ai-provider.interface';
 import type { StoryModel } from '../../src/generated/prisma/models';
@@ -69,6 +71,30 @@ class CapturingProvider implements AiProvider {
     this.usage.outputTokens += result.outputTokens;
     if (isInterviewer) this.interviewerText = result.text;
     else this.tonyText = result.text;
+    return result;
+  }
+
+  /**
+   * The Tony generation runs through here now, not `streamMessage` (spec 0012
+   * phase three, AC-4: the harness exercises the same path production does).
+   * Capturing the text here is what keeps the judge scoring the real answer,
+   * retrieval and all.
+   */
+  async runToolConversation(
+    params: RunToolConversationParams,
+  ): Promise<RunToolConversationResult> {
+    // Same exhaustiveness bargain as streamMessage above: only the Tony
+    // generation is given tools, so anything else reaching here means the
+    // production wiring changed and this harness is now mis-scoring turns.
+    if (params.system !== loadConversationSkill('tony')) {
+      throw new Error(
+        'CapturingProvider: runToolConversation with an unrecognized system prompt; production tool wiring changed and the harness must be updated',
+      );
+    }
+    const result = await this.real.runToolConversation(params);
+    this.usage.inputTokens += result.inputTokens;
+    this.usage.outputTokens += result.outputTokens;
+    this.tonyText = result.text;
     return result;
   }
 

@@ -48,6 +48,24 @@ import {
 import { selectCases } from '../../src/modules/conversation/eval/select-cases';
 import { GOLDEN_CASES, type EvalCase } from './golden';
 import { datasetHashPayload, runCase } from './harness';
+import {
+  collectCorpus,
+  hashCorpus,
+  type CorpusManifest,
+} from '../../src/modules/conversation/retrieval/corpus';
+import {
+  RETRIEVAL_STRICT_ENV,
+  retrievalStrictFromEnv,
+} from '../../src/modules/conversation/retrieval/search-knowledge';
+import {
+  openReadOnly,
+  search as searchIndex,
+} from '../../src/modules/conversation/retrieval/vector-store';
+import { checkIndexPopulation } from '../../src/modules/conversation/retrieval/index-health';
+import {
+  canSaveBaseline,
+  evaluateRunOutcome,
+} from '../../src/modules/conversation/eval/run-outcome';
 import { JUDGE_MODEL } from './scorers/judge-client';
 
 function arg(name: string): string | undefined {
@@ -179,6 +197,119 @@ function preflight(info: GitInfo): void {
   process.exit(1);
 }
 
+/**
+ * Refuses before a penny is spent when retrieval could not be what the results
+ * will claim it was (spec 0012 phase three, AC-9 and AC-12).
+ *
+ * Three ways a run would otherwise be quietly worthless:
+ *
+ *   1. No Upstash credentials. The CI eval job had none, so every search would
+ *      have failed, the AC-8 degrade path would have swallowed it, and the run
+ *      would have written a results file indistinguishable from a good one.
+ *   2. A stale index. `corpus.json` records what was last embedded; if the
+ *      committed documents have moved on, the index answers from text that no
+ *      longer exists in the repo.
+ *   3. Credentials that do not work. Cheap to rule out with one real query,
+ *      and far cheaper than finding out after the model calls.
+ *
+ * Returns the corpus hash, which goes into the results meta (AC-11).
+ */
+async function retrievalPreflight(repoRoot: string): Promise<string> {
+  const manifestPath = path.join(
+    repoRoot,
+    'docs',
+    'evals',
+    'interview',
+    'corpus.json',
+  );
+  if (!fs.existsSync(manifestPath)) {
+    console.error(
+      `\u274c ${path.relative(repoRoot, manifestPath)} is missing. Run: npm run embed:corpus --workspace=apps/api`,
+    );
+    process.exit(1);
+  }
+  const manifest = JSON.parse(
+    fs.readFileSync(manifestPath, 'utf8'),
+  ) as CorpusManifest;
+
+  // AC-12: the index must describe the documents that exist now.
+  const documents = collectCorpus(repoRoot).map(({ path: p, hash }) => ({
+    path: p,
+    hash,
+  }));
+  const actual = hashCorpus(documents);
+  if (actual !== manifest.corpusHash) {
+    const before = new Map(manifest.documents.map((d) => [d.path, d.hash]));
+    const after = new Map(documents.map((d) => [d.path, d.hash]));
+    const changed = [
+      ...[...after.keys()].filter((k) => !before.has(k)).map((k) => `+ ${k}`),
+      ...[...before.keys()].filter((k) => !after.has(k)).map((k) => `- ${k}`),
+      ...[...after.entries()]
+        .filter(([k, v]) => before.has(k) && before.get(k) !== v)
+        .map(([k]) => `~ ${k}`),
+    ];
+    console.error(
+      '\u274c The committed corpus no longer matches the embedded index, so retrieval\n' +
+        '   would answer from text that is not in the repo. Refusing before spending.\n' +
+        `   manifest: ${manifest.corpusHash.slice(0, 12)}\u2026  repo now: ${actual.slice(0, 12)}\u2026`,
+    );
+    for (const line of changed.slice(0, 20)) console.error(`     ${line}`);
+    console.error('\n   Re embed and commit: npm run embed:corpus --workspace=apps/api');
+    process.exit(1);
+  }
+
+  // AC-9, cause 1: no credentials means every search fails and degrades.
+  for (const name of ['UPSTASH_VECTOR_REST_URL', 'UPSTASH_VECTOR_REST_TOKEN']) {
+    if (!process.env[name]) {
+      console.error(
+        `\u274c ${name} is not set, so every searchKnowledge call would fail.\n` +
+          '   The run would still finish and still cost money, and its scores would look\n' +
+          '   like a normal run rather than a run with retrieval switched off (AC-9).\n' +
+          '   Set the Upstash read only credentials, or fix the workflow secrets.',
+      );
+      process.exit(1);
+    }
+  }
+
+  // AC-9, cause 3: prove the credentials actually work, with one real query.
+  const index = openReadOnly();
+  try {
+    await searchIndex(index, 'preflight reachability probe');
+  } catch (error) {
+    console.error(
+      '\u274c The retrieval index is not reachable, so this run would score as though\n' +
+        `   retrieval had been switched off (AC-9): ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  }
+
+  // Reachable is not the same as populated, and the difference is the whole
+  // hole: a query against an EMPTY index returns [] without throwing, every
+  // search then reports "no match", which is a normal outcome rather than a
+  // failure, and strict mode never fires. corpus.json cannot catch it either,
+  // because it hashes the repo's documents rather than the index's contents.
+  let population;
+  try {
+    population = checkIndexPopulation(await index.info(), manifest.chunkCount);
+  } catch (error) {
+    console.error(
+      '\u274c Could not read the index statistics, so this run cannot prove retrieval is\n' +
+        `   populated (AC-9): ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  }
+  if (!population.ok) {
+    console.error(`\u274c Retrieval preflight: ${population.message}`);
+    process.exit(1);
+  }
+
+  console.log(
+    `Corpus:   ${actual.slice(0, 12)}\u2026 (${manifest.chunkCount} chunks, ${manifest.documents.length} documents), ` +
+      `index reachable with ${population.vectorCount} vectors`,
+  );
+  return actual;
+}
+
 function resultsFileName(commit: string, dirty: boolean, dir: string): string {
   const date = new Date().toISOString().slice(0, 10);
   const base = `${date}-${commit.slice(0, 7)}${dirty ? '-dirty' : ''}`;
@@ -210,6 +341,10 @@ async function main(): Promise<void> {
   // tree differs in a way that could change the result.
   const git = gitInfo();
   preflight(git);
+  const corpusHash = await retrievalPreflight(git.root);
+  // From here on a retrieval failure aborts the case rather than degrading
+  // quietly (AC-9). Production never sets this.
+  process.env[RETRIEVAL_STRICT_ENV] = '1';
   if (process.argv.includes('--preflight-only')) {
     console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
     return;
@@ -330,6 +465,7 @@ async function main(): Promise<void> {
       judgeModel: JUDGE_MODEL,
       caseCount: results.length,
       datasetHash,
+      corpusHash,
       tokensByModel,
       tokenTotals,
       estimatedCostUsd: estimateCostUsd(tokensByModel),
@@ -360,10 +496,12 @@ async function main(): Promise<void> {
 
   // --save-baseline: a deliberate local step (AC-9); CI never passes it.
   if (process.argv.includes('--save-baseline')) {
-    if (run.meta.partial) {
-      console.error(
-        '❌ refusing --save-baseline on a partial run (capped or aborted): the baseline must be a full-set run.',
-      );
+    const baselineVerdict = canSaveBaseline({
+      partial: run.meta.partial,
+      generationErrors: aggregate(run.cases).generationErrors,
+    });
+    if (!baselineVerdict.ok) {
+      console.error(`❌ ${baselineVerdict.message}`);
       process.exit(1);
     }
     const noiseFrom = arg('noise-from');
@@ -391,6 +529,22 @@ async function main(): Promise<void> {
         );
         process.exit(1);
       }
+      // AC-11. A run recorded before retrieval existed has no corpusHash, and
+      // the committed baseline is one of those, so a missing hash is a warning
+      // rather than a refusal. Two runs that BOTH name a corpus and disagree
+      // are genuinely incomparable.
+      if (other.meta.corpusHash && other.meta.corpusHash !== corpusHash) {
+        console.error(
+          '❌ --noise-from run used a different corpus; the noise band must come from two identical runs.',
+        );
+        process.exit(1);
+      }
+      if (!other.meta.corpusHash) {
+        console.warn(
+          '⚠ --noise-from run records no corpusHash (it predates retrieval), so the\n' +
+            '  band it produces cannot account for retrieval variance.',
+        );
+      }
       if (other.meta.partial) {
         console.error(
           '❌ --noise-from run is partial; the noise band must come from two full runs.',
@@ -409,6 +563,21 @@ async function main(): Promise<void> {
   console.log(`Wrote ${scoreboardPath}\n`);
 
   printSummary(run);
+
+  // AC-9, the half the preflight cannot cover. A retrieval failure DURING a
+  // run (a transient outage, a rate limit) is caught by generateTurnPair,
+  // recorded as a generation error, and leaves `partial` false because the
+  // case still produced a result. Without this the run wrote its results,
+  // regenerated the scoreboard and exited 0, so nothing downstream could tell
+  // it apart from a run that measured what it claims to.
+  const outcome = evaluateRunOutcome({
+    strictRetrieval: retrievalStrictFromEnv(),
+    generationErrors: aggregate(run.cases).generationErrors,
+  });
+  if (outcome.exitCode !== 0) {
+    console.error(`\n\u274c ${outcome.message}`);
+    process.exitCode = outcome.exitCode;
+  }
 }
 
 function logCase(result: CaseResult): void {
