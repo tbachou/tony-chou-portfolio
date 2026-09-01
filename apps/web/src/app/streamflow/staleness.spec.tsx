@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   newestReading: null as unknown,
   lastRun: null as unknown,
   observationsReject: false,
+  everIssued: null as unknown,
 }));
 
 vi.mock('@/lib/streamflow-db', () => ({
@@ -46,6 +47,8 @@ vi.mock('@/lib/streamflow-db', () => ({
       findFirst: async () => state.newestReading,
     },
     pipelineRun: { findFirst: async () => state.lastRun },
+    // AC-S9's unbounded probe: has this gauge EVER had a forecast?
+    prediction: { findFirst: async () => state.everIssued },
   }),
 }));
 
@@ -115,6 +118,7 @@ beforeEach(() => {
     rowsWritten: 96,
   };
   state.observationsReject = false;
+  state.everIssued = { id: 'pred-ever' };
 });
 afterEach(cleanup);
 
@@ -124,7 +128,7 @@ describe('the reading warning', () => {
 
     await renderPage();
 
-    expect(screen.queryByText(/New readings normally arrive/i)).toBeNull();
+    expect(screen.queryByText(/nothing newer has reached this page/i)).toBeNull();
   });
 
   it('warns once the reading passes the threshold, and keeps the figure', async () => {
@@ -132,7 +136,7 @@ describe('the reading warning', () => {
 
     await renderPage();
 
-    expect(screen.getByText(/New readings normally arrive/i)).toBeTruthy();
+    expect(screen.getByText(/nothing newer has reached this page/i)).toBeTruthy();
     // AC-S3: the number is never hidden. A reader who wants the last known
     // value can still see it.
     expect(screen.getByText('143')).toBeTruthy();
@@ -143,12 +147,58 @@ describe('the reading warning', () => {
     state.lastRun = { ...(state.lastRun as object), status: 'OK' } as unknown;
 
     await renderPage();
-    expect(screen.queryByText(/last ingest run did not complete/i)).toBeNull();
+    expect(screen.queryByText(/not completing its runs/i)).toBeNull();
     cleanup();
 
     state.lastRun = { ...(state.lastRun as object), status: 'FAILED' } as unknown;
     await renderPage();
-    expect(screen.getByText(/last ingest run did not complete/i)).toBeTruthy();
+    expect(screen.getByText(/not completing its runs/i)).toBeTruthy();
+  });
+
+  it('says the pipeline is not completing when the scheduler simply stopped', async () => {
+    // AC-S4. The worst failure this page has: GitHub disables a scheduled
+    // workflow after sixty days, so NO new run row is ever written and the
+    // newest row stays an old success. Reading status alone reports that as
+    // perfect health, which is what the first version did.
+    state.newestReading = readingAt(70 * 24);
+    state.lastRun = {
+      job: 'USGS_INGEST' as const,
+      status: 'OK' as const, // still OK, because nothing has run to fail
+      startedAt: new Date(Date.now() - 70 * 24 * HOUR),
+      rowsWritten: 96,
+    };
+
+    await renderPage();
+
+    expect(screen.getByText(/not completing its runs/i)).toBeTruthy();
+  });
+
+  it('points the reader somewhere else while the data is stale', async () => {
+    // The stale state is when a reader most needs an authority, and it was
+    // the state in which the pointer was furthest away.
+    state.newestReading = readingAt(30);
+
+    await renderPage();
+
+    // The footer names them too, so scope to the warning block itself: the
+    // whole point is that the pointer is HERE, not 3,400px below.
+    const warning = screen.getByText(/Last measured/i);
+    expect(warning.textContent).toMatch(/National Water Prediction Service/i);
+    expect(
+      warning.querySelector(`a[href="https://water.noaa.gov/"]`),
+    ).toBeTruthy();
+  });
+
+  it('reads as a sentence at every age it can render', async () => {
+    // The first version produced "This reading is 30 h ago old".
+    for (const hours of [9.5, 30, 40 * 24]) {
+      state.newestReading = readingAt(hours);
+      await renderPage();
+      const text = screen.getByText(/Last measured/i).textContent ?? '';
+      expect(text).not.toMatch(/ago old/);
+      expect(text).toMatch(/^Last measured .+ ago, and nothing newer/);
+      cleanup();
+    }
   });
 
   it('stays silent when the reading could not be read at all', async () => {
@@ -157,7 +207,7 @@ describe('the reading warning', () => {
 
     await renderPage();
 
-    expect(screen.queryByText(/New readings normally arrive/i)).toBeNull();
+    expect(screen.queryByText(/nothing newer has reached this page/i)).toBeNull();
   });
 });
 
@@ -175,21 +225,26 @@ describe('the forecast table', () => {
     expect(screen.queryByText('48 h')).toBeNull();
   });
 
-  it('tells a stopped pipeline from a new one when every row has elapsed', async () => {
-    // AC-S9. The old copy said "no forecast has been issued yet", which is
-    // false here and reads as a fresh install rather than an outage.
-    state.predictions = [
-      forecast({ targetTime: new Date(Date.now() - 4 * HOUR) }),
-    ];
+  it('tells a stopped pipeline from a new one after a long outage', async () => {
+    // AC-S9. The first version drew this from the loaded rows, which made it
+    // unreachable: every slot writes all three horizons, so a 72 hour row is
+    // always still live and "all loaded rows elapsed" cannot happen. The
+    // fixture here is the real shape of a long outage: the two day query
+    // returns NOTHING, and only the unbounded probe knows the pipeline once ran.
+    state.predictions = [];
+    state.everIssued = { id: 'pred-from-last-week' };
 
     await renderPage();
 
-    expect(screen.getByText(/pipeline has stopped, not that it has not started/i)).toBeTruthy();
+    expect(
+      screen.getByText(/pipeline has stopped, not that it has not started/i),
+    ).toBeTruthy();
     expect(screen.queryByText(/No forecast has been issued yet/i)).toBeNull();
   });
 
   it('still says never issued when nothing was ever issued', async () => {
     state.predictions = [];
+    state.everIssued = null;
 
     await renderPage();
 
@@ -222,6 +277,29 @@ describe('the stale input marker', () => {
     expect(notes).toHaveLength(1);
     // and no per row markers alongside it
     expect(screen.queryByText('‡')).toBeNull();
+  });
+
+  it('marks a forecast that is old in itself, however fresh its input was', async () => {
+    // AC-S5a, the gap both audit passes found independently. The predictor
+    // died while ingest kept running: the reading is fresh so no warning
+    // fires, the input was fresh at issue time so no input marker fires, and
+    // a forty hour old forecast used to render with nothing to say so.
+    state.newestReading = readingAt(1);
+    state.observations = [observationAt(41)];
+    state.predictions = [
+      forecast({
+        horizonHours: 72,
+        issuedAt: new Date(Date.now() - 40 * HOUR),
+        targetTime: new Date(Date.now() + 32 * HOUR),
+      }),
+    ];
+
+    await renderPage();
+
+    // no reading warning: the reading really is fresh
+    expect(screen.queryByText(/nothing newer has reached this page/i)).toBeNull();
+    // but the forecast is disclosed anyway
+    expect(screen.getByText(/Issued more than .* hours ago/i)).toBeTruthy();
   });
 
   it('marks per row when only some rows are stale input', async () => {

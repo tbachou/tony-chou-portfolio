@@ -185,6 +185,9 @@ vi.mock('@/lib/streamflow-db', () => ({
         qualifier: 'PROVISIONAL' as const,
       }),
     },
+    // AC-S9's unbounded probe, added when the elapsed empty state stopped
+    // being derivable from the two day window.
+    prediction: { findFirst: async () => ({ id: 'pred-ever' }) },
     pipelineRun: {
       findFirst: async () => ({
         // Deliberately the one PipelineJob member carrying two underscores.

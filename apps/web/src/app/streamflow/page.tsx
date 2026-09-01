@@ -10,7 +10,7 @@ import {
   publicScoredErrors,
   rollingSkill,
   isStale,
-  isStaleInput,
+  isStaleForecast,
   DISPLAY_TIMEZONE,
   STALE_AFTER_HOURS,
   HORIZON_HOURS,
@@ -30,8 +30,11 @@ import { CalibrationPanel } from './CalibrationPanel';
 import { DataSources, NOT_A_FLOOD_FORECAST } from './DataSources';
 import {
   ELAPSED_FORECASTS_NOTE,
+  NOAA_WATER_URL,
   STALE_INGEST_NOTE,
-  staleInputLegend,
+  STALE_READING_REDIRECT,
+  USGS_GAUGE_URL,
+  staleForecastLegend,
   staleReadingNote,
 } from './staleness-copy';
 import { rangeSource } from './range-source';
@@ -160,6 +163,7 @@ export default async function StreamflowPage() {
     newestReadingResult,
     lastRunResult,
     recentForecastsResult,
+    everIssuedResult,
     scoredErrorsResult,
     liveIntervalsResult,
     backtestIntervalsResult,
@@ -185,6 +189,15 @@ export default async function StreamflowPage() {
       select: { job: true, status: true, startedAt: true, rowsWritten: true },
     }),
     publicPredictions(prisma, { gaugeId: gauge.id, issuedFrom: forecastsFrom }),
+    // Unbounded by the two day window on purpose. Whether the pipeline has
+    // EVER issued cannot be answered from the loaded rows: every slot writes
+    // all three horizons, so "all loaded rows elapsed" is a shape the
+    // scheduler cannot produce, which made the elapsed state unreachable and
+    // sent a stopped pipeline to the never issued copy. AC-S9.
+    prisma.prediction.findFirst({
+      where: { gaugeId: gauge.id, hindcast: false },
+      select: { id: true },
+    }),
     publicScoredErrors(prisma, gauge.id, skillFrom, now),
     // Coverage over the whole record rather than the skill window: the
     // question is whether the ranges have ever meant what they claim, and
@@ -239,7 +252,11 @@ export default async function StreamflowPage() {
   );
   // Kept so the empty state can tell a stopped pipeline from a new one: rows
   // existed, they simply all elapsed. AC-S9.
-  const hadForecastsBeforeElapsing = currentForecasts.length > 0;
+  const hasEverIssued = settled<{ id: string } | null>(
+    'ever issued probe',
+    everIssuedResult,
+    null,
+  );
 
   // Computed over the SURVIVORS, not over `currentForecasts`. The order is
   // load bearing: with four stale and two elapsed, the survivors are four of
@@ -248,7 +265,7 @@ export default async function StreamflowPage() {
   const staleInputIds = new Set(
     liveForecasts
       .filter((forecast) =>
-        isStaleInput(rows, forecast.issuedAt, STALE_AFTER_HOURS),
+        isStaleForecast(rows, forecast.issuedAt, now, STALE_AFTER_HOURS),
       )
       .map((forecast) => forecast.id),
   );
@@ -260,7 +277,13 @@ export default async function StreamflowPage() {
   const readingIsStale = newestReading
     ? isStale(newestReading.validTime, now, STALE_AFTER_HOURS)
     : false;
-  const ingestNotCompleting = lastRun ? lastRun.status !== 'OK' : false;
+  // Not just `status !== 'OK'`. A scheduler that stops entirely writes no new
+  // row, so the newest row stays an old success and the status keeps saying
+  // the pipeline is healthy while nothing has run for weeks. AC-S4.
+  const ingestNotCompleting = lastRun
+    ? lastRun.status !== 'OK' ||
+      isStale(lastRun.startedAt, now, STALE_AFTER_HOURS)
+    : true;
 
   const skill = rollingSkill(scoredErrors, skillFrom, now).map((series) => ({
     modelName: series.modelName,
@@ -365,7 +388,28 @@ export default async function StreamflowPage() {
               {readingIsStale && (
                 <p className="mt-3 max-w-2xl border-l border-term-error pl-3 text-term-sm text-term-body">
                   {staleReadingNote(relativeAge(newestReading.validTime, now))}
-                  {ingestNotCompleting ? ` ${STALE_INGEST_NOTE}` : ''}
+                  {ingestNotCompleting ? ` ${STALE_INGEST_NOTE}` : ''}{' '}
+                  {STALE_READING_REDIRECT.lead}{' '}
+                  <a
+                    href={USGS_GAUGE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="terminal-select text-term-ink"
+                  >
+                    {STALE_READING_REDIRECT.usgs}{' '}
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                  {STALE_READING_REDIRECT.mid}{' '}
+                  <a
+                    href={NOAA_WATER_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="terminal-select text-term-ink"
+                  >
+                    {STALE_READING_REDIRECT.noaa}{' '}
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                  .
                 </p>
               )}
               <p className="mt-3 max-w-2xl border-l border-term-border pl-3 text-term-sm text-term-muted">
@@ -428,11 +472,17 @@ export default async function StreamflowPage() {
             worth what it beats, and both are harder to beat than they sound.
           </p>
 
+          {everyForecastStaleInput && (
+            <p className="mt-6 max-w-2xl border-l border-term-error pl-3 text-term-sm text-term-body">
+              {staleForecastLegend(STALE_AFTER_HOURS)}
+            </p>
+          )}
+
           {liveForecasts.length === 0 ? (
             <p className="mt-6 border border-term-border px-4 py-10 text-center text-term-sm text-term-muted">
               {recentForecastsResult.status === 'rejected'
                 ? 'The forecast table could not be read just now. Nothing else on this page depends on it, so the rest is still current.'
-                : hadForecastsBeforeElapsing
+                : hasEverIssued
                   ? ELAPSED_FORECASTS_NOTE
                   : 'No forecast has been issued yet. The pipeline issues one per forecaster per horizon every six hours.'}
             </p>
@@ -529,16 +579,10 @@ export default async function StreamflowPage() {
             </p>
           )}
 
-          {everyForecastStaleInput && (
-            <p className="mt-4 max-w-2xl border-l border-term-error pl-3 text-term-sm text-term-body">
-              {staleInputLegend(STALE_AFTER_HOURS)}
-            </p>
-          )}
-
           {!everyForecastStaleInput && staleInputIds.size > 0 && (
-            <p className="mt-4 max-w-2xl text-term-xs text-term-muted">
+            <p className="mt-4 max-w-2xl text-term-sm text-term-body">
               <span aria-hidden="true">&Dagger; </span>
-              {staleInputLegend(STALE_AFTER_HOURS)}
+              {staleForecastLegend(STALE_AFTER_HOURS)}
             </p>
           )}
 
