@@ -337,6 +337,7 @@ export class ConversationService {
         retrieval.stats,
         tonyGenerated.stoppedOnIterationCap,
         tonyGenerated.stoppedOnMaxTokens,
+        tonyGenerated.recoveredWithoutTools,
       );
 
       const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
@@ -459,6 +460,7 @@ export class ConversationService {
     stats: RetrievalStats,
     stoppedOnIterationCap: boolean,
     stoppedOnMaxTokens: boolean,
+    recoveredWithoutTools: boolean,
   ): void {
     // Fires for anything that happened, not only for a completed search. The
     // malformed and unknown tool paths skip every other counter, so without
@@ -469,7 +471,8 @@ export class ConversationService {
       stats.malformed === 0 &&
       stats.unknownTool === 0 &&
       !stoppedOnIterationCap &&
-      !stoppedOnMaxTokens;
+      !stoppedOnMaxTokens &&
+      !recoveredWithoutTools;
     if (nothingHappened) return;
     this.logger.log(
       JSON.stringify({
@@ -495,6 +498,10 @@ export class ConversationService {
           // answered. Without this the turn looked like an ownership guard
           // failure, which is a different problem with a different fix.
           stoppedOnMaxTokens,
+          // The turn cost one extra model call because the model stopped
+          // without answering. Rare by design; a rising count is a prompt or
+          // cap problem, not something to keep paying for.
+          recoveredWithoutTools,
         },
       }),
     );

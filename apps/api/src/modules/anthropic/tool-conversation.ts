@@ -123,6 +123,11 @@ function textOf(message: ProviderMessage): string {
     .join('');
 }
 
+/** Whitespace-only counts as no answer; see askForTheAnswer. */
+function hasNoText(text: string): boolean {
+  return text.trim() === '';
+}
+
 /**
  * Non streaming on purpose. The only caller buffers the whole response before
  * anything reaches the client anyway (the ownership guard has to see it
@@ -130,6 +135,40 @@ function textOf(message: ProviderMessage): string {
  * stops and restarts once per tool call, so partial text from an iteration
  * that is about to be followed by another one is not the answer.
  */
+/**
+ * One last call with the tools withheld, when the loop ended holding no answer
+ * (spec 0012 phase three).
+ *
+ * Measured, not defensive. `retrieval-rejected-feature` came back with an
+ * empty `tonyRaw` in two eval runs on 2026-09-03, and the second run rules out
+ * the upstream wobble that explained the first: 17.8s against an 11.3s median,
+ * no outliers anywhere in the run. Its telemetry read `calls:2, capped:1,
+ * stoppedOnIterationCap:false, stoppedOnMaxTokens:false, outcome:"ok"` — the
+ * model spent both searches, was told the cap was reached, and then ended its
+ * turn with no text block at all while the provider reported success. The
+ * question ("a spec you wrote and then rejected") is one the corpus answers
+ * outright, so the visitor got the guard's deflection in place of an answer
+ * that was sitting in spec 0008.
+ *
+ * Withholding the tools is the whole mechanism: with none offered the model
+ * cannot ask for another search, so the only turn it can take is the answer.
+ * No nudge message is appended — `messages` already ends with the user turn
+ * carrying the tool results, and a second consecutive user turn is a different
+ * request shape for no gain.
+ *
+ * EXACTLY ONE attempt, and only when tools were offered. Retrying a request
+ * that never had tools would re-send the identical body and bill for it. A
+ * second recovery would be a retry loop wearing a different name, and this
+ * path is reached precisely when the model is behaving oddly.
+ */
+async function askForTheAnswer(
+  create: CreateMessage,
+  body: Omit<ToolLoopRequest, 'tools'>,
+  options: { timeout?: number; maxRetries?: number },
+): Promise<ProviderMessage> {
+  return create(body, options);
+}
+
 export async function runToolConversation(
   create: CreateMessage,
   defaultModel: string,
@@ -142,21 +181,48 @@ export async function runToolConversation(
   let inputTokens = 0;
   let outputTokens = 0;
   let toolCallCount = 0;
+  let recoveredWithoutTools = false;
+
+  const requestOptions = {
+    ...(params.timeoutMs !== undefined && { timeout: params.timeoutMs }),
+    ...(params.maxRetries !== undefined && {
+      maxRetries: params.maxRetries,
+    }),
+  };
+
+  /** The request minus its tools, shared by the loop and the recovery call. */
+  const baseBody = (): Omit<ToolLoopRequest, 'tools'> => ({
+    model: params.model ?? defaultModel,
+    max_tokens: params.maxTokens,
+    system: [
+      {
+        type: 'text',
+        text: params.system,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages,
+  });
+
+  /**
+   * Returns the answer the recovery call produced, or '' if it too said
+   * nothing. Mutates the token counters and the recovery flag, because its
+   * call is billed like any other and must reach the caller's spend backstop.
+   */
+  const recoverEmptyAnswer = async (): Promise<string> => {
+    if (params.tools.length === 0) return '';
+    const message = await askForTheAnswer(create, baseBody(), requestOptions);
+    inputTokens += totalInputTokens(message.usage);
+    outputTokens += message.usage.output_tokens;
+    recoveredWithoutTools = true;
+    return textOf(message);
+  };
 
   try {
   for (let iteration = 0; iteration < params.maxIterations; iteration += 1) {
     const message = await create(
       {
-        model: params.model ?? defaultModel,
-        max_tokens: params.maxTokens,
-        system: [
-          {
-            type: 'text',
-            text: params.system,
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
-        messages,
+        ...baseBody(),
         // Omitted rather than sent as [] when nothing is offered: an empty
         // tools array is a different request from no tools at all, and this
         // path exists precisely to be identical to a plain generation.
@@ -168,12 +234,7 @@ export async function runToolConversation(
           })),
         }),
       },
-      {
-        ...(params.timeoutMs !== undefined && { timeout: params.timeoutMs }),
-        ...(params.maxRetries !== undefined && {
-          maxRetries: params.maxRetries,
-        }),
-      },
+      requestOptions,
     );
 
     // Summed across iterations, not overwritten. Each iteration is a separate
@@ -204,17 +265,23 @@ export async function runToolConversation(
         toolCallCount,
         stoppedOnIterationCap: false,
         stoppedOnMaxTokens: true,
+        recoveredWithoutTools,
       };
     }
 
     if (message.stop_reason !== 'tool_use' || toolUses.length === 0) {
+      // The model ended its turn. Usually that means it answered; when it
+      // ended holding no text, ask once more with the tools withheld rather
+      // than handing the caller a blank answer it can only deflect on.
+      const text = textOf(message);
       return {
-        text: textOf(message),
+        text: hasNoText(text) ? await recoverEmptyAnswer() : text,
         inputTokens,
         outputTokens,
         toolCallCount,
         stoppedOnIterationCap: false,
         stoppedOnMaxTokens: false,
+        recoveredWithoutTools,
       };
     }
 
@@ -250,16 +317,26 @@ export async function runToolConversation(
     throw attachUsage(error, { inputTokens, outputTokens });
   }
 
-  // The cap was hit with the model still asking for tools. Returning empty
-  // beats throwing: the caller's guard and fallback already handle a weak
-  // answer, whereas a throw would fail the whole turn over a model that was
-  // merely being persistent.
+  // The cap was hit with the model still asking for tools. Rather than hand
+  // back nothing, spend one more call with the tools withheld: the model has
+  // every result it asked for, so the only thing left for it to do is answer.
+  // Still no throw, for the original reason — the caller's guard and fallback
+  // handle a weak answer, and failing the whole turn over a persistent model
+  // would be worse than a short one.
+  let text = '';
+  try {
+    text = await recoverEmptyAnswer();
+  } catch (error) {
+    throw attachUsage(error, { inputTokens, outputTokens });
+  }
+
   return {
-    text: '',
+    text,
     inputTokens,
     outputTokens,
     toolCallCount,
     stoppedOnIterationCap: true,
     stoppedOnMaxTokens: false,
+    recoveredWithoutTools,
   };
 }

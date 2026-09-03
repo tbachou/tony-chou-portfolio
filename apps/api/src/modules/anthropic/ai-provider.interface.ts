@@ -129,6 +129,17 @@ export type RunToolConversationResult = StreamMessageResult & {
    * answer at all, and the tool was not run.
    */
   stoppedOnMaxTokens: boolean;
+  /**
+   * True when the loop ended holding no answer and spent one extra call, with
+   * the tools withheld, to get one.
+   *
+   * Worth its own field rather than being inferred: the recovery costs a whole
+   * additional model call, and the turns that need it are the ones where the
+   * model stopped without answering. A number that starts climbing means that
+   * is happening often, which is a prompt or a cap problem rather than
+   * something to keep paying for.
+   */
+  recoveredWithoutTools: boolean;
 };
 
 export interface AiProvider {
