@@ -1,6 +1,8 @@
 import {
   createGradePhotoSchema,
   setPhotoActiveSchema,
+  gradePhotoIdParamSchema,
+  type GradePhotoIdParam,
   type CreateGradePhoto,
   type SetPhotoActive,
 } from '@portfolio/shared';
@@ -93,7 +95,7 @@ export class GradePhotosController {
   /** Deactivate or reactivate a photo. Rows are never deleted. */
   @Patch(':id/active')
   setActive(
-    @Param('id') id: string,
+    @Param(new ZodValidationPipe(gradePhotoIdParamSchema)) { id }: GradePhotoIdParam,
     @Body(new ZodValidationPipe(setPhotoActiveSchema)) body: SetPhotoActive,
   ): Promise<GradePhotoListItem> {
     return this.gradePhotos.setActive(id, body.active);

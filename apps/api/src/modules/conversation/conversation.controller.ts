@@ -13,11 +13,16 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
+import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import type { Request, Response } from 'express';
 import { ConversationService } from './conversation.service';
-import { hashIp, resolveClientIp } from '../../common/utils/ip-hash.util';
+import {
+  hashIp,
+  rateLimitIdentity,
+  resolveClientIp,
+} from '../../common/utils/ip-hash.util';
 import { writeSseEvent } from './sse.util';
 
 @Controller('conversation')
@@ -26,7 +31,12 @@ export class ConversationController {
   constructor(private readonly conversationService: ConversationService) {}
 
   @Post('turn')
-  @UseGuards(ThrottlerGuard)
+  // The IPv6 collapsing guard, like every other public endpoint that spends
+  // per request (beta, feedback, grade). The stock guard keys on the full
+  // address, and one home IPv6 allocation hands out 2^64 of those, so a per
+  // address limit is free to rotate past. This is the endpoint that calls the
+  // model on every request and it was the one that never adopted the fix.
+  @UseGuards(CollapsedIpThrottlerGuard)
   @Throttle({
     short: { limit: 5, ttl: 60_000 },
     long: { limit: 30, ttl: 3_600_000 },
@@ -51,7 +61,7 @@ export class ConversationController {
       );
     }
 
-    const hashedIp = hashIp(resolveClientIp(req));
+    const hashedIp = hashIp(rateLimitIdentity(resolveClientIp(req)));
     // Rebuilt from the persisted rows, never echoed by the client (spec 0012
     // phase one, AC-3). Read before prepareTurn reserves this turn's slot, so
     // the empty placeholder row it writes is not part of the transcript.

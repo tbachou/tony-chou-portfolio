@@ -97,7 +97,7 @@ describe('GradePhotosController (AC-17)', () => {
     it('forwards the id and the flag', async () => {
       const { controller, service } = makeController();
 
-      await controller.setActive('north-gym-blue-prow', { active: false });
+      await controller.setActive({ id: 'north-gym-blue-prow' }, { active: false });
 
       expect(service.setActive).toHaveBeenCalledWith(
         'north-gym-blue-prow',

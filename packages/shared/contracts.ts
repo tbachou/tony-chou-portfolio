@@ -275,6 +275,13 @@ export const createGradePhotoSchema = z
   })
   .strict();
 
+/** The photo pool's id is a slug, minted at upload. Validated the same way as every other route input. */
+export const gradePhotoIdParamSchema = z
+  .object({ id: z.string().regex(SLUG_PATTERN) })
+  .strict();
+
+export type GradePhotoIdParam = z.infer<typeof gradePhotoIdParamSchema>;
+
 export type CreateGradePhoto = z.infer<typeof createGradePhotoSchema>;
 
 /**
