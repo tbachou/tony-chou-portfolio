@@ -3,6 +3,7 @@ import { ConversationService } from './conversation.service';
 import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AiProvider } from '../anthropic/ai-provider.interface';
+import { TURN_ERROR_MESSAGE } from './conversation.constants';
 import { runToolConversation } from '../anthropic/tool-conversation';
 import type { DailyUsageService } from '../daily-usage/daily-usage.service';
 import type {
@@ -253,7 +254,7 @@ describe('ConversationService.generateTurnPair', () => {
 
     expect(h.events).toEqual([
       ['turn_start', { role: 'interviewer' }],
-      ['turn_error', { message: 'The interviewer produced an empty question' }],
+      ['turn_error', { message: TURN_ERROR_MESSAGE }],
     ]);
     // Tony is never asked, and the reserved slot is released for a retry.
     expect(h.anthropic.streamMessage).toHaveBeenCalledTimes(1);
@@ -551,7 +552,8 @@ describe('ConversationService.generateTurnPair', () => {
 
     expect(h.events).toEqual([
       ['turn_start', { role: 'interviewer' }],
-      ['turn_error', { message: 'upstream down' }],
+      // Fixed text: the raw 'upstream down' must never reach a visitor.
+      ['turn_error', { message: TURN_ERROR_MESSAGE }],
     ]);
     expect(h.prisma.conversationTurn.delete).toHaveBeenCalledWith({
       where: { id: 'turn-1' },

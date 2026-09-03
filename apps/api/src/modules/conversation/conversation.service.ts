@@ -11,6 +11,7 @@ import { ConversationRole } from '../../generated/prisma/enums';
 import { Prisma } from '../../generated/prisma/client';
 import type { StoryModel, TopicModel } from '../../generated/prisma/models';
 import { loadConversationSkill } from './skill-loader';
+import { TURN_ERROR_MESSAGE } from './conversation.constants';
 import {
   createSearchKnowledgeExecutor,
   MAX_TOOL_ITERATIONS,
@@ -429,9 +430,11 @@ export class ConversationService {
             `Failed to release reserved turn ${interviewerTurnId}; it will consume a turn slot`,
           );
         });
-      emit('turn_error', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
+      // Name only in the log, fixed text to the visitor. See the constant.
+      this.logger.warn(
+        `Turn failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+      emit('turn_error', { message: TURN_ERROR_MESSAGE });
       this.logProviderCall('error');
     }
   }
