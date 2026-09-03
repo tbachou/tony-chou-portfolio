@@ -232,6 +232,40 @@ describe('ConversationService.generateTurnPair', () => {
       expect(params.tools.map((t) => t.name)).toEqual(['searchKnowledge']);
       expect(params.maxIterations).toBeGreaterThan(1);
     });
+
+    it('budgets enough tokens for the model to think AND still answer', async () => {
+      // Regression, measured 2026-09-03. At 600 the model twice spent the
+      // WHOLE allowance on thinking — `stop_reason: max_tokens`, content
+      // blocks `[thinking]`, zero text — and the visitor got the guard's
+      // deflection instead of an answer. A third sample thought for 338 and
+      // then had its answer cut off mid sentence, which is the persona score
+      // the eval kept losing. Thinking tokens are billed against this budget,
+      // so it has to cover both, not just the prose.
+      //
+      // Asserted as a floor rather than an exact number: the point is the
+      // headroom, and pinning the literal would only make this a test that
+      // has to be edited every time the budget is tuned.
+      Object.assign(process.env, upstashEnv);
+      const h = makeHarness();
+      h.anthropic.streamMessage.mockResolvedValueOnce({
+        text: 'q',
+        inputTokens: 1,
+        outputTokens: 1,
+      });
+
+      await h.service.generateTurnPair({
+        topic,
+        prepared,
+        history: [],
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      const params = h.anthropic.runToolConversation.mock.calls[0][0] as {
+        maxTokens: number;
+      };
+      expect(params.maxTokens).toBeGreaterThanOrEqual(1200);
+    });
   });
 
   it('a blank interviewer question fails the turn rather than persisting an empty row', async () => {
