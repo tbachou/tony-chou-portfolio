@@ -1,11 +1,15 @@
 {
-  "corpusHash": "2a0b97393679c9cdcea266063bb348f4a4a6a054fbb1097f542a704c80622030",
-  "chunkCount": 616,
-  "embeddedAt": "2026-09-03T01:52:36.025Z",
+  "corpusHash": "db3e9e47d5f6caac3b08e92457429d6390cd0b28c13074847d40861855cb34e9",
+  "chunkCount": 622,
+  "embeddedAt": "2026-09-03T16:50:16.821Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
       "hash": "d06e83e2369299ebb3df47f71797446543ae5a5bfc59f036290bf70f3890e3bf"
+    },
+    {
+      "path": "docs/evals/interview/0012-phase-three-search-knowledge.md",
+      "hash": "f4764036e333d3f9e8f4b68962f9066c4b40fafde30d0d5da338b086d19dc4c2"
     },
     {
       "path": "docs/evals/interview/0012-phase-two-public-evals-page.md",
@@ -17,7 +21,7 @@
     },
     {
       "path": "docs/specs/_root/0002-conversation-engine-and-usage-dashboard/index.md",
-      "hash": "417754721585a684a9573ac3cb551ea1a2ba9b0e64d68d1f96457a4544aa9c15"
+      "hash": "7074187f51469c26645ac7d4b149a32dadebfcd367344e8617b8f5b4bd964b01"
     },
     {
       "path": "docs/specs/_root/0002-conversation-engine-and-usage-dashboard/verify.md",
@@ -137,7 +141,7 @@
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-search-portfolio-retrieval.md",
-      "hash": "899fb708a79c5bc62668f770c2626480fd5d9a53ba3103361e27598528ac9341"
+      "hash": "805fced533ad833977bee470f7abcf6a80b3e141993b192f82537c618d8ae7ab"
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/findings/2026-08-31-grounding-embellishment.md",

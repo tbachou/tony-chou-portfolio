@@ -1,7 +1,7 @@
 # 0002. Conversation engine and usage dashboard
 
 **Date**: 2026-08-05
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
@@ -153,7 +153,7 @@ A topic conversation (identified by `conversationId`): `not started` -> (first `
 ## Follow-up
 
 - [ ] Connect the better auth MCP server (documentation search and setup assistance) in your own MCP settings; found and offered this session, connecting is a step only you can do. See rationale.md's References for the docs link.
-- [ ] `better-auth-best-practices` conventions are not yet in any `AGENTS.md` (none exists yet in this repo); once `/audit` creates a root `AGENTS.md`, this belongs in its `## Agent skills` section, alongside `nestjs-best-practices`, `prisma-database-setup`, and `prisma-postgres` from spec 0001.
+- [x] `better-auth-best-practices` conventions are not yet in any `AGENTS.md` (none exists yet in this repo); once `/audit` creates a root `AGENTS.md`, this belongs in its `## Agent skills` section, alongside `nestjs-best-practices`, `prisma-database-setup`, and `prisma-postgres` from spec 0001. **Done**: `apps/api/AGENTS.md` lists it under `## Agent skills`, scoped to the workspace it governs rather than the repo root.
 - [ ] A password reset flow for the single admin account is out of scope here; if the seeded credentials are ever lost, recovery is a manual database update, not a self service flow. Revisit only if this stops being acceptable.
 - [ ] The 14 day window and top 10 row count on `/internal/usage/summary` are starting guesses; tune them once you are actually checking the dashboard against real traffic.
 - [ ] The deterministic overclaim guard's blocklist (both the ownership hedge check and the never claim list) should be revisited and expanded if a real overclaim or a false positive is ever observed once this is live; it is a starting set, not exhaustive.
