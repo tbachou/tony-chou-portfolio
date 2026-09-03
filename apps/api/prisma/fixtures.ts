@@ -23,7 +23,8 @@ export type StorySeed = {
   topics: string[];
 };
 
-// Topic slugs group the 21 verified stories from KNOWLEDGE_BASE.md into curated
+// Topic slugs group the 21 verified stories (transcribed from a private,
+// ownership tagged story bank that is not in this repo) into curated
 // conversation topics. Every topic below maps to 3+ stories; the seed fails
 // loudly if that ever drops under 2 (the round-robin story selection in
 // spec 0002 needs at least 2 to rotate).
