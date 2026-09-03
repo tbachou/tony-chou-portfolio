@@ -16,7 +16,8 @@ export const SOLE_CREDIT_VERBS = [
   'i solely',
 ];
 
-// Derived from KNOWLEDGE_BASE.md's "Explicitly NOT verified" section (AC-9).
+// Derived from the "Explicitly NOT verified" section of a private story bank
+// that is not in this repo (AC-9).
 // A blocklist, not full language understanding: catches the obvious phrasing of
 // each item, not every way a model could imply the same false claim.
 const NEVER_CLAIM_PHRASES = [
