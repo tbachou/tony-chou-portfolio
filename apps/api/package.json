@@ -26,6 +26,7 @@
     "eval:interview": "tsx scripts/interview-eval/run.ts",
     "embed:corpus": "tsx scripts/embed-corpus.ts",
     "check:corpus": "tsx scripts/check-corpus.ts",
+    "sweep:threshold": "tsx scripts/threshold-sweep.ts",
     "judge": "tsx scripts/beta-guard-judge.ts",
     "prebuild": "npm run build --workspace=@portfolio/shared"
   },
