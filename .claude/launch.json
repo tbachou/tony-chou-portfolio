@@ -10,7 +10,7 @@
     },
     {
       "name": "api",
-      "runtimeExecutable": "/Users/tonychou/source/portfolio/.claude/run-api-dev.sh",
+      "runtimeExecutable": "./.claude/run-api-dev.sh",
       "runtimeArgs": [],
       "port": 3001
     }
