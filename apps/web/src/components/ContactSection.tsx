@@ -67,7 +67,7 @@ export function ContactSection() {
           // site, so landing at the top instead is a real cost.
           ref={triggerRef}
           onClick={reenter}
-          className="mt-3 text-term-sm text-term-ink transition-colors duration-term-instant hover:text-term-accent"
+          className="mt-3 text-term-sm text-term-ink underline-offset-4 hover:underline"
         >
           [ view the 3d desk ]
         </button>

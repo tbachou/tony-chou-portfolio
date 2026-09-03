@@ -7,6 +7,9 @@ import type { Reading } from '../types';
 import type { IngestWindow } from '../ingest/window';
 import { parseInstantaneousValues } from './parse';
 
+/** Upstream request budget. Well above any healthy response, well below a CI job timeout. */
+const UPSTREAM_TIMEOUT_MS = 30_000;
+
 /**
  * Longest span asked for in one request. The first run on an empty table wants
  * about two and a half years, which as a single request is tens of thousands of
@@ -102,7 +105,12 @@ export async function fetchInstantaneousValues(
   const readings: Reading[] = [];
 
   for (const span of chunk(window)) {
-    const response = await fetchImpl(buildUrl(siteId, span, timeZone));
+    const response = await fetchImpl(buildUrl(siteId, span, timeZone), {
+    // A hung upstream used to block the job until the CI timeout killed it,
+    // burning the whole window instead of failing into the FAILED run path in
+    // seconds. Everything else about a failure here is recorded promptly.
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
 
     if (!response.ok) {
       throw new Error(

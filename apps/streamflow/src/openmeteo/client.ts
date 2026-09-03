@@ -7,6 +7,9 @@ import type { IngestWindow } from '../ingest/window';
 import type { ForecastValue } from '../types';
 import { assertStorableLead, parsePreviousRuns, previousRunColumn } from './parse';
 
+/** Upstream request budget. Well above any healthy response, well below a CI job timeout. */
+const UPSTREAM_TIMEOUT_MS = 30_000;
+
 /**
  * Formats an instant as the plain calendar day Open-Meteo's date parameters
  * take. Derived in UTC, because the request pins GMT and the store holds
@@ -66,7 +69,12 @@ export async function fetchPreviousRuns(
   leadHours: number,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ForecastValue[]> {
-  const response = await fetchImpl(buildPreviousRunsUrl(window, leadHours));
+  const response = await fetchImpl(buildPreviousRunsUrl(window, leadHours), {
+    // A hung upstream used to block the job until the CI timeout killed it,
+    // burning the whole window instead of failing into the FAILED run path in
+    // seconds. Everything else about a failure here is recorded promptly.
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
 
   if (!response.ok) {
     throw new Error(

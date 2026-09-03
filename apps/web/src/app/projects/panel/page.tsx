@@ -126,7 +126,9 @@ export default function PanelProjectPage() {
               <img
                 src="/panel-demo.gif"
                 alt="Panel reviewing a sample diff: security, correctness, and simplification agents run concurrently, then the orchestrator merges findings into a ranked list."
-                className="w-full"
+                className="w-full h-auto"
+                width={1400}
+                height={905}
               />
             </div>
           </section>
