@@ -318,10 +318,10 @@ export function GradeGame() {
                       which a non-climber needs and which gives away nothing
                       about THIS problem. */}
                   <section className="mt-8 border-t border-term-border pt-5">
-                    <p className="text-term-sm text-term-muted">
+                    <h2 className="text-term-sm text-term-muted">
                       <span aria-hidden="true">$ </span>
                       man v-scale
-                    </p>
+                    </h2>
                     <dl className="mt-3 space-y-2 text-term-sm leading-relaxed">
                       <div>
                         <dt className="inline font-bold text-term-ink">V0–V2 </dt>

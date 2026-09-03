@@ -166,7 +166,9 @@ export default function CarryoverProjectPage() {
               <img
                 src="/carryover-demo.gif"
                 alt="Carryover drafting a home exercise program: a case profile is filled in, three agents run (exercise selection, safety review, patient instructions), then a draft handout appears with clinician-review flags and exercise cards awaiting sign-off."
-                className="w-full"
+                className="w-full h-auto"
+                width={1400}
+                height={905}
               />
             </div>
           </section>

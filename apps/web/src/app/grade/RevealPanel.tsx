@@ -64,10 +64,10 @@ export function RevealPanel({ reveal, position, total, fromCache }: RevealPanelP
       {/* The reveal replaces the pad, so announce it rather than leaving a
           screen-reader visitor to discover the page changed under them. */}
       <div role="status" aria-live="polite">
-        <p className="text-term-sm text-term-muted">
+        <h2 className="text-term-sm text-term-muted">
           <span aria-hidden="true">$ </span>
           cat answer.txt
-        </p>
+        </h2>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <div className="border border-term-border p-4">
@@ -100,10 +100,10 @@ export function RevealPanel({ reveal, position, total, fromCache }: RevealPanelP
       </div>
 
       <section className="mt-10">
-        <p className="text-term-sm text-term-muted">
+        <h2 className="text-term-sm text-term-muted">
           <span aria-hidden="true">$ </span>
           cat claude-analysis.txt
-        </p>
+        </h2>
 
         {reveal.model ? (
           <>

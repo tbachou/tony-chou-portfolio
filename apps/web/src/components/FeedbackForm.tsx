@@ -149,7 +149,7 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
             <button
               type="button"
               onClick={resetToIdle}
-              className="mt-3 text-term-sm text-term-ink transition-colors duration-term-instant hover:text-term-accent"
+              className="mt-3 text-term-sm text-term-ink underline-offset-4 hover:underline"
             >
               [ send more feedback ]
             </button>
@@ -215,7 +215,7 @@ export function FeedbackForm({ source, variant, className = '' }: FeedbackFormPr
             <button
               type="submit"
               disabled={isSubmitting}
-              className="mt-4 text-term-sm text-term-ink transition-colors duration-term-instant hover:text-term-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-term-ink"
+              className="mt-4 text-term-sm text-term-ink underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:no-underline"
             >
               {isSubmitting ? '[ sending... ]' : '[ send feedback ]'}
             </button>

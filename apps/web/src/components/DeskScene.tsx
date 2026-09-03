@@ -651,7 +651,7 @@ function ImportedDesk({
   onClick,
   onBloomTargetsReady,
 }: ScreenInteractionProps) {
-  const { scene } = useGLTF('/Untitled.glb');
+  const { scene } = useGLTF('/desk-scene.glb');
   const { gl } = useThree();
   const [transform, setTransform] = useState<{
     scale: number;
@@ -967,4 +967,4 @@ function ImportedDesk({
   );
 }
 
-useGLTF.preload('/Untitled.glb');
+useGLTF.preload('/desk-scene.glb');
