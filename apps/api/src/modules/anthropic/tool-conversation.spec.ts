@@ -178,6 +178,7 @@ describe('runToolConversation', () => {
       toolMessage([{ id: 'tu_1' }]),
       toolMessage([{ id: 'tu_2' }]),
       toolMessage([{ id: 'tu_3' }]),
+      textMessage('answering with what I have'),
     ]);
 
     const result = await runToolConversation(create, 'model-x', {
@@ -187,10 +188,101 @@ describe('runToolConversation', () => {
 
     // Without this cap a model whose executor keeps refusing (a per turn
     // search cap) would spin forever at one upstream call per iteration.
-    expect(bodies).toHaveLength(3);
+    // Three capped iterations, then one recovery call that cannot ask for a
+    // fourth because the tools are withheld from it.
+    expect(bodies).toHaveLength(4);
+    expect(bodies[3].tools).toBeUndefined();
     expect(result.stoppedOnIterationCap).toBe(true);
-    expect(result.text).toBe('');
+    expect(result.recoveredWithoutTools).toBe(true);
+    expect(result.text).toBe('answering with what I have');
     expect(result.toolCallCount).toBe(3);
+  });
+
+  it('asks once more, without tools, when the model ends its turn saying nothing', async () => {
+    // The measured failure: `retrieval-rejected-feature` ended `end_turn` with
+    // no text block after spending its searches, twice, and the visitor got
+    // the guard's deflection instead of an answer the corpus held.
+    const { create, bodies } = recordingCreate([
+      toolMessage([{ id: 'tu_1' }]),
+      { content: [], stop_reason: 'end_turn', usage: usage() },
+      textMessage('the spec I dropped was the evidence check'),
+    ]);
+
+    const result = await runToolConversation(create, 'model-x', base);
+
+    expect(bodies).toHaveLength(3);
+    // Withholding the tools IS the mechanism: with none offered the only turn
+    // left to take is the answer.
+    expect(bodies[2].tools).toBeUndefined();
+    expect(result.text).toBe('the spec I dropped was the evidence check');
+    expect(result.recoveredWithoutTools).toBe(true);
+    expect(result.stoppedOnIterationCap).toBe(false);
+    expect(result.stoppedOnMaxTokens).toBe(false);
+  });
+
+  it('bills the recovery call rather than losing its tokens', async () => {
+    const { create } = recordingCreate([
+      toolMessage([{ id: 'tu_1' }]),
+      { content: [], stop_reason: 'end_turn', usage: usage() },
+      textMessage('recovered'),
+    ]);
+
+    const result = await runToolConversation(create, 'model-x', base);
+
+    // Three billed calls at usage() each; the recovery is not free and the
+    // caller's daily spend backstop has to see it.
+    expect(result.inputTokens).toBe(3 * usage().input_tokens);
+    expect(result.outputTokens).toBe(3 * usage().output_tokens);
+  });
+
+  it('gives up rather than looping when the recovery call also says nothing', async () => {
+    const { create, bodies } = recordingCreate([
+      toolMessage([{ id: 'tu_1' }]),
+      { content: [], stop_reason: 'end_turn', usage: usage() },
+      { content: [], stop_reason: 'end_turn', usage: usage() },
+    ]);
+
+    const result = await runToolConversation(create, 'model-x', base);
+
+    // Exactly one recovery. A second would be a retry loop under another
+    // name, on the path reached precisely when the model is misbehaving.
+    expect(bodies).toHaveLength(3);
+    expect(result.text).toBe('');
+    expect(result.recoveredWithoutTools).toBe(true);
+  });
+
+  it('does not spend a recovery call when no tools were offered', async () => {
+    const { create, bodies } = recordingCreate([
+      { content: [], stop_reason: 'end_turn', usage: usage() },
+    ]);
+
+    const result = await runToolConversation(create, 'model-x', {
+      ...base,
+      tools: [],
+      maxIterations: 1,
+    });
+
+    // The retry would re-send a byte-identical body and bill for it: there
+    // were no tools to withhold.
+    expect(bodies).toHaveLength(1);
+    expect(result.text).toBe('');
+    expect(result.recoveredWithoutTools).toBe(false);
+  });
+
+  it('does not recover a whitespace-only answer into a second blank one', async () => {
+    const { create, bodies } = recordingCreate([
+      toolMessage([{ id: 'tu_1' }]),
+      { content: [{ type: 'text', text: '   \n ' }], stop_reason: 'end_turn', usage: usage() },
+      textMessage('a real answer'),
+    ]);
+
+    const result = await runToolConversation(create, 'model-x', base);
+
+    // Whitespace is not an answer: the guard's blank check would reject it
+    // downstream, so it gets the same recovery an empty content block does.
+    expect(bodies).toHaveLength(3);
+    expect(result.text).toBe('a real answer');
+    expect(result.recoveredWithoutTools).toBe(true);
   });
 
   it('treats a tool_use stop_reason with no tool_use block as a plain answer', async () => {

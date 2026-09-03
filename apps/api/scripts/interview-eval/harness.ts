@@ -346,7 +346,11 @@ export async function runCase(
   // judges are independent, so they run concurrently (at most
   // 3 × --concurrency small judge calls in flight).
   const [honesty, grounding, persona] = await Promise.all([
-    scoreHonesty({ tonyRaw: capture.tonyRaw, story: prepared.story }),
+    scoreHonesty({
+      tonyRaw: capture.tonyRaw,
+      story: prepared.story,
+      retrieved: capture.retrieved,
+    }),
     scoreGrounding({
       tonyRaw: capture.tonyRaw,
       story: prepared.story,

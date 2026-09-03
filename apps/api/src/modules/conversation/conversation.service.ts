@@ -310,15 +310,27 @@ export class ConversationService {
           interviewerResult.text,
           isFinal,
         ),
-        // A backstop, not an editor: the prompt asks for 2-4 sentences, and
-        // 600 leaves room for a slightly long answer to finish. At 400 the
-        // model's longer answers truncated mid-sentence (spec 0011's eval
+        // A backstop, not an editor: the prompt asks for 2-4 sentences. At 400
+        // the model's longer answers truncated mid-sentence (spec 0011's eval
         // caught it: persona judge scored the cut-off answers 0).
         //
-        // This is per model turn, not per generation. A searching turn spends
-        // a few of these tokens on the tool call itself and still has the full
-        // budget for the answer that follows.
-        maxTokens: 600,
+        // Raised from 600 on 2026-09-03, because THINKING TOKENS COUNT
+        // AGAINST THIS. The old comment claimed a searching turn "still has
+        // the full budget for the answer that follows", and that premise is
+        // simply false now: the model thinks before it answers, and the
+        // thinking is billed out of the same allowance. Reproduced five times
+        // on `retrieval-rejected-feature`, twice with `stop_reason:
+        // max_tokens` and content blocks `[thinking]` — 600 thinking tokens,
+        // ZERO text — and once with 338 thinking tokens followed by an answer
+        // cut off mid sentence. The empty ones reached the visitor as the
+        // guard's deflection; the truncated one is what the persona judge has
+        // been marking down.
+        //
+        // 1500 fits roughly 600 of thinking plus a complete 2-4 sentence
+        // answer with room to spare. It is a CAP, not a spend: unused tokens
+        // cost nothing, and the model does not think harder because the
+        // ceiling moved.
+        maxTokens: 1500,
         tools: retrievalEnabled ? [SEARCH_KNOWLEDGE_TOOL] : [],
         executeTool: retrieval.execute,
         // One model turn when nothing is offered: with no tools there is
@@ -337,6 +349,7 @@ export class ConversationService {
         retrieval.stats,
         tonyGenerated.stoppedOnIterationCap,
         tonyGenerated.stoppedOnMaxTokens,
+        tonyGenerated.recoveredWithoutTools,
       );
 
       const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
@@ -459,6 +472,7 @@ export class ConversationService {
     stats: RetrievalStats,
     stoppedOnIterationCap: boolean,
     stoppedOnMaxTokens: boolean,
+    recoveredWithoutTools: boolean,
   ): void {
     // Fires for anything that happened, not only for a completed search. The
     // malformed and unknown tool paths skip every other counter, so without
@@ -469,7 +483,8 @@ export class ConversationService {
       stats.malformed === 0 &&
       stats.unknownTool === 0 &&
       !stoppedOnIterationCap &&
-      !stoppedOnMaxTokens;
+      !stoppedOnMaxTokens &&
+      !recoveredWithoutTools;
     if (nothingHappened) return;
     this.logger.log(
       JSON.stringify({
@@ -495,6 +510,10 @@ export class ConversationService {
           // answered. Without this the turn looked like an ownership guard
           // failure, which is a different problem with a different fix.
           stoppedOnMaxTokens,
+          // The turn cost one extra model call because the model stopped
+          // without answering. Rare by design; a rising count is a prompt or
+          // cap problem, not something to keep paying for.
+          recoveredWithoutTools,
         },
       }),
     );
