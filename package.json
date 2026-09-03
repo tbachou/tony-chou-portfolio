@@ -1,6 +1,7 @@
 {
   "name": "tony-chou-portfolio",
   "private": true,
+  "license": "UNLICENSED",
   "engines": {
     "node": ">=22.0.0"
   },

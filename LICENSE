@@ -1,0 +1,24 @@
+Copyright (c) 2026 Tony Chou. All rights reserved.
+
+This repository is published so that the work can be READ: the source, the
+specs, the decision records and the eval results are here as evidence of how
+the work was done. Publication is not a grant of license.
+
+No permission is given to copy, modify, distribute, sublicense, or use any
+part of this repository, in source or compiled form, in any other project or
+product, commercial or otherwise. This applies to the code and equally to the
+written content: the specifications under docs/specs/, the eval datasets and
+results under docs/evals/, the agent prompt files, and the biographical and
+professional material the retrieval corpus is built from.
+
+Two ordinary exceptions, stated so nobody has to ask:
+
+  - Reading, and quoting a short passage with attribution, for discussion,
+    review, or an interview about this work.
+  - The rights GitHub's Terms of Service grant to every public repository,
+    which are viewing and forking within GitHub.
+
+Third-party dependencies are not covered by this notice. They remain under
+their own licenses, which are recorded in their own packages.
+
+For anything else, ask. The answer may well be yes.
