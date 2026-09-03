@@ -82,7 +82,13 @@ const publishedRunSchema = z
     specPath: z.string().min(1),
     delta: perDimensionNumbers.optional(),
     noiseBand: perDimensionNumbers.optional(),
-    verdict: perDimensionVerdict.optional()
+    verdict: perDimensionVerdict.optional(),
+    /**
+     * Why this measured phase has no delta. Set exactly when `delta` and
+     * `verdict` are absent, and rendered in their place, so a blank cell on
+     * the page always carries its reason rather than reading as a zero.
+     */
+    deltaUnavailable: z.string().min(1).optional()
   })
   .strict()
   .superRefine((entry, ctx) => {
@@ -90,8 +96,19 @@ const publishedRunSchema = z
     // and forbidden when there is not: a phase that took no run has nothing
     // to compare, and a row carrying a delta with no results file behind it
     // would be the transcription this whole design refuses.
-    const measuredOnly = ['resultsFile', 'delta', 'noiseBand', 'verdict'] as const;
-    for (const key of measuredOnly) {
+    //
+    // `delta` and `verdict` are the exception, and phase three is why. A run
+    // can be fully measured and still have NOTHING to compare against, when
+    // the phase changed the dataset: the golden set went from 22 cases to 27,
+    // the dataset hash moved, and a delta across that boundary is arithmetic
+    // between two different instruments. The two honest shapes are a delta or
+    // a stated reason there is none. A zero delta is NOT one of them — it
+    // asserts "nothing moved", which is a claim, and the page would publish it
+    // as one.
+    const alwaysWhenMeasured = ['resultsFile', 'noiseBand'] as const;
+    const comparisonOnly = ['delta', 'verdict'] as const;
+
+    for (const key of alwaysWhenMeasured) {
       const present = entry[key] !== undefined;
       if (entry.measured && !present) {
         ctx.addIssue({
@@ -107,6 +124,48 @@ const publishedRunSchema = z
           message: `phase ${entry.phase} is not measured, so ${key} must be absent`
         });
       }
+    }
+
+    for (const key of comparisonOnly) {
+      const present = entry[key] !== undefined;
+      if (!entry.measured && present) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `phase ${entry.phase} is not measured, so ${key} must be absent`
+        });
+      }
+    }
+
+    // Exactly one of the two honest shapes, never both and never neither.
+    // Without this, dropping a delta would silently become a way to publish a
+    // measured phase with no comparison and no explanation, which is the same
+    // omission the noise band exists to prevent.
+    const hasComparison = entry.delta !== undefined && entry.verdict !== undefined;
+    const hasReason = entry.deltaUnavailable !== undefined;
+    if (entry.measured && hasComparison === hasReason) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['deltaUnavailable'],
+        message: hasReason
+          ? `phase ${entry.phase} carries both a delta and a reason there is none; give one or the other`
+          : `phase ${entry.phase} is measured but has no delta/verdict, so deltaUnavailable must say why not (e.g. the dataset hash changed)`
+      });
+    }
+    if (!entry.measured && hasReason) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['deltaUnavailable'],
+        message: `phase ${entry.phase} is not measured, so deltaUnavailable must be absent`
+      });
+    }
+    // A half stated comparison reads as a delta with no verdict on the page.
+    if (entry.measured && (entry.delta === undefined) !== (entry.verdict === undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['verdict'],
+        message: `phase ${entry.phase} must carry delta and verdict together or neither`
+      });
     }
   });
 
@@ -433,6 +492,13 @@ function checkRecordedDelta(
   run: RunSummary,
   baseline: RunSummary | null
 ): void {
+  // Nothing recorded, nothing to falsify. This function's job is that a
+  // recorded delta is either checked or impossible; an entry that publishes no
+  // delta at all, and says why in `deltaUnavailable`, has made no claim to
+  // check. The hash guards below cannot stand in for this one: a phase that
+  // CHANGED the dataset becomes the new baseline, so its run and the baseline
+  // agree on both hashes and every early return here is missed.
+  if (entry.delta === undefined) return;
   if (baseline === null) return;
   if (baseline.datasetHash !== run.datasetHash) return;
   // AC-11: two runs are comparable only when both hashes match. A run with no

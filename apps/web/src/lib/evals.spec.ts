@@ -202,14 +202,85 @@ describe('loadPublished', () => {
   });
 
   it('refuses a measured entry with no comparison facts (AC-2)', () => {
-    const { delta: _delta, ...withoutDelta } = measuredEntry;
+    const { resultsFile: _resultsFile, ...withoutResults } = measuredEntry;
     const dir = fixture({
       manifest: {
-        publishedRuns: [withoutDelta],
+        publishedRuns: [withoutResults],
         baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
       }
     });
-    expect(() => loadPublished(dir)).toThrow(/is measured, so delta is required/);
+    expect(() => loadPublished(dir)).toThrow(/is measured, so resultsFile is required/);
+  });
+
+  it('refuses a measured entry that drops the delta without saying why', () => {
+    // Dropping a delta must not become a quiet way to publish a measured phase
+    // with no comparison and no explanation.
+    const { delta: _delta, verdict: _verdict, ...withoutComparison } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [withoutComparison],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/deltaUnavailable must say why not/);
+  });
+
+  it('accepts a measured phase that states why it has no delta (phase three)', () => {
+    // A phase that CHANGES the dataset has nothing to compare against. The
+    // honest record is a stated reason, not a zero delta, which would publish
+    // "nothing moved" as a measured claim.
+    const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [
+          {
+            ...rest,
+            deltaUnavailable: 'the golden set went from 22 cases to 27, so the dataset hash changed'
+          }
+        ],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    const manifest = loadPublished(dir);
+    expect(manifest.publishedRuns[0].delta).toBeUndefined();
+    expect(manifest.publishedRuns[0].verdict).toBeUndefined();
+    expect(manifest.publishedRuns[0].deltaUnavailable).toMatch(/dataset hash changed/);
+  });
+
+  it('refuses an entry carrying both a delta and a reason it has none', () => {
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [{ ...measuredEntry, deltaUnavailable: 'cannot be both' }],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/both a delta and a reason there is none/);
+  });
+
+  it('refuses a delta with no verdict beside it', () => {
+    // Half a comparison renders as a number with nothing saying whether it
+    // means anything, which is the reading the noise band exists to prevent.
+    const { verdict: _verdict, ...halfStated } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [halfStated],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/delta and verdict together or neither/);
+  });
+
+  it('refuses deltaUnavailable on a phase that took no measurement', () => {
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [
+          measuredEntry,
+          { ...unmeasuredEntry, deltaUnavailable: 'no run was taken' }
+        ],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/is not measured, so deltaUnavailable must be absent/);
   });
 
   it('refuses an unmeasured entry that carries scores anyway (AC-2)', () => {
