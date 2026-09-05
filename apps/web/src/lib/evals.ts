@@ -498,6 +498,17 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
       throw new Error(`${label}: resultsFile does not exist: ${results}`);
     }
     const run = parseResults(results, `${label}: its results file`);
+    // The manifest may not contradict its own evidence. `date` is hand typed
+    // and became load bearing when the sibling scan started ordering by it, so
+    // a row could be backdated to slide a comparable sibling out of the
+    // window — one field, on the lying row, no other file touched. The run
+    // already carries the answer.
+    if (run.meta.date.slice(0, 10) !== entry.date) {
+      throw new Error(
+        `${label}: the manifest dates this phase ${entry.date}, but ${entry.resultsFile} was ` +
+          `measured ${run.meta.date}. The manifest cannot disagree with the run it points at.`
+      );
+    }
     if (run.meta.gitDirty) {
       throw new Error(
         `${label}: ${entry.resultsFile} was measured from a dirty working tree (meta.gitDirty is true). ` +
@@ -608,6 +619,22 @@ function checkRecordedDelta(
     // the words, which is v1's prose/number asymmetry surviving in a narrower
     // form.
     //
+    // THE RULE THIS CHECK LIVES BY, learned over five rewrites: every field it
+    // depends on must be falsifiable against a committed artifact. `datasetHash`
+    // and `corpusHash` come from the results files. `date` is cross checked
+    // against `meta.date` in the first pass, which is the gap that made this
+    // very loop bypassable. `notComparableTo` names a file that must exist.
+    //
+    // WHAT IS DELIBERATELY NOT CLOSED, because no committed artifact
+    // contradicts it: the sibling set is the manifest, so a comparable run can
+    // still be hidden by omitting it, demoting it to `measured: false`, or its
+    // being the baseline rather than a published phase. Scanning `results/`
+    // instead was tried and is WRONG — the directory holds 13 runs against 2
+    // published, unpublished retries are routine, and phase three's own
+    // attempt three minutes earlier would falsify phase three. There is no
+    // cheap answer here, and inventing one is precisely what produced the two
+    // worst versions of this check.
+    //
     // Bounded to siblings published no later than this entry, and that bound
     // is what keeps the earlier failures dead: a phase that lands afterwards
     // cannot retroactively make this row a lie (v3 inverted), and the current
@@ -616,7 +643,11 @@ function checkRecordedDelta(
     // than inferring one.
     for (const sibling of measured) {
       if (sibling.entry.phase === entry.phase) continue;
-      if (sibling.entry.date > entry.date) continue;
+      // Ordered on the runs' own metadata rather than the manifest's `date`.
+      // Belt and braces with the equality check above: this comparison stays
+      // sound even if that one is ever relaxed, and it is the field the
+      // evidence actually fixes.
+      if (sibling.summary.date > run.date) continue;
       const siblingSameInstrument =
         sibling.summary.datasetHash === run.datasetHash &&
         !(

@@ -398,10 +398,15 @@ describe('loadPublished', () => {
         results: runFile({
           datasetHash: 'hash-SAME',
           corpusHash: 'corpus-SAME',
+          date: '2026-09-05T00:00:00.000Z',
           cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
         }),
         extraResults: {
-          'twin.json': runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' })
+          'twin.json': runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            date: '2026-09-01T00:00:00.000Z'
+          })
         }
       });
       expect(() => loadPublished(dir)).toThrow(/scored the\s+SAME instrument/);
@@ -431,12 +436,65 @@ describe('loadPublished', () => {
           ],
           baselineHistory: history
         },
-        results: runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' }),
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          corpusHash: 'corpus-SAME',
+          date: '2026-08-01T00:00:00.000Z'
+        }),
         extraResults: {
-          'twin.json': runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' })
+          'twin.json': runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            date: '2026-09-30T00:00:00.000Z'
+          })
         }
       });
       expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+    it('refuses an entry backdated to slide a comparable sibling out of view', () => {
+      // The date bound only ever had a test for its PERMISSIVENESS. `date` is
+      // hand typed, and once the sibling scan ordered by it, moving it one day
+      // earlier on the lying row emptied the window — no other row touched, no
+      // other file edited. The run's own timestamp is the evidence that
+      // contradicts it.
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [
+            {
+              ...measuredEntry,
+              phase: 1,
+              resultsFile: 'results/twin.json',
+              writeupFile: 'phase-one.md',
+              date: '2026-09-01'
+            },
+            {
+              ...claiming('results/other.json'),
+              phase: 4,
+              writeupFile: 'phase-two.md',
+              specPath: unmeasuredEntry.specPath,
+              resultsFile: 'results/run.json',
+              // Backdated. The run below says 2026-09-05.
+              date: '2026-08-31'
+            }
+          ],
+          baselineHistory: history
+        },
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          corpusHash: 'corpus-SAME',
+          date: '2026-09-05T10:00:00.000Z',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        }),
+        extraResults: {
+          'twin.json': runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            date: '2026-09-01T00:00:00.000Z'
+          })
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow(/cannot disagree with the run it points at/);
     });
 
     it('refuses a claim naming a file that does not exist', () => {
