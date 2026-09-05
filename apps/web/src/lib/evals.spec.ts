@@ -46,20 +46,24 @@ function caseRow(
 
 function runFile(overrides: {
   datasetHash?: string;
+  corpusHash?: string;
   gitDirty?: boolean;
+  gitCommit?: string;
+  date?: string;
   cases?: ReturnType<typeof caseRow>[];
 }) {
   return {
     _readMeFirst: 'model authored text, not a claim by Tony Chou',
     meta: {
-      date: '2026-08-30T04:39:16.206Z',
-      gitCommit: 'bf4c88e45bbf27aa092b1d7341bb3fa03726e75c',
+      date: overrides.date ?? '2026-08-30T04:39:16.206Z',
+      gitCommit: overrides.gitCommit ?? 'bf4c88e45bbf27aa092b1d7341bb3fa03726e75c',
       gitDirty: overrides.gitDirty ?? false,
       provider: 'anthropic',
       generatorModel: 'claude-sonnet-5',
       judgeModel: 'claude-haiku-4-5',
       caseCount: (overrides.cases ?? [caseRow({})]).length,
       datasetHash: overrides.datasetHash ?? 'hash-a',
+      ...(overrides.corpusHash !== undefined && { corpusHash: overrides.corpusHash }),
       estimatedCostUsd: 0.19
     },
     cases: overrides.cases ?? [caseRow({})]
@@ -245,6 +249,133 @@ describe('loadPublished', () => {
     expect(manifest.publishedRuns[0].delta).toBeUndefined();
     expect(manifest.publishedRuns[0].verdict).toBeUndefined();
     expect(manifest.publishedRuns[0].deltaUnavailable).toMatch(/dataset hash changed/);
+  });
+
+  /**
+   * The exploit the pre-deploy gate's adversarial pass confirmed, landed as
+   * the specification before the fix.
+   *
+   * `deltaUnavailable` is prose where `delta` is a number, and a number is
+   * falsifiable: `checkRecordedDelta` recomputes it and refuses a mismatch.
+   * The reason had no such check, so the same lie told in words passed where
+   * told as a figure it was caught. That is not a hypothetical: it hides a
+   * real regression behind "not comparable" on a page whose whole argument is
+   * that a published number cannot drift from the record.
+   */
+  describe('a deltaUnavailable reason that is falsifiable, and false', () => {
+    const hiddenRegression = (baselineMeta: { gitCommit?: string; date?: string }) => {
+      const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+      return {
+        manifest: {
+          publishedRuns: [
+            {
+              ...rest,
+              deltaUnavailable:
+                'The golden set grew from 22 cases to 27, so no comparison is possible.'
+            }
+          ],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
+        // Scores 0 against a baseline of 1 — a true −1.000 regression — while
+        // both hashes match, so the delta WAS computable and the stated reason
+        // is simply untrue.
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          corpusHash: 'corpus-SAME',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        }),
+        baseline: {
+          noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 },
+          run: runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            cases: [caseRow({})],
+            ...baselineMeta
+          })
+        }
+      };
+    };
+
+    it('refuses it when the baseline is a DIFFERENT run that scored the same instrument', () => {
+      const dir = fixture(
+        hiddenRegression({ gitCommit: 'aaaaaaa0000000000000000000000000000aaaaa', date: '2026-08-01T00:00:00.000Z' })
+      );
+      expect(() => loadPublished(dir)).toThrow(/the delta WAS computable/);
+    });
+
+    it('accepts it when this phase IS the baseline, which is the honest case', () => {
+      // The legitimate shape the field exists for: a phase that changed the
+      // dataset becomes the new baseline, so its run and the baseline agree on
+      // every hash and comparing it to itself would yield a meaningless zero.
+      // The real committed record is exactly this — baseline.json is byte
+      // identical to the phase three results file.
+      const dir = fixture(hiddenRegression({}));
+      expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+    it('still refuses the same lie when it is told as a number rather than prose', () => {
+      // The control that makes the case above a finding rather than a nitpick:
+      // this path was already covered, and the fix closes the gap between them.
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [{ ...measuredEntry, delta: { honesty: 0, grounding: 0, persona: 0 } }],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        }),
+        baseline: {
+          noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 },
+          run: runFile({ datasetHash: 'hash-SAME', cases: [caseRow({})] })
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow(/recorded delta for honesty is 0/);
+    });
+  });
+
+  it('refuses a reason that is only whitespace', () => {
+    // `min(1)` rejects '' and nothing else, so a space satisfied it and the
+    // page rendered "No delta is published for this phase." with the reason
+    // collapsed to nothing by HTML — the blank cell the field exists to
+    // prevent, wearing a heading.
+    const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+    for (const blank of [' ', '   \t\n  ']) {
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [{ ...rest, deltaUnavailable: blank }],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow();
+    }
+  });
+
+  it('refuses a reason long enough to swamp the page', () => {
+    // Inlined verbatim into statically generated HTML; 50k took the page from
+    // 15KB to 65KB. A ceiling, not a style rule.
+    const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [{ ...rest, deltaUnavailable: 'B'.repeat(50_000) }],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow();
+  });
+
+  it('tells a half-stated delta what is actually wrong with it', () => {
+    // Telling the author to explain why there is no delta, when a delta is
+    // sitting in their file, points at the wrong fix.
+    const { verdict: _verdict, ...halfStated } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [halfStated],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/delta and verdict together or neither/);
+    expect(() => loadPublished(dir)).not.toThrow(/deltaUnavailable must say why not/);
   });
 
   it('refuses an entry carrying both a delta and a reason it has none', () => {

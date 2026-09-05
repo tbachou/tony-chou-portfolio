@@ -87,8 +87,15 @@ const publishedRunSchema = z
      * Why this measured phase has no delta. Set exactly when `delta` and
      * `verdict` are absent, and rendered in their place, so a blank cell on
      * the page always carries its reason rather than reading as a zero.
+     *
+     * Trimmed before the length check, because `min(1)` alone rejected only
+     * the empty string: a single space satisfied it, HTML collapsed it, and
+     * the page rendered the bold "No delta is published for this phase."
+     * followed by nothing — the blank cell this field exists to prevent,
+     * wearing a heading. Capped because it is inlined verbatim into
+     * statically generated HTML.
      */
-    deltaUnavailable: z.string().min(1).optional()
+    deltaUnavailable: z.string().trim().min(1).max(500).optional()
   })
   .strict()
   .superRefine((entry, ctx) => {
@@ -137,13 +144,29 @@ const publishedRunSchema = z
       }
     }
 
+    const hasReason = entry.deltaUnavailable !== undefined;
+
+    // A half stated comparison reads as a delta with no verdict on the page.
+    // Checked FIRST and made exclusive, because the shape rule below reads a
+    // half state as "no comparison at all" and would then tell the author to
+    // explain why there is no delta while a delta sits in their file. Being
+    // told to add the wrong field is worse than being told nothing.
+    const halfStated =
+      entry.measured && (entry.delta === undefined) !== (entry.verdict === undefined);
+    if (halfStated) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['verdict'],
+        message: `phase ${entry.phase} must carry delta and verdict together or neither`
+      });
+    }
+
     // Exactly one of the two honest shapes, never both and never neither.
     // Without this, dropping a delta would silently become a way to publish a
     // measured phase with no comparison and no explanation, which is the same
     // omission the noise band exists to prevent.
     const hasComparison = entry.delta !== undefined && entry.verdict !== undefined;
-    const hasReason = entry.deltaUnavailable !== undefined;
-    if (entry.measured && hasComparison === hasReason) {
+    if (entry.measured && !halfStated && hasComparison === hasReason) {
       ctx.addIssue({
         code: 'custom',
         path: ['deltaUnavailable'],
@@ -157,14 +180,6 @@ const publishedRunSchema = z
         code: 'custom',
         path: ['deltaUnavailable'],
         message: `phase ${entry.phase} is not measured, so deltaUnavailable must be absent`
-      });
-    }
-    // A half stated comparison reads as a delta with no verdict on the page.
-    if (entry.measured && (entry.delta === undefined) !== (entry.verdict === undefined)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['verdict'],
-        message: `phase ${entry.phase} must carry delta and verdict together or neither`
       });
     }
   });
@@ -492,13 +507,41 @@ function checkRecordedDelta(
   run: RunSummary,
   baseline: RunSummary | null
 ): void {
-  // Nothing recorded, nothing to falsify. This function's job is that a
-  // recorded delta is either checked or impossible; an entry that publishes no
-  // delta at all, and says why in `deltaUnavailable`, has made no claim to
-  // check. The hash guards below cannot stand in for this one: a phase that
-  // CHANGED the dataset becomes the new baseline, so its run and the baseline
-  // agree on both hashes and every early return here is missed.
-  if (entry.delta === undefined) return;
+  // An entry that publishes no delta still makes a CLAIM — "there was nothing
+  // to compare" — and that claim is falsifiable, so it gets checked like any
+  // other. Letting it through unchecked was the hole the pre-deploy gate
+  // found: the same lie is caught when told as a number and passes when told
+  // in prose, which is backwards, because the prose is what a reader believes.
+  //
+  // Falsifiable exactly when the baseline still in force scored the SAME
+  // instrument and is a different run. The legitimate case this field exists
+  // for is a phase that changed the dataset and thereby BECAME the baseline:
+  // there, run and baseline agree on every hash and comparing the run to
+  // itself would yield a meaningless zero. `gitCommit` plus `date` identify
+  // that, and the committed record is exactly it — `baseline.json` is byte
+  // identical to the phase three results file.
+  if (entry.delta === undefined) {
+    const sameInstrument =
+      baseline !== null &&
+      baseline.datasetHash === run.datasetHash &&
+      !(
+        baseline.corpusHash !== undefined &&
+        run.corpusHash !== undefined &&
+        baseline.corpusHash !== run.corpusHash
+      );
+    const runIsTheBaseline =
+      baseline !== null && baseline.gitCommit === run.gitCommit && baseline.date === run.date;
+    if (sameInstrument && !runIsTheBaseline) {
+      throw new Error(
+        `publishedRuns phase ${entry.phase}: publishes no delta and states a reason, but the ` +
+          `baseline (${(baseline as RunSummary).gitCommit.slice(0, 7)}, ${(baseline as RunSummary).date.slice(0, 10)}) ` +
+          `scored the same dataset (${run.datasetHash.slice(0, 12)}…) and the same corpus, ` +
+          'so the delta WAS computable and the stated reason is not true. ' +
+          'Publish delta and verdict, or move the baseline.'
+      );
+    }
+    return;
+  }
   if (baseline === null) return;
   if (baseline.datasetHash !== run.datasetHash) return;
   // AC-11: two runs are comparable only when both hashes match. A run with no
