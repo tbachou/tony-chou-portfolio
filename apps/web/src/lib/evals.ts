@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -436,6 +436,11 @@ function readJson(absolutePath: string, label: string): unknown {
   if (!existsSync(absolutePath)) {
     throw new Error(`${label} is missing: ${absolutePath}`);
   }
+  // A directory reaches readFileSync as EISDIR, which the catch below reports
+  // as "is not valid JSON" — true, and useless to whoever typed the path.
+  if (!statSync(absolutePath).isFile()) {
+    throw new Error(`${label} is not a file: ${absolutePath}`);
+  }
   try {
     return JSON.parse(readFileSync(absolutePath, 'utf8'));
   } catch (cause) {
@@ -471,6 +476,8 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
   // this loop runs, and re reading it made the cost grow with the number of
   // published phases for no gain.
   const baseline = loadBaselineSummary(evalsDir);
+  const measured: { entry: PublishedRun; summary: RunSummary }[] = [];
+
   for (const entry of manifest.publishedRuns) {
     const label = `publishedRuns phase ${entry.phase}`;
 
@@ -497,7 +504,13 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
           'A dirty run is never published; re run it on a committed tree.'
       );
     }
-    checkRecordedDelta(entry, summarise(run), baseline, evalsDir);
+    measured.push({ entry, summary: summarise(run) });
+  }
+
+  // Second pass, because a no-delta claim is about every run published by then,
+  // not only the one the entry names, and they are not all known until here.
+  for (const { entry, summary } of measured) {
+    checkRecordedDelta(entry, summary, baseline, evalsDir, measured);
   }
 
   return manifest;
@@ -531,7 +544,8 @@ function checkRecordedDelta(
   entry: PublishedRun,
   run: RunSummary,
   baseline: RunSummary | null,
-  evalsDir: string
+  evalsDir: string,
+  measured: { entry: PublishedRun; summary: RunSummary }[]
 ): void {
   // An entry that publishes no delta still makes a CLAIM — "there was nothing
   // to compare" — and that claim is falsifiable, so it gets checked like any
@@ -586,10 +600,42 @@ function checkRecordedDelta(
           'Publish delta and verdict, or name the run whose instrument actually differs.'
       );
     }
+
+    // Naming ONE incomparable run is necessary and not sufficient. The claim
+    // being made is that NOTHING was comparable, so any published sibling that
+    // scored the same instrument falsifies it — otherwise an author points at
+    // whichever old run happens to differ and publishes a regression behind
+    // the words, which is v1's prose/number asymmetry surviving in a narrower
+    // form.
+    //
+    // Bounded to siblings published no later than this entry, and that bound
+    // is what keeps the earlier failures dead: a phase that lands afterwards
+    // cannot retroactively make this row a lie (v3 inverted), and the current
+    // baseline is never consulted (v2's time bomb). `date` is already on every
+    // entry and is fixed once published, so this reads a recorded fact rather
+    // than inferring one.
+    for (const sibling of measured) {
+      if (sibling.entry.phase === entry.phase) continue;
+      if (sibling.entry.date > entry.date) continue;
+      const siblingSameInstrument =
+        sibling.summary.datasetHash === run.datasetHash &&
+        !(
+          sibling.summary.corpusHash !== undefined &&
+          run.corpusHash !== undefined &&
+          sibling.summary.corpusHash !== run.corpusHash
+        );
+      if (siblingSameInstrument) {
+        throw new Error(
+          `publishedRuns phase ${entry.phase}: publishes no delta, but phase ${sibling.entry.phase} ` +
+            `(${sibling.entry.resultsFile ?? 'its run'}, published ${sibling.entry.date}) scored the ` +
+            `SAME instrument (${run.datasetHash.slice(0, 12)}…). A delta against that run WAS ` +
+            'computable, so "no comparison was possible" is not true. Publish delta and verdict.'
+        );
+      }
+    }
     return;
   }
 
-  if (baseline === null) return;
   if (baseline === null) return;
   if (baseline.datasetHash !== run.datasetHash) return;
   // AC-11: two runs are comparable only when both hashes match. A run with no

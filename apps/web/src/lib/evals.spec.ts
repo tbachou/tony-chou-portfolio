@@ -368,6 +368,77 @@ describe('loadPublished', () => {
       expect(() => loadPublished(dir)).not.toThrow();
     });
 
+    it('refuses a claim when a sibling published by then scored the same instrument', () => {
+      // Naming ONE incomparable run is necessary and not sufficient: the claim
+      // is that NOTHING was comparable. Point at a genuinely different old run
+      // while a sibling on this run's own instrument sits in the manifest, and
+      // the prose/number asymmetry is back in a narrower form.
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [
+            {
+              ...measuredEntry,
+              phase: 1,
+              resultsFile: 'results/twin.json',
+              writeupFile: 'phase-one.md',
+              date: '2026-09-01'
+            },
+            {
+              ...claiming('results/other.json'),
+              phase: 4,
+              writeupFile: 'phase-two.md',
+              specPath: unmeasuredEntry.specPath,
+              resultsFile: 'results/run.json',
+              date: '2026-09-05'
+            }
+          ],
+          baselineHistory: history
+        },
+        // Phase 4's run: a collapse on the very instrument phase 1 scored.
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          corpusHash: 'corpus-SAME',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        }),
+        extraResults: {
+          'twin.json': runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' })
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow(/scored the\s+SAME instrument/);
+    });
+
+    it('is not falsified by a sibling published after it', () => {
+      // The bound that keeps v3's shield dead in its inverted form: a phase
+      // landing later must not retroactively make an older true row a lie.
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [
+            {
+              ...claiming('results/other.json'),
+              phase: 1,
+              resultsFile: 'results/run.json',
+              writeupFile: 'phase-one.md',
+              date: '2026-08-01'
+            },
+            {
+              ...measuredEntry,
+              phase: 4,
+              resultsFile: 'results/twin.json',
+              writeupFile: 'phase-two.md',
+              specPath: unmeasuredEntry.specPath,
+              date: '2026-09-30'
+            }
+          ],
+          baselineHistory: history
+        },
+        results: runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' }),
+        extraResults: {
+          'twin.json': runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' })
+        }
+      });
+      expect(() => loadPublished(dir)).not.toThrow();
+    });
+
     it('refuses a claim naming a file that does not exist', () => {
       const dir = fixture({
         manifest: { publishedRuns: [claiming('results/nope.json')], baselineHistory: history }
