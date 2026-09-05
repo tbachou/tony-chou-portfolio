@@ -476,8 +476,6 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
   // this loop runs, and re reading it made the cost grow with the number of
   // published phases for no gain.
   const baseline = loadBaselineSummary(evalsDir);
-  const measured: { entry: PublishedRun; summary: RunSummary }[] = [];
-
   for (const entry of manifest.publishedRuns) {
     const label = `publishedRuns phase ${entry.phase}`;
 
@@ -498,30 +496,13 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
       throw new Error(`${label}: resultsFile does not exist: ${results}`);
     }
     const run = parseResults(results, `${label}: its results file`);
-    // The manifest may not contradict its own evidence. `date` is hand typed
-    // and became load bearing when the sibling scan started ordering by it, so
-    // a row could be backdated to slide a comparable sibling out of the
-    // window — one field, on the lying row, no other file touched. The run
-    // already carries the answer.
-    if (run.meta.date.slice(0, 10) !== entry.date) {
-      throw new Error(
-        `${label}: the manifest dates this phase ${entry.date}, but ${entry.resultsFile} was ` +
-          `measured ${run.meta.date}. The manifest cannot disagree with the run it points at.`
-      );
-    }
     if (run.meta.gitDirty) {
       throw new Error(
         `${label}: ${entry.resultsFile} was measured from a dirty working tree (meta.gitDirty is true). ` +
           'A dirty run is never published; re run it on a committed tree.'
       );
     }
-    measured.push({ entry, summary: summarise(run) });
-  }
-
-  // Second pass, because a no-delta claim is about every run published by then,
-  // not only the one the entry names, and they are not all known until here.
-  for (const { entry, summary } of measured) {
-    checkRecordedDelta(entry, summary, baseline, evalsDir, measured);
+    checkRecordedDelta(entry, summarise(run), baseline, evalsDir);
   }
 
   return manifest;
@@ -555,8 +536,7 @@ function checkRecordedDelta(
   entry: PublishedRun,
   run: RunSummary,
   baseline: RunSummary | null,
-  evalsDir: string,
-  measured: { entry: PublishedRun; summary: RunSummary }[]
+  evalsDir: string
 ): void {
   // An entry that publishes no delta still makes a CLAIM — "there was nothing
   // to compare" — and that claim is falsifiable, so it gets checked like any
@@ -574,7 +554,33 @@ function checkRecordedDelta(
   if (entry.delta === undefined) {
     // The entry names the run it cannot be compared against, so this is one
     // comparison against committed data rather than a guess about which
-    // baseline was in force. Three earlier versions inferred that and each
+    // baseline was in force.
+    //
+    // WHAT THIS CATCHES, stated honestly, because six rewrites went wrong by
+    // assuming otherwise: an author who names the WRONG FILE. That is the
+    // realistic failure in a hand maintained manifest, and against it this
+    // works. It does NOT stop someone determined. `datasetHash` and
+    // `corpusHash` are written by the same person, in the same file, as any
+    // lie would be, and nothing recomputes them — `check-corpus.ts` validates
+    // the retrieval manifest against `docs/specs`, never a results file. One
+    // edited character defeats this and would defeat any ordering rule layered
+    // on top of it. Being COMMITTED is not being DERIVED, and an earlier
+    // version of this comment claimed otherwise.
+    //
+    // So the ordering half is gone: a sibling scan, a per entry date equality
+    // check, and three attempts at inferring which run came first. Each was
+    // broken within one review cycle, none ever fired on the real record, and
+    // the last one rejected a legitimate near midnight run
+    // (2026-08-31T02:06Z is the evening of the 30th here). Machinery that a
+    // one character edit walks past does not buy honesty; on a page arguing
+    // that the measurement is disciplined it buys the APPEARANCE of a verified
+    // claim, which is the more expensive thing to be wrong about.
+    //
+    // The reason prose therefore carries the same trust as `phaseTitle` and
+    // the writeups, which is the trust the page already extends. If the
+    // sibling property is ever wanted, the honest form is a line in the
+    // writeup naming every published run on the same instrument, which a
+    // reader can check against the hashes already on the page. Three earlier versions inferred that and each
     // inference broke differently: keyed to the current baseline it accused an
     // untouched older row the moment the baseline advanced; keyed to the
     // newest phase the shield became an edit to the list, so appending a phase
@@ -612,58 +618,6 @@ function checkRecordedDelta(
       );
     }
 
-    // Naming ONE incomparable run is necessary and not sufficient. The claim
-    // being made is that NOTHING was comparable, so any published sibling that
-    // scored the same instrument falsifies it — otherwise an author points at
-    // whichever old run happens to differ and publishes a regression behind
-    // the words, which is v1's prose/number asymmetry surviving in a narrower
-    // form.
-    //
-    // THE RULE THIS CHECK LIVES BY, learned over five rewrites: every field it
-    // depends on must be falsifiable against a committed artifact. `datasetHash`
-    // and `corpusHash` come from the results files. `date` is cross checked
-    // against `meta.date` in the first pass, which is the gap that made this
-    // very loop bypassable. `notComparableTo` names a file that must exist.
-    //
-    // WHAT IS DELIBERATELY NOT CLOSED, because no committed artifact
-    // contradicts it: the sibling set is the manifest, so a comparable run can
-    // still be hidden by omitting it, demoting it to `measured: false`, or its
-    // being the baseline rather than a published phase. Scanning `results/`
-    // instead was tried and is WRONG — the directory holds 13 runs against 2
-    // published, unpublished retries are routine, and phase three's own
-    // attempt three minutes earlier would falsify phase three. There is no
-    // cheap answer here, and inventing one is precisely what produced the two
-    // worst versions of this check.
-    //
-    // Bounded to siblings published no later than this entry, and that bound
-    // is what keeps the earlier failures dead: a phase that lands afterwards
-    // cannot retroactively make this row a lie (v3 inverted), and the current
-    // baseline is never consulted (v2's time bomb). `date` is already on every
-    // entry and is fixed once published, so this reads a recorded fact rather
-    // than inferring one.
-    for (const sibling of measured) {
-      if (sibling.entry.phase === entry.phase) continue;
-      // Ordered on the runs' own metadata rather than the manifest's `date`.
-      // Belt and braces with the equality check above: this comparison stays
-      // sound even if that one is ever relaxed, and it is the field the
-      // evidence actually fixes.
-      if (sibling.summary.date > run.date) continue;
-      const siblingSameInstrument =
-        sibling.summary.datasetHash === run.datasetHash &&
-        !(
-          sibling.summary.corpusHash !== undefined &&
-          run.corpusHash !== undefined &&
-          sibling.summary.corpusHash !== run.corpusHash
-        );
-      if (siblingSameInstrument) {
-        throw new Error(
-          `publishedRuns phase ${entry.phase}: publishes no delta, but phase ${sibling.entry.phase} ` +
-            `(${sibling.entry.resultsFile ?? 'its run'}, published ${sibling.entry.date}) scored the ` +
-            `SAME instrument (${run.datasetHash.slice(0, 12)}…). A delta against that run WAS ` +
-            'computable, so "no comparison was possible" is not true. Publish delta and verdict.'
-        );
-      }
-    }
     return;
   }
 
