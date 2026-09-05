@@ -305,11 +305,134 @@ describe('loadPublished', () => {
 
     it('accepts it when this phase IS the baseline, which is the honest case', () => {
       // The legitimate shape the field exists for: a phase that changed the
-      // dataset becomes the new baseline, so its run and the baseline agree on
-      // every hash and comparing it to itself would yield a meaningless zero.
-      // The real committed record is exactly this — baseline.json is byte
-      // identical to the phase three results file.
-      const dir = fixture(hiddenRegression({}));
+      // dataset becomes the new baseline, so comparing it to itself would
+      // yield a meaningless zero. The real committed record is exactly this —
+      // baseline.json is byte identical to the phase three results file, which
+      // is why identity here is the SCORES agreeing, not two metadata strings.
+      const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+      const sameRun = () =>
+        runFile({
+          datasetHash: 'hash-SAME',
+          corpusHash: 'corpus-SAME',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        });
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [
+            {
+              ...rest,
+              deltaUnavailable:
+                'The golden set grew from 22 cases to 27, so no comparison is possible.'
+            }
+          ],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
+        results: sameRun(),
+        baseline: { noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 }, run: sameRun() }
+      });
+      expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+    it('does not accuse an older phase once the baseline moves past it', () => {
+      // The time bomb the gate's re-run found in the first version of this
+      // check. Phase three's reason is a statement about ITS OWN boundary —
+      // "this phase took the set 22 to 27" — and stays true forever. When a
+      // later phase ships on that same dataset and becomes the baseline, the
+      // older row is untouched and still truthful, but a check keyed on "is
+      // this run the CURRENT baseline" starts calling it a lie and fails the
+      // build. Both remedies it suggests are wrong there, so the pressure is
+      // to delete a true reason and fabricate a delta.
+      const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [
+            { ...rest, deltaUnavailable: 'The golden set grew from 22 cases to 27.' },
+            {
+              ...measuredEntry,
+              phase: 4,
+              phaseTitle: 'A later phase',
+              writeupFile: 'phase-two.md',
+              specPath: unmeasuredEntry.specPath,
+              resultsFile: 'results/run.json'
+            }
+          ],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
+        results: runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' }),
+        baseline: {
+          noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 },
+          // A LATER run, same instrument, now in force.
+          run: runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            gitCommit: '9999999000000000000000000000000000000000',
+            date: '2026-09-10T00:00:00.000Z'
+          })
+        }
+      });
+      expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+    it('refuses a regressed run wearing the baseline commit and date', () => {
+      // Identity by label is forgeable: both strings are published in
+      // baseline.json in the same directory, so impersonating it is a
+      // two-field copy rather than editing every case score. Identity has to
+      // come from the data.
+      const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [{ ...rest, deltaUnavailable: 'The dataset changed this phase.' }],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          corpusHash: 'corpus-SAME',
+          gitCommit: 'cccccccc00000000000000000000000000000000',
+          date: '2026-09-03T12:00:00.000Z',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        }),
+        baseline: {
+          noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 },
+          run: runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            gitCommit: 'cccccccc00000000000000000000000000000000',
+            date: '2026-09-03T12:00:00.000Z',
+            cases: [caseRow({})]
+          })
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow(/the delta WAS computable/);
+    });
+
+    it('does not accuse a phase whose baseline has no usable mean', () => {
+      // The delta genuinely was not computable: there is no baseline mean to
+      // subtract. Accusing it here drives the author toward `delta: {0,0,0}`,
+      // which the null-mean branch below accepts — the exact zero-as-a-claim
+      // this design refuses.
+      const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+      const errored = { status: 'error' as const };
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [
+            { ...rest, deltaUnavailable: 'The baseline run has no scores to compare against.' }
+          ],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
+        results: runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' }),
+        baseline: {
+          noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 },
+          // A DIFFERENT run, so this exercises the null-mean path rather than
+          // exiting early through the run-is-the-baseline branch.
+          run: runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            gitCommit: 'dddddddd00000000000000000000000000000000',
+            date: '2026-08-20T00:00:00.000Z',
+            cases: [caseRow({ honesty: errored, grounding: errored, persona: errored })]
+          })
+        }
+      });
       expect(() => loadPublished(dir)).not.toThrow();
     });
 
@@ -339,8 +462,12 @@ describe('loadPublished', () => {
     // page rendered "No delta is published for this phase." with the reason
     // collapsed to nothing by HTML — the blank cell the field exists to
     // prevent, wearing a heading.
+    //
+    // U+200B and friends are in this list because `String.trim` does not
+    // strip them, so the first fix closed the space case and left the
+    // zero-width one open — same blank cell, same heading.
     const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
-    for (const blank of [' ', '   \t\n  ']) {
+    for (const blank of [' ', '   \t\n  ', '​', '⁠', '⠀']) {
       const dir = fixture({
         manifest: {
           publishedRuns: [{ ...rest, deltaUnavailable: blank }],

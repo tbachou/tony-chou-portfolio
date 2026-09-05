@@ -94,8 +94,21 @@ const publishedRunSchema = z
      * followed by nothing — the blank cell this field exists to prevent,
      * wearing a heading. Capped because it is inlined verbatim into
      * statically generated HTML.
+     *
+     * Trim alone was not enough either. `String.trim` strips ASCII whitespace
+     * and leaves U+200B, U+2060, U+2800 and friends, each of which renders as
+     * nothing and produced the same headed blank cell. So the requirement is
+     * stated as what it actually is: at least one letter or digit.
      */
-    deltaUnavailable: z.string().trim().min(1).max(500).optional()
+    deltaUnavailable: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .refine((value) => /[\p{L}\p{N}]/u.test(value), {
+        message: 'must contain a visible reason, not only whitespace or invisible characters'
+      })
+      .optional()
   })
   .strict()
   .superRefine((entry, ctx) => {
@@ -446,6 +459,8 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
   // this loop runs, and re reading it made the cost grow with the number of
   // published phases for no gain.
   const baseline = loadBaselineSummary(evalsDir);
+  const newestMeasured = latestMeasured(manifest);
+
   for (const entry of manifest.publishedRuns) {
     const label = `publishedRuns phase ${entry.phase}`;
 
@@ -472,7 +487,7 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
           'A dirty run is never published; re run it on a committed tree.'
       );
     }
-    checkRecordedDelta(entry, summarise(run), baseline);
+    checkRecordedDelta(entry, summarise(run), baseline, entry.phase === newestMeasured?.phase);
   }
 
   return manifest;
@@ -505,7 +520,9 @@ function loadBaselineSummary(evalsDir: string): RunSummary | null {
 function checkRecordedDelta(
   entry: PublishedRun,
   run: RunSummary,
-  baseline: RunSummary | null
+  baseline: RunSummary | null,
+  /** Only the newest measured phase's "no delta" reason is checkable; see below. */
+  isLatestMeasured: boolean
 ): void {
   // An entry that publishes no delta still makes a CLAIM — "there was nothing
   // to compare" — and that claim is falsifiable, so it gets checked like any
@@ -521,20 +538,52 @@ function checkRecordedDelta(
   // that, and the committed record is exactly it — `baseline.json` is byte
   // identical to the phase three results file.
   if (entry.delta === undefined) {
+    // ONLY the newest measured phase is checkable, and this is the correction
+    // to the first version of this check, which was time bombed. A reason like
+    // "this phase took the golden set from 22 cases to 27" is a statement
+    // about that phase's OWN boundary and stays true forever. The manifest
+    // does not record which baseline was in force when it was published, so
+    // once a later phase becomes the baseline, an older row that never changed
+    // would start being called a lie and would fail the build — with both
+    // suggested remedies wrong, since you cannot publish a phase-3-against-
+    // phase-4 delta. The pressure that creates is to delete a true reason and
+    // fabricate a delta, which is the opposite of the point.
+    if (!isLatestMeasured) return;
+    if (baseline === null) return;
+
+    // Identity from the DATA, not from labels. Keying this on gitCommit and
+    // date made impersonation a two field copy: both strings are published in
+    // baseline.json in the same directory, so a regressed run could wear them
+    // and walk through, while the delta path next to it verifies by recomputing
+    // means. Same standard on both paths now.
+    const runIsTheBaseline = DIMENSIONS.every(
+      (dimension) =>
+        baseline.perDimension[dimension].mean === run.perDimension[dimension].mean &&
+        baseline.perDimension[dimension].scoredCases === run.perDimension[dimension].scoredCases
+    );
+
+    // A delta needs two means to subtract. Without them it genuinely was not
+    // computable, and accusing the reason of being false would push the author
+    // toward `delta: {0,0,0}` — which the null-mean branch below accepts, and
+    // which is the zero-as-a-claim this design refuses.
+    const bothHaveAMean = DIMENSIONS.some(
+      (dimension) =>
+        baseline.perDimension[dimension].mean !== null &&
+        run.perDimension[dimension].mean !== null
+    );
+
     const sameInstrument =
-      baseline !== null &&
       baseline.datasetHash === run.datasetHash &&
       !(
         baseline.corpusHash !== undefined &&
         run.corpusHash !== undefined &&
         baseline.corpusHash !== run.corpusHash
       );
-    const runIsTheBaseline =
-      baseline !== null && baseline.gitCommit === run.gitCommit && baseline.date === run.date;
-    if (sameInstrument && !runIsTheBaseline) {
+
+    if (sameInstrument && bothHaveAMean && !runIsTheBaseline) {
       throw new Error(
         `publishedRuns phase ${entry.phase}: publishes no delta and states a reason, but the ` +
-          `baseline (${(baseline as RunSummary).gitCommit.slice(0, 7)}, ${(baseline as RunSummary).date.slice(0, 10)}) ` +
+          `baseline in force (${baseline.gitCommit.slice(0, 7)}, ${baseline.date.slice(0, 10)}) ` +
           `scored the same dataset (${run.datasetHash.slice(0, 12)}…) and the same corpus, ` +
           'so the delta WAS computable and the stated reason is not true. ' +
           'Publish delta and verdict, or move the baseline.'
