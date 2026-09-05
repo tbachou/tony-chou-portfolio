@@ -46,7 +46,10 @@
         "grounding": 0.056,
         "persona": 0.037
       },
-      "deltaUnavailable": "This phase added the five retrieval cases, taking the golden set from 22 to 27 and changing the dataset hash. A delta across that boundary would be arithmetic between two different instruments, so none is published."
+      "deltaUnavailable": {
+        "reason": "This phase added the five retrieval cases, taking the golden set from 22 to 27 and changing the dataset hash. A delta across that boundary would be arithmetic between two different instruments, so none is published.",
+        "notComparableTo": "results/2026-08-31-36a31ea-dirty.json"
+      }
     }
   ],
   "baselineHistory": [

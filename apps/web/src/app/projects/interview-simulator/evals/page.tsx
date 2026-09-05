@@ -297,7 +297,7 @@ export default function InterviewSimulatorEvalsPage() {
             {latest.entry.deltaUnavailable && (
               <p className="mt-3 max-w-[42rem] border-l-2 border-term-border pl-3 text-term-xs leading-relaxed text-term-muted">
                 <span className="text-term-ink">No delta is published for this phase.</span>{' '}
-                {latest.entry.deltaUnavailable}
+                {latest.entry.deltaUnavailable.reason}
               </p>
             )}
 

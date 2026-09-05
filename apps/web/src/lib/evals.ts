@@ -84,30 +84,42 @@ const publishedRunSchema = z
     noiseBand: perDimensionNumbers.optional(),
     verdict: perDimensionVerdict.optional(),
     /**
-     * Why this measured phase has no delta. Set exactly when `delta` and
-     * `verdict` are absent, and rendered in their place, so a blank cell on
-     * the page always carries its reason rather than reading as a zero.
+     * Why this measured phase has no delta, and WHICH RUN it cannot be
+     * compared against.
      *
-     * Trimmed before the length check, because `min(1)` alone rejected only
-     * the empty string: a single space satisfied it, HTML collapsed it, and
-     * the page rendered the bold "No delta is published for this phase."
-     * followed by nothing — the blank cell this field exists to prevent,
-     * wearing a heading. Capped because it is inlined verbatim into
-     * statically generated HTML.
-     *
-     * Trim alone was not enough either. `String.trim` strips ASCII whitespace
-     * and leaves U+200B, U+2060, U+2800 and friends, each of which renders as
-     * nothing and produced the same headed blank cell. So the requirement is
-     * stated as what it actually is: at least one letter or digit.
+     * The reason alone was not checkable. Three attempts tried to infer what
+     * an entry "should" have been compared to — the current baseline, the
+     * newest phase, a candidate set — and each inference was wrong in its own
+     * way, because the manifest never recorded the answer. So the entry
+     * records it: `notComparableTo` names a committed results file, and the
+     * loader confirms it really is a different instrument. The claim becomes
+     * self describing, verified against data rather than reconstructed, and
+     * stable forever — appending a later phase or moving the baseline cannot
+     * change whether this row was telling the truth.
      */
     deltaUnavailable: z
-      .string()
-      .trim()
-      .min(1)
-      .max(500)
-      .refine((value) => /[\p{L}\p{N}]/u.test(value), {
-        message: 'must contain a visible reason, not only whitespace or invisible characters'
+      .object({
+        /**
+         * Rendered in place of the delta. Trimmed before the length check,
+         * because `min(1)` alone rejected only the empty string: a space
+         * satisfied it, HTML collapsed it, and the page showed the bold
+         * heading followed by nothing. `String.trim` then still left U+200B,
+         * U+2060 and U+2800, so the rule is stated as what it means — at
+         * least one letter or digit. Capped because it is inlined verbatim
+         * into statically generated HTML.
+         */
+        reason: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .refine((value) => /[\p{L}\p{N}]/u.test(value), {
+            message: 'must contain a visible reason, not only whitespace or invisible characters'
+          }),
+        /** A committed results file, relative to the evals directory. */
+        notComparableTo: z.string().min(1)
       })
+      .strict()
       .optional()
   })
   .strict()
@@ -459,8 +471,6 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
   // this loop runs, and re reading it made the cost grow with the number of
   // published phases for no gain.
   const baseline = loadBaselineSummary(evalsDir);
-  let previousMeasuredRun: RunSummary | null = null;
-
   for (const entry of manifest.publishedRuns) {
     const label = `publishedRuns phase ${entry.phase}`;
 
@@ -487,9 +497,7 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
           'A dirty run is never published; re run it on a committed tree.'
       );
     }
-    const summary = summarise(run);
-    checkRecordedDelta(entry, summary, baseline, previousMeasuredRun);
-    previousMeasuredRun = summary;
+    checkRecordedDelta(entry, summarise(run), baseline, evalsDir);
   }
 
   return manifest;
@@ -523,8 +531,7 @@ function checkRecordedDelta(
   entry: PublishedRun,
   run: RunSummary,
   baseline: RunSummary | null,
-  /** The measured run published immediately before this one, if any; see below. */
-  previousMeasuredRun: RunSummary | null
+  evalsDir: string
 ): void {
   // An entry that publishes no delta still makes a CLAIM — "there was nothing
   // to compare" — and that claim is falsifiable, so it gets checked like any
@@ -540,66 +547,44 @@ function checkRecordedDelta(
   // that, and the committed record is exactly it — `baseline.json` is byte
   // identical to the phase three results file.
   if (entry.delta === undefined) {
-    // Falsify the reason against runs that ALREADY EXISTED when this entry
-    // published, and against nothing else. Two earlier attempts got the
-    // candidate set wrong in opposite directions.
-    //
-    // Keying it on "is this run the current baseline" was time bombed: a
-    // reason like "this phase took the golden set from 22 cases to 27" is a
-    // statement about that phase's OWN boundary and stays true forever, so
-    // once a later phase became the baseline an untouched older row started
-    // being called a lie. Keying it on "is this the newest measured phase"
-    // then made the shield an edit to the LIST rather than a fact about the
-    // run: appending a phase 4 silenced phase 3's identical lie, and both rows
-    // can be written in one commit.
-    //
-    // The predecessor is fixed by the ascending-phase rule above, and the
-    // baseline counts only when it is not newer than this run, so both
-    // candidates are settled at publish time and neither moves when a later
-    // phase is appended.
-    const candidates: RunSummary[] = [];
-    if (previousMeasuredRun !== null) candidates.push(previousMeasuredRun);
-    if (baseline !== null && baseline.date <= run.date) candidates.push(baseline);
-
-    for (const against of candidates) {
-      // Identity from the DATA, not from labels. Keying this on gitCommit and
-      // date made impersonation a two field copy: both strings are published
-      // in baseline.json in the same directory, so a regressed run could wear
-      // them and walk through, while the delta path verifies by recomputing
-      // means. Same standard on both paths now.
-      const isTheSameRun = DIMENSIONS.every(
-        (dimension) =>
-          against.perDimension[dimension].mean === run.perDimension[dimension].mean &&
-          against.perDimension[dimension].scoredCases === run.perDimension[dimension].scoredCases
+    // The entry names the run it cannot be compared against, so this is one
+    // comparison against committed data rather than a guess about which
+    // baseline was in force. Three earlier versions inferred that and each
+    // inference broke differently: keyed to the current baseline it accused an
+    // untouched older row the moment the baseline advanced; keyed to the
+    // newest phase the shield became an edit to the list, so appending a phase
+    // silenced the row below it. Nothing here depends on position or on what
+    // has happened since.
+    const claim = entry.deltaUnavailable as { reason: string; notComparableTo: string };
+    const againstPath = containedPath(
+      evalsDir,
+      claim.notComparableTo,
+      `publishedRuns phase ${entry.phase}: deltaUnavailable.notComparableTo`
+    );
+    if (!existsSync(againstPath)) {
+      throw new Error(
+        `publishedRuns phase ${entry.phase}: deltaUnavailable.notComparableTo does not exist: ` +
+          `${againstPath}. Name the committed results file this run cannot be compared against.`
       );
+    }
+    const against = summarise(
+      parseResults(againstPath, `publishedRuns phase ${entry.phase}: its notComparableTo run`)
+    );
 
-      // A delta needs two means to subtract. Without them it genuinely was not
-      // computable, and accusing the reason of being false would push the
-      // author toward `delta: {0,0,0}` — which the null-mean branch below
-      // accepts, and which is the zero-as-a-claim this design refuses.
-      const bothHaveAMean = DIMENSIONS.some(
-        (dimension) =>
-          against.perDimension[dimension].mean !== null &&
-          run.perDimension[dimension].mean !== null
+    const sameInstrument =
+      against.datasetHash === run.datasetHash &&
+      !(
+        against.corpusHash !== undefined &&
+        run.corpusHash !== undefined &&
+        against.corpusHash !== run.corpusHash
       );
-
-      const sameInstrument =
-        against.datasetHash === run.datasetHash &&
-        !(
-          against.corpusHash !== undefined &&
-          run.corpusHash !== undefined &&
-          against.corpusHash !== run.corpusHash
-        );
-
-      if (sameInstrument && bothHaveAMean && !isTheSameRun) {
-        throw new Error(
-          `publishedRuns phase ${entry.phase}: publishes no delta and states a reason, but a run ` +
-            `already published when it landed (${against.gitCommit.slice(0, 7)}, ${against.date.slice(0, 10)}) ` +
-            `scored the same dataset (${run.datasetHash.slice(0, 12)}…) and the same corpus, ` +
-            'so the delta WAS computable and the stated reason is not true. ' +
-            'Publish delta and verdict, or point the entry at a run it genuinely cannot be compared to.'
-        );
-      }
+    if (sameInstrument) {
+      throw new Error(
+        `publishedRuns phase ${entry.phase}: publishes no delta and names ${claim.notComparableTo} ` +
+          'as the run it cannot be compared against, but that run scored the SAME dataset ' +
+          `(${run.datasetHash.slice(0, 12)}…) and the same corpus, so the delta WAS computable. ` +
+          'Publish delta and verdict, or name the run whose instrument actually differs.'
+      );
     }
     return;
   }
