@@ -263,7 +263,13 @@ export default function InterviewSimulatorEvalsPage() {
                             : '—'}
                         </td>
                         <td className="border-b border-term-border px-2 py-2 text-term-body">
-                          {verdict === 'significant' ? (
+                          {/* An absent verdict is NOT "not significant". A phase that
+                              changed the dataset has nothing to compare against, and
+                              rendering the falsy branch would publish "nothing moved"
+                              as though it had been measured. */}
+                          {verdict === undefined ? (
+                            'not comparable'
+                          ) : verdict === 'significant' ? (
                             <span className="text-term-accent">significant</span>
                           ) : (
                             'not significant'
@@ -283,6 +289,17 @@ export default function InterviewSimulatorEvalsPage() {
               band are the ones recorded when this phase was published, against the baseline in
               force at that time.
             </p>
+
+            {/* Why the delta column is empty, in the phase's own words. A blank
+                cell with no explanation is the one thing worse than a number:
+                the reader supplies their own reason, and "nothing moved" is the
+                one they reach for. */}
+            {latest.entry.deltaUnavailable && (
+              <p className="mt-3 max-w-[42rem] border-l-2 border-term-border pl-3 text-term-xs leading-relaxed text-term-muted">
+                <span className="text-term-ink">No delta is published for this phase.</span>{' '}
+                {latest.entry.deltaUnavailable.reason}
+              </p>
+            )}
 
             <RunMetadata run={latest.run} entry={latest.entry} link={link} />
           </section>
@@ -374,11 +391,17 @@ export default function InterviewSimulatorEvalsPage() {
                           </td>
                         ))}
                         <td className="border-b border-term-border px-2 py-2 text-term-body">
+                          {/* Three states, not two. A measured phase with no verdict
+                              is not the same as one that moved nothing, and the
+                              reason it has none is worth showing rather than hiding
+                              behind a dash. */}
                           {run === null
                             ? 'no measurement taken'
-                            : DIMENSIONS.some((d) => entry.verdict?.[d] === 'significant')
-                              ? 'significant movement'
-                              : 'no significant movement'}
+                            : entry.verdict === undefined
+                              ? 'not comparable'
+                              : DIMENSIONS.some((d) => entry.verdict?.[d] === 'significant')
+                                ? 'significant movement'
+                                : 'no significant movement'}
                         </td>
                         <td className="border-b border-term-border px-2 py-2">
                           <span className="flex flex-col gap-1">
