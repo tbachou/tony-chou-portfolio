@@ -124,6 +124,14 @@ updates:
       # 22, so types for 26 describe a runtime this project does not run.
       # Rejected twice already, closed as #5 and reopened as #43. Lift when the
       # runtime itself moves.
+      #
+      # This rule blocks MAJORS, and three workspaces had drifted to ^24
+      # anyway, past a runtime that is still 22 — pinned back on 2026-09-03.
+      # The direction matters and only one way round is safe: types BEHIND the
+      # runtime cost autocomplete on newer APIs, types AHEAD let `tsc` accept a
+      # `node:` call the runtime does not have, so it compiles, CI passes, and
+      # it throws in production. Keep all four workspaces on the major named in
+      # `.node-version`, and move them with it rather than before it.
       - dependency-name: "@types/node"
         update-types:
           - version-update:semver-major
