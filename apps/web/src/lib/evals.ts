@@ -459,7 +459,7 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
   // this loop runs, and re reading it made the cost grow with the number of
   // published phases for no gain.
   const baseline = loadBaselineSummary(evalsDir);
-  const newestMeasured = latestMeasured(manifest);
+  let previousMeasuredRun: RunSummary | null = null;
 
   for (const entry of manifest.publishedRuns) {
     const label = `publishedRuns phase ${entry.phase}`;
@@ -487,7 +487,9 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
           'A dirty run is never published; re run it on a committed tree.'
       );
     }
-    checkRecordedDelta(entry, summarise(run), baseline, entry.phase === newestMeasured?.phase);
+    const summary = summarise(run);
+    checkRecordedDelta(entry, summary, baseline, previousMeasuredRun);
+    previousMeasuredRun = summary;
   }
 
   return manifest;
@@ -521,8 +523,8 @@ function checkRecordedDelta(
   entry: PublishedRun,
   run: RunSummary,
   baseline: RunSummary | null,
-  /** Only the newest measured phase's "no delta" reason is checkable; see below. */
-  isLatestMeasured: boolean
+  /** The measured run published immediately before this one, if any; see below. */
+  previousMeasuredRun: RunSummary | null
 ): void {
   // An entry that publishes no delta still makes a CLAIM — "there was nothing
   // to compare" — and that claim is falsifiable, so it gets checked like any
@@ -538,59 +540,71 @@ function checkRecordedDelta(
   // that, and the committed record is exactly it — `baseline.json` is byte
   // identical to the phase three results file.
   if (entry.delta === undefined) {
-    // ONLY the newest measured phase is checkable, and this is the correction
-    // to the first version of this check, which was time bombed. A reason like
-    // "this phase took the golden set from 22 cases to 27" is a statement
-    // about that phase's OWN boundary and stays true forever. The manifest
-    // does not record which baseline was in force when it was published, so
-    // once a later phase becomes the baseline, an older row that never changed
-    // would start being called a lie and would fail the build — with both
-    // suggested remedies wrong, since you cannot publish a phase-3-against-
-    // phase-4 delta. The pressure that creates is to delete a true reason and
-    // fabricate a delta, which is the opposite of the point.
-    if (!isLatestMeasured) return;
-    if (baseline === null) return;
+    // Falsify the reason against runs that ALREADY EXISTED when this entry
+    // published, and against nothing else. Two earlier attempts got the
+    // candidate set wrong in opposite directions.
+    //
+    // Keying it on "is this run the current baseline" was time bombed: a
+    // reason like "this phase took the golden set from 22 cases to 27" is a
+    // statement about that phase's OWN boundary and stays true forever, so
+    // once a later phase became the baseline an untouched older row started
+    // being called a lie. Keying it on "is this the newest measured phase"
+    // then made the shield an edit to the LIST rather than a fact about the
+    // run: appending a phase 4 silenced phase 3's identical lie, and both rows
+    // can be written in one commit.
+    //
+    // The predecessor is fixed by the ascending-phase rule above, and the
+    // baseline counts only when it is not newer than this run, so both
+    // candidates are settled at publish time and neither moves when a later
+    // phase is appended.
+    const candidates: RunSummary[] = [];
+    if (previousMeasuredRun !== null) candidates.push(previousMeasuredRun);
+    if (baseline !== null && baseline.date <= run.date) candidates.push(baseline);
 
-    // Identity from the DATA, not from labels. Keying this on gitCommit and
-    // date made impersonation a two field copy: both strings are published in
-    // baseline.json in the same directory, so a regressed run could wear them
-    // and walk through, while the delta path next to it verifies by recomputing
-    // means. Same standard on both paths now.
-    const runIsTheBaseline = DIMENSIONS.every(
-      (dimension) =>
-        baseline.perDimension[dimension].mean === run.perDimension[dimension].mean &&
-        baseline.perDimension[dimension].scoredCases === run.perDimension[dimension].scoredCases
-    );
-
-    // A delta needs two means to subtract. Without them it genuinely was not
-    // computable, and accusing the reason of being false would push the author
-    // toward `delta: {0,0,0}` — which the null-mean branch below accepts, and
-    // which is the zero-as-a-claim this design refuses.
-    const bothHaveAMean = DIMENSIONS.some(
-      (dimension) =>
-        baseline.perDimension[dimension].mean !== null &&
-        run.perDimension[dimension].mean !== null
-    );
-
-    const sameInstrument =
-      baseline.datasetHash === run.datasetHash &&
-      !(
-        baseline.corpusHash !== undefined &&
-        run.corpusHash !== undefined &&
-        baseline.corpusHash !== run.corpusHash
+    for (const against of candidates) {
+      // Identity from the DATA, not from labels. Keying this on gitCommit and
+      // date made impersonation a two field copy: both strings are published
+      // in baseline.json in the same directory, so a regressed run could wear
+      // them and walk through, while the delta path verifies by recomputing
+      // means. Same standard on both paths now.
+      const isTheSameRun = DIMENSIONS.every(
+        (dimension) =>
+          against.perDimension[dimension].mean === run.perDimension[dimension].mean &&
+          against.perDimension[dimension].scoredCases === run.perDimension[dimension].scoredCases
       );
 
-    if (sameInstrument && bothHaveAMean && !runIsTheBaseline) {
-      throw new Error(
-        `publishedRuns phase ${entry.phase}: publishes no delta and states a reason, but the ` +
-          `baseline in force (${baseline.gitCommit.slice(0, 7)}, ${baseline.date.slice(0, 10)}) ` +
-          `scored the same dataset (${run.datasetHash.slice(0, 12)}…) and the same corpus, ` +
-          'so the delta WAS computable and the stated reason is not true. ' +
-          'Publish delta and verdict, or move the baseline.'
+      // A delta needs two means to subtract. Without them it genuinely was not
+      // computable, and accusing the reason of being false would push the
+      // author toward `delta: {0,0,0}` — which the null-mean branch below
+      // accepts, and which is the zero-as-a-claim this design refuses.
+      const bothHaveAMean = DIMENSIONS.some(
+        (dimension) =>
+          against.perDimension[dimension].mean !== null &&
+          run.perDimension[dimension].mean !== null
       );
+
+      const sameInstrument =
+        against.datasetHash === run.datasetHash &&
+        !(
+          against.corpusHash !== undefined &&
+          run.corpusHash !== undefined &&
+          against.corpusHash !== run.corpusHash
+        );
+
+      if (sameInstrument && bothHaveAMean && !isTheSameRun) {
+        throw new Error(
+          `publishedRuns phase ${entry.phase}: publishes no delta and states a reason, but a run ` +
+            `already published when it landed (${against.gitCommit.slice(0, 7)}, ${against.date.slice(0, 10)}) ` +
+            `scored the same dataset (${run.datasetHash.slice(0, 12)}…) and the same corpus, ` +
+            'so the delta WAS computable and the stated reason is not true. ' +
+            'Publish delta and verdict, or point the entry at a run it genuinely cannot be compared to.'
+        );
+      }
     }
     return;
   }
+
+  if (baseline === null) return;
   if (baseline === null) return;
   if (baseline.datasetHash !== run.datasetHash) return;
   // AC-11: two runs are comparable only when both hashes match. A run with no

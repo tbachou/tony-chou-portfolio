@@ -106,6 +106,8 @@ const created: string[] = [];
 function fixture(options: {
   manifest?: unknown;
   results?: unknown;
+  /** Extra results files by name, for manifests with more than one run. */
+  extraResults?: Record<string, unknown>;
   baseline?: unknown;
   writeups?: string[];
   specs?: string[];
@@ -131,6 +133,9 @@ function fixture(options: {
       path.join(evalsDir, 'results', 'run.json'),
       JSON.stringify(options.results ?? runFile({}))
     );
+  }
+  for (const [name, body] of Object.entries(options.extraResults ?? {})) {
+    writeFileSync(path.join(evalsDir, 'results', name), JSON.stringify(body));
   }
   if (options.baseline) {
     writeFileSync(path.join(evalsDir, 'baseline.json'), JSON.stringify(options.baseline));
@@ -371,6 +376,56 @@ describe('loadPublished', () => {
         }
       });
       expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+    it('cannot be shielded by appending a later measured phase', () => {
+      // The hole in the SECOND version of this check. Scoping falsification to
+      // "the newest measured phase" made the shield an edit to the list rather
+      // than a fact about the run: append a phase 4 and phase 3's identical
+      // lie goes unchecked. Both rows can be authored in one commit, so this
+      // is not decay over time, it is a same-day bypass.
+      const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [
+            { ...rest, deltaUnavailable: 'This phase changed the dataset, so no delta is computable.' },
+            {
+              ...rest,
+              phase: 4,
+              phaseTitle: 'A later phase',
+              writeupFile: 'phase-two.md',
+              specPath: unmeasuredEntry.specPath,
+              resultsFile: 'results/later.json',
+              deltaUnavailable: 'Phase four moved the dataset again.'
+            }
+          ],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
+        // The lying phase 3 run: a total regression on the baseline's own
+        // instrument.
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          corpusHash: 'corpus-SAME',
+          gitCommit: 'eeeeeeee00000000000000000000000000000000',
+          date: '2026-09-03T12:00:00.000Z',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        }),
+        extraResults: {
+          // The shield: a later measured phase whose dataset genuinely moved.
+          'later.json': runFile({ datasetHash: 'hash-MOVED', corpusHash: 'corpus-MOVED' })
+        },
+        baseline: {
+          noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 },
+          run: runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            gitCommit: 'aaaaaaa000000000000000000000000000000000',
+            date: '2026-08-01T00:00:00.000Z',
+            cases: [caseRow({})]
+          })
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow(/the delta WAS computable/);
     });
 
     it('refuses a regressed run wearing the baseline commit and date', () => {
