@@ -66,6 +66,13 @@ export const topics: TopicSeed[] = [
     description: 'Owning a feature, or a company, end to end: onboarding, entrepreneurship, and mentorship.',
     sortOrder: 5,
   },
+  {
+    slug: 'backend-systems-design',
+    label: 'Backend systems and reliability',
+    description:
+      'Designing backend services for correctness under retries and failure: idempotency, webhook handling, and API architecture.',
+    sortOrder: 6,
+  },
 ];
 
 export const stories: StorySeed[] = [
@@ -254,5 +261,21 @@ export const stories: StorySeed[] = [
     summary:
       'Mentors a software engineer on the Product Forge team through structured 1:1s, providing career guidance and technical development support. This is a Tensure-wide activity, independent of any single client engagement, and continues even though Tony has rotated off Product Forge itself.',
     topics: ['product-ownership'],
+  },
+  {
+    title: 'Webhook idempotency and acknowledgment discipline',
+    ownership: StoryOwnership.SOLO,
+    engagement: 'Product Forge',
+    summary:
+      "Designed the webhook layer's idempotency and acknowledgment discipline in the Flask backend: a webhook-registration endpoint that returns 200 success rather than erroring or duplicating when a URL is already registered, and acknowledgment handling where an unhandled event type or a missing user returns a 204 acknowledgment instead of an error. The provider retries on any non-2xx response, so an erroring handler creates a retry storm. A later processed-events table keyed on the provider's event ID, added by a different engineer after Tony rolled off in October 2025, is separate from this story.",
+    topics: ['backend-systems-design'],
+  },
+  {
+    title: 'Flask API subsystem design',
+    ownership: StoryOwnership.SOLO,
+    engagement: 'Product Forge',
+    summary:
+      'Designed and built core Flask API subsystems: Clerk auth and organization webhooks, request middleware, structured logging for Cloud Run, data export, the feedback system, and Mixpanel instrumentation, while authoring 21 schema migrations across the backend.',
+    topics: ['backend-systems-design'],
   },
 ];
