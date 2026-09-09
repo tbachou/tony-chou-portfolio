@@ -28,7 +28,8 @@
     "check:corpus": "tsx scripts/check-corpus.ts",
     "sweep:threshold": "tsx scripts/threshold-sweep.ts",
     "judge": "tsx scripts/beta-guard-judge.ts",
-    "prebuild": "npm run build --workspace=@portfolio/shared"
+    "prebuild": "npm run build --workspace=@portfolio/shared",
+    "sync:corpus": "tsx prisma/sync-corpus.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.32.4",
