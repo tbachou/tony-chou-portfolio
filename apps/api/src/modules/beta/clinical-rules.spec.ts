@@ -69,6 +69,37 @@ describe('clinical rule registry', () => {
     }
   });
 
+  // Every attached source carries a DOI, and every DOI has the registered
+  // shape. A cheap floor against the failure this registry exists to prevent:
+  // a citation with no identifier cannot be re-resolved by anyone, and a DOI
+  // that does not even parse was never looked up.
+  describe('every attached source is re-resolvable', () => {
+    const attached = CLINICAL_RULES.flatMap((rule) =>
+      rule.sources.map((source) => [rule.id, source] as const),
+    );
+
+    it.each(attached)('%s cites a DOI of the registered form', (_id, source) => {
+      expect(source.doi).toMatch(/^10\.\d{4,9}\/\S+$/);
+    });
+
+    it.each(attached)('%s links to PubMed Central or PubMed', (_id, source) => {
+      expect(source.url).toMatch(
+        /^https:\/\/(pmc|pubmed)\.ncbi\.nlm\.nih\.gov\/(articles\/PMC\d+|\d+)\/$/,
+      );
+    });
+
+    it.each(attached)('%s says what the source supports', (_id, source) => {
+      expect(source.supports.length).toBeGreaterThan(40);
+    });
+
+    it('never cites the same DOI twice under one rule', () => {
+      for (const rule of CLINICAL_RULES) {
+        const dois = rule.sources.map((source) => source.doi);
+        expect(new Set(dois).size).toBe(dois.length);
+      }
+    });
+  });
+
   describe('findClinicalRule', () => {
     it('returns the rule for a known id', () => {
       expect(findClinicalRule('FP-05')?.scope).toBe('finger_pulley');
