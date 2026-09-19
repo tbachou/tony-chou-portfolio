@@ -89,7 +89,13 @@ export interface ClinicalRuleSource {
   readonly citation: string;
   readonly doi?: string;
   readonly url?: string;
-  readonly licence: 'cc0' | 'cc-by' | 'cc-by-sa' | 'cc-by-nc' | 'closed';
+  readonly licence:
+    | 'cc0'
+    | 'cc-by'
+    | 'cc-by-sa'
+    | 'cc-by-nc'
+    | 'cc-by-nc-nd'
+    | 'closed';
   /** What this source actually supports, in the reviewer's own words. */
   readonly supports: string;
 }
@@ -106,6 +112,200 @@ export interface ClinicalRule {
 }
 
 /**
+ * The sources, once each.
+ *
+ * Every field below was resolved on 2026-09-19 by re-querying Crossref and
+ * PubMed from scratch rather than by copying a search result forward, and
+ * none was written from memory: 48 of 48 candidates resolved with title,
+ * first author, year and journal matching. `url` prefers the PubMed Central
+ * full text where one exists, because that is the copy a reader can open;
+ * otherwise it is the PubMed record. `licence` is taken from the article's
+ * own permissions block, not from Crossref, whose licence field was wrong or
+ * missing for three of these.
+ *
+ * A rule cites a source through `cite()`, which pairs the fixed reference
+ * with what that source establishes FOR THAT RULE. The same paper can support
+ * one rule and merely document practice for another, so `supports` belongs
+ * to the pairing, not to the reference. A `supports` that begins
+ * "Counterweight:" records a source that cuts against the rule; it is kept
+ * in the same list so the rule cannot be read as settled.
+ */
+type SourceRef = Omit<ClinicalRuleSource, 'supports'>;
+
+function cite(ref: SourceRef, supports: string): ClinicalRuleSource {
+  return { ...ref, supports };
+}
+
+const SILBERNAGEL_2007: SourceRef = {
+  citation:
+    'Silbernagel KG, Thomeé R, Eriksson BI, Karlsson J. Continued sports activity, using a pain-monitoring model, during rehabilitation in patients with Achilles tendinopathy: a randomized controlled study. Am J Sports Med 2007;35:897-906',
+  doi: '10.1177/0363546506298279',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/17307888/',
+  licence: 'closed',
+};
+const SPRAGUE_2021: SourceRef = {
+  citation:
+    'Sprague AL, et al. Pain-guided activity modification during treatment for patellar tendinopathy: a feasibility and pilot randomized clinical trial. Pilot Feasibility Stud 2021;7:58',
+  doi: '10.1186/s40814-021-00792-5',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC7905015/',
+  licence: 'cc-by',
+};
+const HANLON_2026: SourceRef = {
+  citation:
+    "Hanlon SL, et al. The feasibility of a novel exercise therapy and activity modification intervention for patients with Sever's disease. Pilot Feasibility Stud 2026;12",
+  doi: '10.1186/s40814-026-01850-6',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC13520403/',
+  licence: 'cc-by-nc-nd',
+};
+const ULLERN_2025: SourceRef = {
+  citation:
+    'Raulline Ullern K, et al. Painful considerations in exercise-management for rotator cuff related shoulder pain: a scoping review on pain-related prescription parameters. BMC Musculoskelet Disord 2025;26:180',
+  doi: '10.1186/s12891-025-08411-7',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC11846222/',
+  licence: 'cc-by',
+};
+const RICH_2025: SourceRef = {
+  citation:
+    'Rich A, Cook J, Hahne A, Ford J. Treatment of proximal hamstring tendinopathy with individualized physiotherapy: a clinical commentary. Int J Sports Phys Ther 2025;20:892-910',
+  doi: '10.26603/001c.138308',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12129629/',
+  licence: 'cc-by-nc',
+};
+const THOMEE_1997: SourceRef = {
+  citation:
+    'Thomeé R. A comprehensive treatment approach for patellofemoral pain syndrome in young women. Phys Ther 1997;77:1690-703',
+  doi: '10.1093/ptj/77.12.1690',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/9413448/',
+  licence: 'closed',
+};
+const COOK_PURDAM_2009: SourceRef = {
+  citation:
+    'Cook JL, Purdam CR. Is tendon pathology a continuum? A pathology model to explain the clinical presentation of load-induced tendinopathy. Br J Sports Med 2009;43:409-16',
+  doi: '10.1136/bjsm.2008.051193',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/18812414/',
+  licence: 'closed',
+};
+const COOK_2016: SourceRef = {
+  citation:
+    'Cook JL, Rio E, Purdam CR, Docking SI. Revisiting the continuum model of tendon pathology: what is its merit in clinical practice and research? Br J Sports Med 2016;50:1187-91',
+  doi: '10.1136/bjsports-2015-095422',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC5118437/',
+  licence: 'cc-by-nc',
+};
+const CAMPOS_VILLEGAS_2024: SourceRef = {
+  citation:
+    'Campos-Villegas C, et al. Clinical progression and load management for proximal hamstring tendinopathy in a long-distance runner: a case report. Int J Sports Phys Ther 2024;19:609-617',
+  doi: '10.26603/001c.116578',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC11065772/',
+  licence: 'cc-by-nc',
+};
+const EHIOGU_2023: SourceRef = {
+  citation:
+    'Ehiogu UD, Schöffl V, Jones G. Rehabilitation of annular pulley injuries of the fingers in climbers: a clinical commentary. Curr Sports Med Rep 2023;22:345-352',
+  doi: '10.1249/JSR.0000000000001107',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/37800745/',
+  licence: 'closed',
+};
+const LARSSON_2022: SourceRef = {
+  citation:
+    'Larsson R, Nordeman L, Blomdahl C. To tape or not to tape: annular ligament (pulley) injuries in rock climbers — a systematic review. BMC Sports Sci Med Rehabil 2022;14:148',
+  doi: '10.1186/s13102-022-00539-6',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9344739/',
+  licence: 'cc-by',
+};
+const SCHOFFL_2009: SourceRef = {
+  citation:
+    'Schöffl I, et al. The influence of the crimp and slope grip position on the finger pulley system. J Biomech 2009;42:2183-7',
+  doi: '10.1016/j.jbiomech.2009.04.049',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/19665129/',
+  licence: 'closed',
+};
+const MERGOUM_2025: SourceRef = {
+  citation:
+    'Mergoum A, et al. Tendon and ligament injuries of the finger and thumb in athletes: a narrative review. BMJ Open Sport Exerc Med 2025;11:e002475',
+  doi: '10.1136/bmjsem-2025-002475',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12164644/',
+  licence: 'cc-by-nc',
+};
+const MIRO_2021: SourceRef = {
+  citation:
+    'Miro PH, vanSonnenberg E, Sabb DM, Schöffl V. Finger flexor pulley injuries in rock climbers. Wilderness Environ Med 2021;32:247-258',
+  doi: '10.1016/j.wem.2021.01.011',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/33966972/',
+  licence: 'closed',
+};
+const YOON_2021: SourceRef = {
+  citation:
+    'Yoon SY, et al. The beneficial effects of eccentric exercise in the management of lateral elbow tendinopathy: a systematic review and meta-analysis. J Clin Med 2021;10:3968',
+  doi: '10.3390/jcm10173968',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC8432114/',
+  licence: 'cc-by',
+};
+const SVEINALL_2024: SourceRef = {
+  citation:
+    'Sveinall H, et al. Heavy slow resistance training, radial extracorporeal shock wave therapy or advice for patients with tennis elbow in the Norwegian secondary care: a randomised controlled feasibility trial. BMJ Open 2024;14:e085916',
+  doi: '10.1136/bmjopen-2024-085916',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC11667321/',
+  licence: 'cc-by-nc',
+};
+const STASINOPOULOS_2022: SourceRef = {
+  citation:
+    'Stasinopoulos D. Stop using the eccentric exercises as the gold standard treatment for the management of lateral elbow tendinopathy. J Clin Med 2022;11:1325',
+  doi: '10.3390/jcm11051325',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC8911334/',
+  licence: 'cc-by',
+};
+const SEE_2026: SourceRef = {
+  citation:
+    'See ZH, Loo CE, Jaafar Z. Eccentric exercise therapy for medial epicondylitis: a systematic review of clinical outcomes. Complement Ther Med 2026;98:103364',
+  doi: '10.1016/j.ctim.2026.103364',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/41887339/',
+  licence: 'cc-by-nc-nd',
+};
+const DEMANGEOT_2025: SourceRef = {
+  citation:
+    'Demangeot Y, et al. Exercise parameters to consider for Achilles tendinopathy: a modified Delphi study with international experts. Br J Sports Med 2025;59:1337-1349',
+  doi: '10.1136/bjsports-2025-110183',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12573378/',
+  licence: 'cc-by-nc',
+};
+const CHEPEHA_2025: SourceRef = {
+  citation:
+    'Chepeha J, et al. A standardized criteria-based progressive shoulder exercise program is effective in managing rotator cuff-related shoulder pain: a prospective cohort study. PLoS One 2025;20:e0328728',
+  doi: '10.1371/journal.pone.0328728',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12286389/',
+  licence: 'cc-by',
+};
+const DUTCH_SAPS_2026: SourceRef = {
+  citation:
+    'Lambers Heerspink FO, et al. Update of guideline for diagnosis and treatment of subacromial pain syndrome: a multidisciplinary review by the Dutch Orthopedic Association. Part 1: preventive measures, diagnostics, and non-surgical treatment. Acta Orthop 2026;97:91-98',
+  doi: '10.2340/17453674.2026.45365',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12908218/',
+  licence: 'cc-by',
+};
+const KARAKUZU_2026: SourceRef = {
+  citation:
+    'Karakuzu Güngör Z, Tan MS. Effect of scapular stabilization and mobilization-based rehabilitation on pain and shoulder function in subacromial impingement syndrome: a randomized controlled trial. BMC Musculoskelet Disord 2026;27',
+  doi: '10.1186/s12891-026-09760-7',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC13088711/',
+  licence: 'cc-by-nc-nd',
+};
+const WU_2025: SourceRef = {
+  citation:
+    'Wu D, et al. Specific modes of exercise to improve rotator cuff-related shoulder pain: systematic review and meta-analysis. Front Bioeng Biotechnol 2025;13:1560597',
+  doi: '10.3389/fbioe.2025.1560597',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12011739/',
+  licence: 'cc-by',
+};
+const ROBLES_PEREZ_2025: SourceRef = {
+  citation:
+    'Robles-Pérez R, et al. Thoracic manual therapy with or without exercise improves pain and disability in subacromial pain syndrome: a systematic review of randomized trials. Healthcare 2025;13:2479',
+  doi: '10.3390/healthcare13192479',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12523727/',
+  licence: 'cc-by',
+};
+
+/**
  * Ids are prefixed by scope (`GEN`, `FP`, `ET`, `SI`) and never reused.
  *
  * The text is copied character for character out of `drafter.md`, including
@@ -119,8 +319,33 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     id: 'GEN-01',
     scope: 'general',
     text: 'Use the pain traffic light: pain during activity no more than about 3 out of 10, settling by the next morning, and no increased morning stiffness.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-b',
+    sources: [
+      cite(
+        SILBERNAGEL_2007,
+        'The RCT behind the pain-monitoring model: continued Achilles loading under it did not worsen outcomes. Establishes that the model is safe to train under; the numbers are not from this paper.',
+      ),
+      cite(
+        SPRAGUE_2021,
+        'States the model as a 5/10 ceiling during or immediately after activity, with pain returning to its pre-activity level by the following morning. Sources the next-morning clause; governs activity, not exercise dosing.',
+      ),
+      cite(
+        HANLON_2026,
+        'The same rule in a second trial from the same lineage as Sprague 2021. Corroborating, not independent.',
+      ),
+      cite(
+        ULLERN_2025,
+        'Documents 3/10 as one of the two most common during-exercise limits in shoulder trials (14%, four trials, tied with 4/10), traces the model to the Thomeé band in which 2-5 is acceptable, and states that no study has validated any limit. Counterweight: warns that a static 3/10 ceiling may reinforce maladaptive pain behaviour and hinder adherence.',
+      ),
+      cite(
+        RICH_2025,
+        'The closest published number to 3/10, but applied to a pain increase persisting past 24 hours, not to pain during activity. A different clause; not imported.',
+      ),
+      cite(
+        THOMEE_1997,
+        'Origin of the model: under 2 safe, 2-5 acceptable, over 5 high risk, conditional on settling by the next morning. Provenance only. The morning-stiffness clause of this rule has no source in any of these papers.',
+      ),
+    ],
   },
   {
     id: 'GEN-02',
@@ -133,8 +358,25 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     id: 'GEN-03',
     scope: 'general',
     text: 'Do not include any exercise that loads the injured structure maximally in the first two stages.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        RICH_2025,
+        'A five-stage tendinopathy programme in which stages 1-2 are isometric and isotonic and the highest-demand energy-storage work sits at stage 5, with a stated rationale. Describes a programme prospectively, for one lower-limb tendon; does not assert a prohibition.',
+      ),
+      cite(
+        COOK_PURDAM_2009,
+        'The tendon-continuum model: the mechanism for avoiding maximal load early. Mechanism, not prescription.',
+      ),
+      cite(
+        COOK_2016,
+        'Revisits the continuum model; the readable version of the same mechanism.',
+      ),
+      cite(
+        CAMPOS_VILLEGAS_2024,
+        'A single case report of staged load management. Corroborating only.',
+      ),
+    ],
   },
 
   // --- finger_pulley (A2 pulley strain) ------------------------------------
@@ -149,8 +391,17 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     id: 'FP-02',
     scope: 'finger_pulley',
     text: 'Middle: progressive loading — open-hand isometric holds at low load (a light pick-up block or hangboard with feet fully weighted), finger extensions against a rubber band.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        EHIOGU_2023,
+        'Clinical commentary holding that pulley rehabilitation should be grounded in strength-and-conditioning principles with progressive loading as its foundation. Expert opinion for the principle, read from the abstract only; it contains no phases, addresses traumatic rupture, and names none of the exercises in this rule.',
+      ),
+      cite(
+        LARSSON_2022,
+        'Systematic review of taping; supports the open-hand loading premise. Its 6-8 week and 3-month timelines are restatements of Schöffl 2003/2004 and are not cited from here.',
+      ),
+    ],
   },
   {
     id: 'FP-03',
@@ -163,15 +414,33 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     id: 'FP-04',
     scope: 'finger_pulley',
     text: 'Climbing progression: big open-hand holds on vertical terrain first, several number grades below their max; smaller holds and half-crimp later; full-crimp moves are the very last thing to return.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        SCHOFFL_2009,
+        'Cadaver biomechanics: A2 pulley force 287 N in crimp versus 121 N in slope grip, and A4 rupture in 50% of crimp-loaded fingers versus 0% in slope. Disease-oriented evidence for ordering open hand before crimp; it cannot support the hold-size, wall-angle or grades-below-max progression.',
+      ),
+      cite(
+        MERGOUM_2025,
+        'Establishes that a staged, grade-dependent return to climbing exists as a published concept. Not the grip or terrain staging in this rule.',
+      ),
+    ],
   },
   {
     id: 'FP-05',
     scope: 'finger_pulley',
     text: 'Never program full-crimp training. The plan ends at "half-crimp comfortable under load, begin cautious return to normal climbing".',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        MIRO_2021,
+        'Review of pulley injury mechanism in climbers. Supports the mechanism behind avoiding full crimp, not the end-state prescription.',
+      ),
+      cite(
+        SCHOFFL_2009,
+        'The same cadaver loading data as FP-04: the premise for treating full crimp as the last grip to return.',
+      ),
+    ],
   },
 
   // --- elbow_tendinopathy (climber's elbow — medial or lateral) ------------
@@ -179,8 +448,25 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     id: 'ET-01',
     scope: 'elbow_tendinopathy',
     text: 'The core is slow, heavy-ish, pain-monitored loading: eccentric or slow-tempo wrist curls (dumbbell, band, or a loaded household bag), reverse wrist curls for the lateral side, forearm massage and stretching as accessories.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-b',
+    sources: [
+      cite(
+        YOON_2021,
+        'Meta-analysis: eccentric exercise is beneficial in lateral elbow tendinopathy, with buckets and water-filled containers among the published trial equipment, which legitimises household-object loading. States that no optimal protocol could be determined, so it does not reach dosing. Its extracted table shows the literature most often prescribes daily.',
+      ),
+      cite(
+        SVEINALL_2024,
+        'The only complete elbow protocol found: 4s/4s tempo dumbbell wrist extension, three times a week, at least 48 hours of recovery. Counterweight: the heavy-slow-resistance arm had low compliance from pain aggravation and the authors judged it unsuitable for tennis elbow, so "heavy-ish" is contested by the closest trial.',
+      ),
+      cite(
+        STASINOPOULOS_2022,
+        'Counterweight, editorial: argues that eccentric-only loading is outdated and the whole upper-limb kinetic chain should be loaded. Recorded so the rule does not read as settled.',
+      ),
+      cite(
+        SEE_2026,
+        'Systematic review of eccentric therapy for medial epicondylitis; supports the principle for the medial side. Abstract only.',
+      ),
+    ],
   },
   {
     id: 'ET-02',
@@ -200,8 +486,25 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     id: 'ET-04',
     scope: 'elbow_tendinopathy',
     text: 'Tendons respond to consistency over weeks, not intensity: doses stay modest and regular (roughly every other day), and "no pain" during loading is not required — up to about 3 out of 10 that settles by next morning is acceptable and normal.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        ULLERN_2025,
+        'Documents 3/10 as one of the two most common during-exercise limits (14%, four trials, tied with 4/10), attributes the pain-monitoring model to Thomeé, and states that no study has validated any limit. Counterweight: warns that a static 3/10 ceiling may reinforce maladaptive pain behaviour.',
+      ),
+      cite(
+        SVEINALL_2024,
+        'Prescribes three sessions a week with at least 48 hours of recovery, matching "every other day" as a published design parameter. The frequency itself was never tested, and the elbow eccentric literature more often prescribes daily.',
+      ),
+      cite(
+        DEMANGEOT_2025,
+        'International Delphi on Achilles tendinopathy parameters, supporting consistency over weeks rather than intensity. A different tendon.',
+      ),
+      cite(
+        COOK_2016,
+        'Conceptual origin of the pain-behaviour framing: warms-up-then-fine as tendon behaviour.',
+      ),
+    ],
   },
 
   // --- shoulder_impingement (subacromial pain / rotator cuff overload) -----
@@ -209,22 +512,61 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     id: 'SI-01',
     scope: 'shoulder_impingement',
     text: 'Early: calm the irritation while keeping motion — pendulums, wall slides in pain-free range, isometric external rotation at the side.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        CHEPEHA_2025,
+        'Single-arm prospective cohort documenting a criteria-based progressive programme: a calm-and-move early phase, three sets, an RPE target of 4-6 on the modified Borg scale (exertion, not a pain threshold), "to but not through" pain, and a 2/6/12-week referral algorithm. Contains no pendulums, wall slides or isometric external rotation. Uncontrolled; cannot establish effectiveness.',
+      ),
+      cite(
+        DUTCH_SAPS_2026,
+        'National guideline (GRADE, AGREE) supporting gradual loading within a comfort zone. Contains no exercise-therapy module and states that scientific evidence is lacking on the form or protocol of exercise therapy.',
+      ),
+      cite(
+        ULLERN_2025,
+        'Documents pain-threshold progression as common practice in shoulder trials while concluding that the evidence for any specific parameter is insufficient.',
+      ),
+    ],
   },
   {
     id: 'SI-02',
     scope: 'shoulder_impingement',
     text: 'Middle: rotator cuff and scapular strength — band external rotations, rows, band pull-aparts, serratus wall slides or push-up-plus; add thoracic mobility.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        KARAKUZU_2026,
+        'RCT (n=63) whose intervention arm performed wall slides, resisted rows, push-up plus, serratus punch, prone Y/T/W and band work at 3x10-15, a near line-by-line match with this list, alongside 10-12 minutes per session of clinician-delivered passive scapular mobilisation that the control arm did not receive. Documents the exercise selection as published practice. The tested increment is a bundle Beta cannot deliver, and every between-group difference fell below the MCID the paper itself cites.',
+      ),
+      cite(
+        WU_2025,
+        'Meta-analysis of exercise modes for rotator-cuff-related shoulder pain, corroborating the scapular element. Abstract only; nothing on staging.',
+      ),
+      cite(
+        ROBLES_PEREZ_2025,
+        'Systematic review supporting the thoracic region as a valid target in subacromial pain. Studies clinician-delivered manual therapy, not self-performed mobility.',
+      ),
+      cite(
+        CHEPEHA_2025,
+        'Documents rotator cuff and scapular strengthening as the middle phase of a criteria-based programme.',
+      ),
+    ],
   },
   {
     id: 'SI-03',
     scope: 'shoulder_impingement',
     text: 'Later: overhead tolerance — progressive overhead pressing motion with light load before big overhead climbing moves.',
-    evidence: 'author-judgement',
-    sources: [],
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        DUTCH_SAPS_2026,
+        'Guideline-level support for the gradual-loading principle only. Progressive overhead pressing as a late stage does not appear in the subacromial pain literature.',
+      ),
+      cite(
+        CHEPEHA_2025,
+        'Phase skeleton only; its late phase is not an overhead-pressing progression.',
+      ),
+    ],
   },
   {
     id: 'SI-04',
