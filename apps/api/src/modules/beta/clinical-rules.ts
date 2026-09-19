@@ -426,7 +426,7 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     sources: [
       cite(
         SCHOFFL_2006,
-        'The field-standard current-concepts paper: initial protection before loading for all but the mildest pulley injuries, then protected motion. The source this rule was tightened to match on 2026-09-19; before that it began with motion.',
+        'The field-standard current-concepts paper: initial protection before loading for all but the mildest pulley injuries, then protected motion. The source this rule was tightened to match; before that it began with motion.',
       ),
       cite(
         MERGOUM_2025,
@@ -531,7 +531,7 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
     sources: [
       cite(
         DAY_2015,
-        'Case-control study finding scapular muscle weakness alongside lateral epicondylalgia. Supports the association this rule now states; the authors write that cause and effect cannot be established, which is why the earlier causal wording was removed on 2026-09-19.',
+        'Case-control study finding scapular muscle weakness alongside lateral epicondylalgia. Supports the association this rule now states; the authors write that cause and effect cannot be established, which is why the earlier causal wording was removed.',
       ),
       cite(
         DAY_2019,

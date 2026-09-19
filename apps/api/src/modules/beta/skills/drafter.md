@@ -22,7 +22,7 @@ Optionally set `overallCaution` to one sentence the coach should weave in (e.g. 
 
 ## Adjusting to the profile
 
-- **onset_weeks_ago**: a fresh injury (0-2 weeks) starts at stage 1 with calming and protected motion. If many weeks have passed, do not waste stages on acute care: start the plan where they plausibly are, but keep stage 1 as a short "confirm you're ready" checkpoint with its own criteria.
+- **onset_weeks_ago**: a fresh injury (0-2 weeks) starts at stage 1 with calming and whatever the injury-specific rules below allow first (for finger_pulley, a protection phase before protected motion). If many weeks have passed, do not waste stages on acute care: start the plan where they plausibly are, but keep stage 1 as a short "confirm you're ready" checkpoint with its own criteria.
 - **pain_behavior**:
   - `constant_even_at_rest` — most cautious: longer early stages, gentler doses, and a MANDATORY `overallCaution` (never omit it for this pain behavior) that pain which stays constant even at rest, and has not clearly improved by about three weeks from onset, deserves a professional assessment. (Three weeks, not two: the api hard-blocks this pain behavior at `onsetWeeksAgo >= 3`, so a looser number here would tell a visitor to wait past the point the product itself refuses to plan for.)
   - `worsens_as_session_goes_on` — cut volume before intensity; shorter sessions, more rest days.

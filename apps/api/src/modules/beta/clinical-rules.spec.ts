@@ -17,15 +17,58 @@ const DRAFTER_MD = readFileSync(
   'utf8',
 );
 
+// drafter.md's injury sections are `### <injuryArea>` headings; the general
+// rules live in the sections before `## Injury-specific rules` and in
+// `## Hard rules`. A rule's section is where its text must be, and the only
+// place it may be.
+const INJURY_HEADINGS = [
+  '### finger_pulley',
+  '### elbow_tendinopathy',
+  '### shoulder_impingement',
+] as const;
+
+function sliceFrom(marker: string): string {
+  const start = DRAFTER_MD.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const rest = DRAFTER_MD.slice(start + marker.length);
+  const next = rest.search(/\n##+ /);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+function sectionFor(scope: string): string {
+  if (scope === 'general') {
+    let general = DRAFTER_MD;
+    for (const heading of INJURY_HEADINGS) {
+      general = general.replace(heading + sliceFrom(heading), '');
+    }
+    return general;
+  }
+  return sliceFrom(`### ${scope}`);
+}
+
 describe('clinical rule registry', () => {
   // This is the test that earns the file. drafter.md's maintainer note asks a
   // human to keep the transcribed rules in step; nothing enforced it. Now an
   // edit to either side fails here, naming the rule.
-  describe('every rule is verbatim from drafter.md', () => {
-    it.each(CLINICAL_RULES.map((rule) => [rule.id, rule.text]))(
-      '%s appears in the prompt unchanged',
-      (_id, text) => {
-        expect(DRAFTER_MD).toContain(text);
+  //
+  // A bare substring check was not enough: the 2026-09-19 break-it pass
+  // showed a rule duplicated into another injury's section, moved under the
+  // wrong heading, or given a trailing "except for..." all still passed. So
+  // each rule must appear exactly once, inside its own section, and an
+  // injury rule must be a whole bullet.
+  describe('every rule is verbatim from drafter.md, once, in its own section', () => {
+    const count = (haystack: string, needle: string) =>
+      haystack.split(needle).length - 1;
+
+    it.each(CLINICAL_RULES.map((rule) => [rule.id, rule]))(
+      '%s appears exactly once, in its section',
+      (_id, rule) => {
+        const own = sectionFor(rule.scope);
+        expect(count(own, rule.text)).toBe(1);
+        expect(count(DRAFTER_MD, rule.text)).toBe(1);
+        if (rule.scope !== 'general') {
+          expect(own.split('\n')).toContain(`- ${rule.text}`);
+        }
       },
     );
   });

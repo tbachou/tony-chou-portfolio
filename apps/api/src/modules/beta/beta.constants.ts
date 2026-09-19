@@ -265,8 +265,40 @@ export const ANY_CRIMP_PATTERN = 'crimp';
  * deliberately NOT treated as a blanket exemption: "Open-hand into half-crimp
  * transition" is a real stage 1 violation that such an exemption would miss.
  */
+//
+// Two patterns, because negation sits on either side of the word. The 2026-09-19
+// break-it pass fed 83 phrasings through the prefix-only pattern and 30
+// clearly negated ones fired; the rows in beta.constants.spec.ts are that
+// list. Input is already through `normalizeForMatch`, so hyphens are spaces
+// ("crimp-free" arrives as "crimp free") but em dashes and colons survive.
+//
+// PREFIX: a negator, an optional quantifier or article, an optional "kind
+// of", then one or more grip words joined by or/and/nor, then crimp — and
+// after it, further "or half crimping"-style items. "no half or full crimp"
+// strips both nouns; the old pattern stripped "half" and let "full crimp"
+// through to fire both matchers.
 const CRIMP_NEGATION_PATTERN =
-  /\b(?:no|non|not|never|without|avoid(?:s|ing)?|excluding|instead\s+of|rather\s+than|stop|limit(?:ing)?|minimi[sz]e|reduce|refrain\s+from)\s*(?:any\s+)?(?:kind\s+of\s+)?(?:full[\s-]+|half[\s-]+|open[\s-]+)?crimp\w*/g;
+  /\b(?:no|non|not(?:\s+(?:yet|even))?|never|without|avoid(?:s|ing)?|excluding|instead\s+of|rather\s+than|stop|skip|zero|neither|anti|hold\s+off|steer\s+clear\s+of|limit(?:ing)?|minimi[sz]e|reduce|refrain\s+from)\s*(?:(?:any|all|a|the)\s+)?(?:kind\s+of\s+)?(?:(?:full|half|open)(?:\s*,)?\s*(?:(?:or|and|nor|\/)\s*)?)*crimp\w*(?:\s*(?:or|and|nor|\/)\s*(?:(?:full|half|open)\s*)?crimp\w*)*/g;
+
+// POSTFIX: crimp, then a negator that comes after the word — "crimp-free",
+// "crimping prohibited", "full crimp: not yet", "crimping: none". Two shapes
+// the second break-it pass forced: "free" and "less" attach directly to
+// "crimp" (a dose like "crimp holds less than 5s" is not "crimp-less"), and a
+// bare "not" or "none" counts only at the end of the name ("crimp holds not
+// longer than 7s" is a dose, "full crimp is not" is a negation). The
+// post-crimp separator set has no comma on purpose: "no crimping, half-crimp
+// holds" is a contradiction, not a negated list, and the affirmative half
+// must keep firing. Known limit, not patched: a double negation such as "do
+// not skip full crimp hangs" reads as negated; no exercise name is written
+// that way, and the class predates this pattern (stop, avoid).
+const CRIMP_POSTFIX_NEGATION_PATTERN =
+  /\b(?:(?:full|half|open)\s+)?crimp\w*(?:\s+(?:free|less|avoidant)\b|(?:\s+(?:grips?|holds?|training|work))?(?:\s*:\s*|\s+)(?:(?:is|are|stays?)\s+)?(?:excluded|prohibited|banned|forbidden|off\s*limits|off\s+the\s+menu|comes\s+later|should\s+wait|not\s+(?:allowed|permitted|yet)\b|(?:none|not)(?=\s*(?:$|[;.)\]]))))/g;
+
+function stripNegatedCrimp(normalizedName: string): string {
+  return normalizedName
+    .replace(CRIMP_NEGATION_PATTERN, ' ')
+    .replace(CRIMP_POSTFIX_NEGATION_PATTERN, ' ');
+}
 
 /**
  * True when a normalized exercise name programs crimping, as opposed to
@@ -281,15 +313,11 @@ const CRIMP_NEGATION_PATTERN =
  * substring test threw the whole plan away for obeying the instruction.
  */
 export function namePrescribesFullCrimp(normalizedName: string): boolean {
-  return normalizedName
-    .replace(CRIMP_NEGATION_PATTERN, ' ')
-    .includes(FULL_CRIMP_PATTERN);
+  return stripNegatedCrimp(normalizedName).includes(FULL_CRIMP_PATTERN);
 }
 
 export function namePrescribesCrimping(normalizedName: string): boolean {
-  return normalizedName
-    .replace(CRIMP_NEGATION_PATTERN, ' ')
-    .includes(ANY_CRIMP_PATTERN);
+  return stripNegatedCrimp(normalizedName).includes(ANY_CRIMP_PATTERN);
 }
 
 /**
