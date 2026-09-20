@@ -1,6 +1,7 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { readNumericEnv } from '../../common/config/env.config';
 import {
   AI_PROVIDER,
   resolveConfiguredProvider,
@@ -62,8 +63,6 @@ function emptyConversation(): LoadedConversation {
 }
 
 export type EmitFn = (event: string, data: unknown) => void;
-
-const TURN_PAIR_CAP = Number(process.env.TURN_PAIR_CAP ?? 5);
 
 export type PreparedTurn = {
   conversationId: string;
@@ -189,12 +188,16 @@ export class ConversationService {
       : (params.conversationId as string);
     const turnIndex = isNewConversation ? 0 : conversation.nextTurnIndex;
 
-    if (turnIndex >= TURN_PAIR_CAP) {
+    // Read per call, not captured in a module const: see env.config.ts. As
+    // NaN both comparisons below were false, so a conversation never
+    // concluded and every extra turn was another billed model call.
+    const turnPairCap = readNumericEnv('TURN_PAIR_CAP');
+    if (turnIndex >= turnPairCap) {
       throw new ConflictException('This conversation has already concluded');
     }
 
     const story = this.groundingStory(topic, turnIndex);
-    const isFinal = turnIndex + 1 >= TURN_PAIR_CAP;
+    const isFinal = turnIndex + 1 >= turnPairCap;
 
     try {
       const reserved = await this.prisma.conversationTurn.create({

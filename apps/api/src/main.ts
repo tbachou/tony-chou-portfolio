@@ -2,6 +2,18 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { resolveAllowedOrigins } from './common/utils/allowed-origins.util';
+import { validateEnv } from './common/config/env.config';
+
+// Before anything else, and fatal on failure. These variables bound the
+// Anthropic bill, and the old `Number(process.env.X ?? n)` turned a typo into
+// NaN, which every `>=` comparison reads as "under the cap". Refusing to boot
+// is the recoverable outcome; serving uncapped is not.
+//
+// At module scope rather than inside bootstrap() so the throw stays
+// synchronous: from inside an async function it would surface as an unhandled
+// rejection, which still exits non-zero but buries the message that says
+// which variable is wrong.
+validateEnv();
 
 async function bootstrap() {
   // AuthModule (app.module.ts) disables and replaces Nest's default body
