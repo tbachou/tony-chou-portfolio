@@ -2,6 +2,7 @@ import type {
   BetaPlanRequest as BetaPlanPayload,
   Symptom,
 } from '@portfolio/shared';
+import { readServerMessage } from './http-error';
 
 // The request enums and the plan payload are the contract, and it is owned
 // by @portfolio/shared — the same schema the api validates with. Re-exported
@@ -32,14 +33,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 
 
-
-
-
 export type BetaStatus = {
   available: boolean;
   reason: 'ok' | 'daily_cap';
 };
-
 
 export type BetaStage = 'screening' | 'drafting' | 'coaching';
 
@@ -79,17 +76,6 @@ export async function fetchBetaStatus(): Promise<BetaStatus> {
   return res.json();
 }
 
-/** Pulls the human-readable message out of a NestJS error body. */
-function extractServerMessage(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null;
-  const message = (body as { message?: unknown }).message;
-  if (typeof message === 'string') return message;
-  if (Array.isArray(message)) {
-    return message.filter((m): m is string => typeof m === 'string').join(' ');
-  }
-  return null;
-}
-
 /**
  * Consumes POST /beta/plan's SSE stream as it arrives (same block parsing
  * as streamNextTurn in api.ts). Yields one event per `event:`/`data:`
@@ -110,12 +96,7 @@ export async function* streamBetaPlan(
   });
 
   if (!res.ok || !res.body) {
-    let message: string | null = null;
-    try {
-      message = extractServerMessage(await res.json());
-    } catch {
-      // Non-JSON error body: fall through to the generic message.
-    }
+    const message = await readServerMessage(res);
     throw new BetaRequestError(
       res.status,
       message ?? `The planner request failed (status ${res.status}).`,
