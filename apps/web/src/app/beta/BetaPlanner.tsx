@@ -144,11 +144,9 @@ export function BetaPlanner() {
     };
   }, []);
 
-  // A terminal safety state must never be screen-only: the card carries the
-  // actionable half (which professional to see; that the plan is truncated),
-  // while the sr-only line only summarises. Focus is the reliable delivery
-  // path — a live region inserted into the DOM already populated is announced
-  // inconsistently — so the roles below are the backstop, not the mechanism.
+  // A terminal safety state must never be screen-only. Focus is the reliable
+  // delivery path: a live region inserted already-populated is announced
+  // inconsistently, so the roles below are the backstop, not the mechanism.
   useEffect(() => {
     if (phase === 'red_flag') focusContainer(redFlagRef.current);
   }, [phase]);
@@ -177,23 +175,17 @@ export function BetaPlanner() {
     }
   }
 
-  // A failed submit puts focus on the summary, so the visitor hears what is
-  // wrong and can jump straight to any of it. Keyed on submitCount rather
-  // than on the errors themselves: this has to fire once per attempt, not
-  // again every time the visitor clears one of the errors by typing. On a
-  // clean submit the summary is not rendered and focusContainer no-ops.
+  // Keyed on submitCount, not the errors: this fires once per attempt, not
+  // again each time the visitor clears one by typing. On a clean submit the
+  // summary is not rendered and focusContainer no-ops.
   useEffect(() => {
     if (submitCount > 0) focusContainer(errorSummaryRef.current);
   }, [submitCount]);
 
   /**
-   * Copies the plan the visitor is looking at, WITH the context the screen
-   * gives it: `buildPlanClipboardText` prepends the educational framing and
-   * appends the stop conditions. Copying `planText` alone produced a bare
-   * protocol with neither, which is the artifact AC-G14 exists to prevent.
-   *
-   * Entirely client side: the text is already rendered, so nothing is
-   * requested and nothing is sent.
+   * Copies the plan WITH its on-screen context: the educational framing and
+   * the stop conditions. Copying planText alone produced a bare protocol
+   * with neither, which is the artifact AC-G14 exists to prevent.
    */
   async function copyPlan() {
     try {
@@ -262,13 +254,10 @@ export function BetaPlanner() {
     if (sessions !== '') payload.sessionsPerWeek = Number(sessions);
     if (values.equipment.length > 0) payload.equipmentAccess = values.equipment;
 
-    // Move focus before the render that disables the fieldset, otherwise the
+    // Focus must move before the render that disables the fieldset, or the
     // focused submit button is disabled out from under the visitor and focus
-    // drops to <body>. Disabling the button on its own would do the same, so
-    // excluding it from the fieldset would not have fixed this — and the
-    // viewport is about to scroll here anyway, which keeps focus and view
-    // together. scrollToResult() owns the scrolling (it honours
-    // prefers-reduced-motion), so focus must not scroll on its own.
+    // drops to <body>. scrollToResult owns the scrolling (it honours
+    // prefers-reduced-motion), so this focus must not scroll.
     const runId = ++runIdRef.current;
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -377,12 +366,10 @@ export function BetaPlanner() {
   const showPipeline = phase !== 'idle';
   // A failure with plan text already on screen means the stream died mid-plan.
   const planCutOff = phase === 'error' && planText.length > 0;
-  // Every error, not just the ones FIELD_ORDER anchors. Counting only the
-  // anchored six meant an error on any other field (the two arrays, goals)
-  // rendered no summary, announced nothing, and moved no focus — the submit
-  // button would simply do nothing, which is the worst thing this form can
-  // do to somebody who is hurt. Unreachable with today's schema; a rule
-  // added to one of those fields would reach it.
+  // Every error, not only the ones FIELD_ORDER anchors. Counting just the
+  // anchored six made an error elsewhere render no summary and move no
+  // focus, so the submit button did nothing at all. Unreachable today; a
+  // new rule on goals or either array would reach it.
   const errorFields = Object.keys(errors) as (keyof typeof errors)[];
   const errorCount = errorFields.length;
 

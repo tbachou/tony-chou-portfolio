@@ -10,13 +10,9 @@ import { INJURY_OPTIONS } from './options';
 
 export type Phase = 'idle' | 'running' | 'done' | 'red_flag' | 'error';
 
-// ---------------------------------------------------------------------
-// Client-side validation. Browser-native bubbles are transient, show one
-// error at a time, cannot be recalled, and frequently render outside the
-// viewport at 200% zoom — so the form opts out with noValidate and owns
-// its own errors. The `required` / `min` / `max` attributes stay: they
-// still map to aria-required and describe the control to assistive tech.
-// ---------------------------------------------------------------------
+// The form sets noValidate and owns its errors: native bubbles are
+// transient, one at a time, and often render off-screen at 200% zoom. The
+// required/min/max attributes stay — they still feed aria-required.
 
 export type FieldName =
   | 'injuryArea'
@@ -50,15 +46,11 @@ export const FIELD_ANCHORS: Record<FieldName, string> = {
 export const GRADE_PATTERN = /^[A-Za-z0-9 .+/-]+$/;
 
 /**
- * Every rule the form enforces, in one place. The values are the api's enum
- * values and the server re-validates all of them with IsIn (spec 0004) —
- * this schema is the first gate, never the only one.
+ * The form's first gate; the server re-validates everything (spec 0004).
  *
- * The two numeric answers stay strings: their inputs are text-like, an empty
- * box has to stay distinguishable from a deliberate zero, and Number('') is
- * 0. The three required choices have no default, so an untouched group fails
- * its enum and reports the sentence written here rather than "invalid
- * option".
+ * The numeric answers stay strings so an empty box is distinguishable from
+ * a deliberate zero (Number('') is 0). The required choices have no default,
+ * so an untouched group reports the sentence below, not "invalid option".
  */
 export const plannerSchema = z.object({
   injuryArea: z.enum(INJURY_AREAS, { error: 'Choose the area that hurts.' }),

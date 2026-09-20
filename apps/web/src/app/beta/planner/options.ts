@@ -17,10 +17,6 @@ import {
 
 export const ACK_STORAGE_KEY = 'beta-disclaimer-acknowledged-v1';
 
-// ---------------------------------------------------------------------
-// Plain-language labels for the API enum values (values themselves must
-// match beta.constants.ts exactly — the server validates with IsIn).
-// ---------------------------------------------------------------------
 
 export const INJURY_OPTIONS: { value: InjuryArea; label: string; hint: string }[] = [
   {

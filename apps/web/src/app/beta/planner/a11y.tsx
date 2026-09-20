@@ -8,8 +8,8 @@ export function describedBy(...ids: (string | false | undefined)[]) {
   return ids.filter(Boolean).join(' ') || undefined;
 }
 
-/** Persistent, per-control error text. Never colour alone: it carries an
- *  icon and bold weight too, and the control gets aria-invalid. */
+/** Per-control error text. Never colour alone: an icon and bold weight
+ *  carry it too, and the control gets aria-invalid. */
 export function FieldError({ field, message }: { field: FieldName; message?: string }) {
   if (!message) return null;
   return (
@@ -25,18 +25,11 @@ export function FieldError({ field, message }: { field: FieldName; message?: str
 /**
  * Move focus to a container the visitor cannot reach with Tab.
  *
- * The tabindex is applied for the duration of the focus and removed on blur,
- * rather than living in the markup. A permanent tabindex="-1" makes the
- * container the nearest focusable ancestor of everything inside it, and a
- * browser that declines to focus the control that was clicked focuses that
- * ancestor instead. Safari does exactly that for radios and checkboxes, so
- * every click on a choice in the form put focus on the <form> and lit the
- * whole card with the .beta-focus-target:focus ring.
- *
- * Focus still has to be visible wherever script puts it, which is why that
- * ring keys off :focus rather than :focus-visible — programmatic focus does
- * not match :focus-visible. Keeping the container unfocusable until the
- * moment it is focused is what stops a click from borrowing that ring.
+ * The tabindex is added for the focus and removed on blur. A permanent one
+ * makes the container the nearest focusable ancestor, and Safari focuses it
+ * instead of a clicked radio — which put the focus ring on the whole card.
+ * The ring keys off :focus, not :focus-visible, because programmatic focus
+ * does not match the latter.
  */
 export function focusContainer(el: HTMLElement | null, options?: FocusOptions) {
   if (!el) return;
