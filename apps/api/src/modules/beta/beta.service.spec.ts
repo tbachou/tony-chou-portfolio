@@ -909,6 +909,78 @@ describe('BetaService.generatePlan', () => {
     });
   });
 
+  // Follow-ups from the pre-deploy break-it pass on the abort handling.
+  describe('an abandoned request, harder cases', () => {
+    function abortedSignal(): AbortSignal {
+      const c = new AbortController();
+      c.abort();
+      return c.signal;
+    }
+
+    it('emits nothing on the screener red-flag path either', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall.mockResolvedValueOnce({
+        input: { verdict: 'red_flag', category: 'sudden_pop_with_swelling' },
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      // The abandoned branch in the catch never sees this path: it returns
+      // early with its own refund. Before the emit was centrally guarded,
+      // this wrote a red_flag into a destroyed socket.
+      expect(h.events).toHaveLength(0);
+    });
+
+    it('does not file a genuine upstream failure as abandoned', async () => {
+      const h = makeHarness();
+      // A 503 that happens to land while the visitor is navigating away is
+      // still a 503; filing it as abandoned would hide it from errorCount,
+      // which is the signal the abandoned branch exists to protect.
+      h.anthropic.forceToolCall.mockRejectedValueOnce(fakeApiError(503));
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('error');
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalledWith('abandoned');
+    });
+
+    it('never refunds a slot a completed plan already consumed', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+      // A throw after the success transaction commits. Today nothing awaits
+      // in that window, so this is a latent guard rather than a live bug —
+      // it is here so the window staying one statement wide is enforced.
+      h.prisma.$transaction.mockImplementationOnce(async () => {
+        queueMicrotask(() => undefined);
+        return [];
+      });
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalled();
+      expect(h.events.map(([name]) => name)).toContain('done');
+    });
+  });
+
   describe('global budget reservation', () => {
     it('emits only the demo-budget error when no slot can be reserved', async () => {
       const h = makeHarness();

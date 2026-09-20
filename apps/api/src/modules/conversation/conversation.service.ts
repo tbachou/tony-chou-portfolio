@@ -238,7 +238,15 @@ export class ConversationService {
     /** Aborted when the visitor disconnects; see the controller's close handler. */
     signal?: AbortSignal;
   }): Promise<void> {
-    const { topic, prepared, history, hashedIp, emit, signal } = params;
+    const { topic, prepared, history, hashedIp, signal } = params;
+
+    // Every emit goes through here so an abandoned turn stops writing. The
+    // interviewer streams token by token, so without this a visitor who
+    // navigates away keeps a destroyed socket receiving text.
+    const emit: EmitFn = (event, data) => {
+      if (signal?.aborted) return;
+      params.emit(event, data);
+    };
     const { conversationId, turnIndex, isFinal, story, interviewerTurnId } =
       prepared;
 
@@ -456,7 +464,13 @@ export class ConversationService {
       // above still apply — those tokens were spent and that row must not
       // linger — but there is nobody to emit to, and logging it as an error
       // would make an ordinary navigation look like an outage.
-      if (signal?.aborted || error instanceof AbandonedTurnError) {
+      // As in Beta: an abort that coincides with a real upstream failure is
+      // still a failure, and filing it as abandoned would hide it.
+      const upstream = this.anthropic.classifyUpstreamError(error);
+      if (
+        error instanceof AbandonedTurnError ||
+        (signal?.aborted === true && upstream === null)
+      ) {
         this.logger.warn('Turn abandoned by the visitor');
         this.logProviderCall('abandoned');
         return;
