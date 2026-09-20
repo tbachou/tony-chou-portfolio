@@ -240,15 +240,15 @@ The spec's status mirrors its feature's build lifecycle (scope: planned→`Propo
 |---|---|
 | `Proposed` | spec written, decision agreed, feature NOT yet built. Set by /architect at creation. |
 | `In Progress` | The feature governed by this spec is being built. Set by /develop when the feature goes in-progress. |
-| `Accepted` | The feature is built and verified (scope `done`), the "done and dusted" state. A spec is NOT `Accepted` until its feature ships. Set by /develop on completion or reconciled by /sync. |
+| `Accepted` | The feature is built and verified, the "done and dusted" state. A spec is NOT `Accepted` until its feature ships. Set by /develop on completion. |
 | `Superseded by [NNNN](NNNN-title.md)` | Replaced by a newer spec |
 
 **Which status behavior applies depends on whether a buildable scope feature links this spec:**
-- **Feature linked spec** (a `docs/scope/` row's `spec` cell points to it) → **feature mirrored**: `Proposed` → `In Progress` → `Accepted`, tracking the feature's build lifecycle (table above). Confirmation ratifies content but does not set `Accepted`; /develop advances it.
+- **Buildable feature spec** (it carries a `## Build plan`) → **lifecycle mirrored**: `Proposed` → `In Progress` → `Accepted`, tracking the build (table above). Confirmation ratifies content but does not set `Accepted`; /develop advances it.
 - **Standalone decision spec** (a foundational/stack or cross cutting standard with **no linked buildable feature**) → **decision status**: `Proposed` when written, then **`Accepted` once the engineer ratifies it** (on confirmation). There's no build phase to gate on, so it is not feature mirrored.
 - **spec documenting already shipped work** (the "already built" path, or a feature already `existing`) → **born `Accepted`**, it describes reality that already exists.
 
-**Umbrella child specs carry no lifecycle status.** In an umbrella directory (`NNNN-<x>/`), only the `index.md` has a `**Status**:` line, it mirrors the feature. The **child specs are spec content**, so **omit the `**Status**:` line on children** (they're governed by the umbrella). `/develop` and `/sync` advance the umbrella `index.md`'s status only, never a child's.
+**Umbrella child specs carry no lifecycle status.** In an umbrella directory (`NNNN-<x>/`), only the `index.md` has a `**Status**:` line, it mirrors the feature. The **child specs are spec content**, so **omit the `**Status**:` line on children** (they're governed by the umbrella). `/develop` advances the umbrella `index.md`'s status only, never a child's.
 
 **A directory spec splits build spec from reasoning.** A directory spec (`NNNN-<x>/`) always contains exactly two core files, plus optional extras:
 - **`index.md`**: the build spec `/develop` reads: `## Summary`, `## Requirements`, `## Decision`, the design/spec section, `## Build plan`, `## Consequences`, `## Follow-up`, and a one line `## Rationale` pointer to `rationale.md`. For an umbrella, `index.md` also opens with a **`## Structure`** section listing and linking every child spec (one line each: what it is + which decision it supports) and holds any **cross child contract**.

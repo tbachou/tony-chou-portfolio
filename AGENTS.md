@@ -9,7 +9,7 @@
 
 ## Build approach
 
-<TBD, set by /scope> (specs 0002 and 0004 defaulted to Tracer Bullet and noted the assumption; no scope header exists yet)
+**Tracer Bullet** — thin vertical slices end to end through every layer. Specs 0002 and 0004 defaulted to it and noted the assumption; it is the project default until a spec declares its own `**Approach**:` line.
 
 ## Commands
 

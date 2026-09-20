@@ -83,4 +83,4 @@ Next: /check verify <feature>
 Heads up: <new env var `X` to set · a business rule the spec left open · old code removed>   (omit if none)
 ```
 
-Mention only what needs the engineer: a new `ENV_VAR` to set, an open question the spec did not settle, or a migration that did not apply. The verify steps still get emitted and offered for `verify.md` per `SKILL.md` Step 4 (that panel is separate from this summary); `/test` reads the acceptance criteria itself, so no "what to verify" list here.
+Mention only what needs the engineer: a new `ENV_VAR` to set, an open question the spec did not settle, or a migration that did not apply. The verify steps still get emitted and offered for `verify.md` per `SKILL.md` Step 4 (that panel is separate from this summary), so no "what to verify" list here.

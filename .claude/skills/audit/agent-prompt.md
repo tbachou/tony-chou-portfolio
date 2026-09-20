@@ -27,7 +27,7 @@ Hard rules:
 
 ## Stamp what you write, so curated content is knowable
 
-Every `AGENTS.md` this skill creates ends with the drafted by line in the templates below. It exists so a later run (this skill or `/sync`) can tell what a tool wrote from what a human wrote, instead of guessing.
+Every `AGENTS.md` this skill creates ends with the drafted by line in the templates below. It exists so a later run of this skill can tell what a tool wrote from what a human wrote, instead of guessing.
 
 - **Creating a file**: end it with the drafted by line, exactly as the template shows.
 - **Gap filling a file that still carries the line**: the untouched parts are yours to correct; add or fix facts surgically, and leave the line in place.
@@ -37,18 +37,18 @@ The stamp records provenance, not permission. It never licenses overwriting a li
 
 ## The mirrored root fields
 
-<!-- ROOT-FIELD-CONTRACT:START (identical in /audit and /sync; edit both or neither) -->
+<!-- ROOT-FIELD-CONTRACT:START -->
 Root `AGENTS.md` carries two mirrored fields. Each has exactly one source of truth outside the file, and no skill may invent a value for either:
 
 - `## Stack` mirrors the architecture spec, the one under `docs/specs/` with a `## Proposed stack` section.
-- `## Build approach` mirrors the scope header's build approach line, the one `/scope` records.
+- `## Build approach` mirrors the build approach the governing architecture spec records.
 
 Three rules bind every skill that touches them. Never overwrite curated prose in either field. Fill a field only when it is missing or still a placeholder. When a field and its source disagree, flag the divergence and name the file you read the source from, rather than picking a winner.
 <!-- ROOT-FIELD-CONTRACT:END -->
 
 What `/audit` does with them (every phase that writes or audits root):
 
-- **Creating root** (greenfield, whole-repo): populate `## Stack` from the architecture spec if it exists (the source of truth, even on greenfield with no code); else derive from the code/manifest, else `<to be filled>`. Seed `## Build approach` from the scope header if one exists, a short line: name + one line principle; if no scope, or none set, write `<TBD, set by /scope>` rather than guessing.
+- **Creating root** (greenfield, whole-repo): populate `## Stack` from the architecture spec if it exists (the source of truth, even on greenfield with no code); else derive from the code/manifest, else `<to be filled>`. Seed `## Build approach` from the architecture spec if it records one, a short line: name + one line principle; if none is set, write `<TBD, set by /architect>` rather than guessing.
 - **`## Git`** (from the git integration question): write the engineer's choice as a small block the other skills read, e.g. `- integration: on` / `- branch prefix: feat/` / `- commit: per-milestone`, or just `- integration: off`. Absent means off. It is a recorded preference, not a mirrored source of truth like Stack/Build approach; `/develop` reads it to branch and commit, `/document` to gate the PR.
 - **Auditing existing root** (gap-fill): either field missing or placeholder → ROOT_GAPS; either field contradicting its source → CONTRADICTIONS.
 
@@ -107,11 +107,11 @@ New project, possibly just scaffolded from its chosen stack (there may be a mani
 
 **Step 1: Minimal discovery**
 
-With your file tools, list the top couple of project levels (excluding `.git`); read the manifest if present (note language, package manager). Check `docs/specs/` for numbered specs (`NNNN-*.md`); if an architecture spec exists (`## Proposed stack` section), read it: the stack is already decided via `/architect`, use it for `## Stack`, no placeholders, never contradict it. Check `docs/scope/` (or `.workflow/scope/`): if the scope header records a build approach (name + one line principle), capture it verbatim as the `## Build approach` seed; else `<TBD, set by /scope>`.
+With your file tools, list the top couple of project levels (excluding `.git`); read the manifest if present (note language, package manager). Check `docs/specs/` for numbered specs (`NNNN-*.md`); if an architecture spec exists (`## Proposed stack` section), read it: the stack is already decided via `/architect`, use it for `## Stack`, no placeholders, never contradict it. If that architecture spec records a build approach (name + one line principle), capture it verbatim as the `## Build approach` seed; else `<TBD, set by /architect>`.
 
 **Step 2: Create root AGENTS.md**
 
-Use the template below. `## Stack`: spec, else findings, else `<to be filled>`. `## Build approach`: scope header, else `<TBD, set by /scope>`. `## Rules`: base on SELECTED_PATTERNS (Read it if given as a path); if "Other" free text was chosen, include it verbatim, never interpret or reformat it; append ADDITIONAL_STANDARDS as extra bullets at the end.
+Use the template below. `## Stack`: spec, else findings, else `<to be filled>`. `## Build approach`: the architecture spec, else `<TBD, set by /architect>`. `## Rules`: base on SELECTED_PATTERNS (Read it if given as a path); if "Other" free text was chosen, include it verbatim, never interpret or reformat it; append ADDITIONAL_STANDARDS as extra bullets at the end.
 
 If `INSTALLED_SKILLS_OR_NONE` is provided, write a `## Agent skills` section (template above): ONE bullet per installed skill, `- [<skill>](<skills-dir>/<skill>/): `<owner>/<repo>`, <what it covers>`, so a later skill loads only the ones a task needs, never a single dense line of names. Detect the project's real skills directory (`.claude/skills/` on Claude Code, `.agents/skills/` on other agents, or a plain `skills/`) and use it in the link; never hardcode a Claude only path, since every tool reads this file. Keep the registry source `<owner>/<repo>` on each bullet as the tool agnostic identity a different agent resolves in its own dir. If `DECLINED_TOOLS_OR_NONE` is provided, add a compact `Declined: <tool>, <tool>` line in that section (a decline has nothing to load, so it needs no location; it stops a later `/audit` or `/architect` offering it again). If `MCP_SERVERS_OR_NONE`, add a compact `MCP servers: <server> (connected|recommended)` line (a connected service has no local file to open). Project wide tech at root; area specific at that area's nested doc, using the same `## Agent skills` section.
 
@@ -208,7 +208,7 @@ With your file tools, list the project tree a few levels deep, skipping vendored
 - (a) Global facts missing from root: a daily command, stack element, project wide rule, or the build approach (in the scope header but absent from root) that's true but not recorded. Collect each as a `ROOT_GAPS` line (exact markdown + target section) and apply it only with the engineer's permission (the gap handling step in `modes/gapfill.md`), never silently, since a root line may be curated.
 - (b) Undocumented areas: a major area with distinct conventions/gotchas and no nested AGENTS.md. Create the nested doc (nested template + sibling CLAUDE.md pointer) and add its root pointer line via Edit (safe to do directly: creating, not overwriting).
 - (c) Stale/incomplete nested docs: an existing nested AGENTS.md missing something now true of its area. Return as `PROPOSED_ADDITIONS`; do NOT edit it yourself.
-- (d) Contradictions: a doc states something the codebase or its governing records disprove (documented test runner or framework isn't the one actually used; `## Stack` conflicts with the architecture spec; `## Build approach` differs from the scope header; a documented command no longer exists). Worse than a gap, the docs are actively wrong; do NOT fix it automatically (the line may be curated). Collect each as a `CONTRADICTIONS` entry naming the doc, what it says, and what the code/spec/scope actually shows; surface these to the human, don't fix them automatically.
+- (d) Contradictions: a doc states something the codebase or its governing records disprove (documented test runner or framework isn't the one actually used; `## Stack` conflicts with the architecture spec; `## Build approach` differs from the one the architecture spec records; a documented command no longer exists). Worse than a gap, the docs are actively wrong; do NOT fix it automatically (the line may be curated). Collect each as a `CONTRADICTIONS` entry naming the doc, what it says, and what the code or spec actually shows; surface these to the human, don't fix them automatically.
 
 Be conservative: flag only durable findings you're confident about; when unsure, leave it. Do not flag implementation detail, TODOs, or anything that churns.
 
@@ -231,8 +231,8 @@ Be conservative: flag only durable findings you're confident about; when unsure,
 ## Build approach
 
 <The project's default build strategy, a short line: name + one line principle. A project wide
- convention every skill reads (like the stack). Seeded from the scope header; `<TBD, set by
- /scope>` if none is set yet. The approach is one of:
+ convention every skill reads (like the stack). Seeded from the governing architecture spec; `<TBD, set by
+ /architect>` if none is set yet. The approach is one of:
  - **Tracer Bullet**, vertical end to end slices, thin but complete through every layer
  - **Skateboard**, ship the thinnest usable whole, then grow it
  - **Facade**, UI first shell, then wire the real behavior behind it (prototype led)
