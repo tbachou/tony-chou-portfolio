@@ -1,7 +1,7 @@
 ---
 name: check
 allowed-tools: Bash, Read, Grep, Glob, Write, Agent
-argument-hint: "[feature or scope]"
+argument-hint: "[feature or path]"
 description: "Run /check before merge to prove a change actually works: it drives the real app and confirms behavior against the spec (every acceptance criterion met, every specced surface built). Runtime proof, not a code read. Typically right after /develop. Never edits your code. For a code review of the diff, use the built-in /code-review instead."
 ---
 
@@ -25,7 +25,7 @@ This skill used to carry a second `review` mode that spawned a contrasting-model
 
 ## Execution
 
-Read `modes/verify.md` and follow it fully. Pass any argument (a feature name, a scope) through as the target.
+Read `modes/verify.md` and follow it fully. Pass any argument (a feature name, a path) through as the target.
 
 If the argument is bare `/check` with nothing after it, target the current change set and say what you scoped to.
 
