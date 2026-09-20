@@ -38,7 +38,7 @@ describe('classify', () => {
       toolUseResponse({ label: 'bug', summary: 'Plan generator stalls, needs restart' }),
     );
 
-    const { classify } = await import('./classify');
+    const { classify } = await import('./classify.js');
 
     await expect(classify(PAYLOAD)).resolves.toEqual({
       label: 'bug',
@@ -51,7 +51,7 @@ describe('classify', () => {
       toolUseResponse({ label: 'praise', summary: 'nice site' }),
     );
 
-    const { classify } = await import('./classify');
+    const { classify } = await import('./classify.js');
     await classify(PAYLOAD);
 
     expect(mockBedrockSend).toHaveBeenCalledTimes(1);
@@ -86,7 +86,7 @@ describe('classify', () => {
       },
     });
 
-    const { classify } = await import('./classify');
+    const { classify } = await import('./classify.js');
 
     await expect(classify(PAYLOAD)).resolves.toEqual({
       label: 'unclassified',
@@ -99,7 +99,7 @@ describe('classify', () => {
       toolUseResponse({ label: 'spam', summary: 'whatever' }),
     );
 
-    const { classify } = await import('./classify');
+    const { classify } = await import('./classify.js');
 
     await expect(classify(PAYLOAD)).resolves.toEqual({
       label: 'unclassified',
@@ -110,7 +110,7 @@ describe('classify', () => {
   it('falls back to unclassified when the label is absent', async () => {
     mockBedrockSend.mockResolvedValueOnce(toolUseResponse({ summary: 'no label here' }));
 
-    const { classify } = await import('./classify');
+    const { classify } = await import('./classify.js');
 
     await expect(classify(PAYLOAD)).resolves.toEqual({
       label: 'unclassified',
@@ -121,7 +121,7 @@ describe('classify', () => {
   it('falls back to unclassified when summary is not a string', async () => {
     mockBedrockSend.mockResolvedValueOnce(toolUseResponse({ label: 'bug', summary: 42 }));
 
-    const { classify } = await import('./classify');
+    const { classify } = await import('./classify.js');
 
     await expect(classify(PAYLOAD)).resolves.toEqual({
       label: 'unclassified',
@@ -132,7 +132,7 @@ describe('classify', () => {
   it('falls back to unclassified when the tool input is not an object', async () => {
     mockBedrockSend.mockResolvedValueOnce(toolUseResponse('just a string'));
 
-    const { classify } = await import('./classify');
+    const { classify } = await import('./classify.js');
 
     await expect(classify(PAYLOAD)).resolves.toEqual({
       label: 'unclassified',
@@ -143,7 +143,7 @@ describe('classify', () => {
   it('never throws when the SDK call rejects (AC-C2)', async () => {
     mockBedrockSend.mockRejectedValueOnce(new Error('ThrottlingException'));
 
-    const { classify } = await import('./classify');
+    const { classify } = await import('./classify.js');
 
     await expect(classify(PAYLOAD)).resolves.toEqual({
       label: 'unclassified',

@@ -8,7 +8,7 @@ Read the setting: `integration`, `branch prefix` (default `feat/`), `commit` (`p
 
 ## Branch (before building, in the freshness & collaboration check)
 
-- On the default branch (`main`/`master`) → **offer to branch** (recommended): `<prefix><feature-slug>` from the scope feature name (kebab case; e.g. `feat/accounts-sign-in`). Never build on the default branch.
+- On the default branch (`main`/`master`) → **offer to branch** (recommended): `<prefix><feature-slug>` from the feature name (kebab case; e.g. `feat/accounts-sign-in`). Never build on the default branch.
 - On a feature branch already → reuse it; do not create another.
 - Resuming a half built feature (Step 3) → check out that feature's branch first if it exists and you are not on it.
 - Use the change type for the prefix when it is not a feature (`fix/`, `refine/`), else the setting's default.

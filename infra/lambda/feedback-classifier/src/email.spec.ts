@@ -41,7 +41,7 @@ describe('sendFeedbackEmail', () => {
   it('sends the subject and body as UTF-8 so non-ASCII feedback is not garbled', async () => {
     mockSesSend.mockResolvedValueOnce({});
 
-    const { sendFeedbackEmail } = await import('./email');
+    const { sendFeedbackEmail } = await import('./email.js');
     await sendFeedbackEmail(PAYLOAD, CLASSIFICATION);
 
     expect(mockSesSend).toHaveBeenCalledTimes(1);
@@ -54,7 +54,7 @@ describe('sendFeedbackEmail', () => {
   it('throws and never calls SES when OWNER_EMAIL is unset', async () => {
     delete process.env.OWNER_EMAIL;
 
-    const { sendFeedbackEmail } = await import('./email');
+    const { sendFeedbackEmail } = await import('./email.js');
     await expect(sendFeedbackEmail(PAYLOAD, CLASSIFICATION)).rejects.toThrow('OWNER_EMAIL');
     expect(mockSesSend).not.toHaveBeenCalled();
   });

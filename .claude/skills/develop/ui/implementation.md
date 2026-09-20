@@ -251,10 +251,10 @@ Lead with the headline, then Next, then a Heads up only if there is one (per `do
 
 ```
 **Built <name> (<file paths>) Â· <full product surface | component>, WCAG AA, self check passed.**
-Next: /check verify <feature>
+Next: /check <feature>
 Heads up: invented for you to review, swap for the real thing Â· <brand/wordmark · tagline · copy · placeholder assets>.   (omit the whole line if nothing was invented)
 ```
 
-Say it plainly if the self check found and fixed a defect, or if a token/asset issue needs a manual look; otherwise do not list the passing checks (semantic HTML, keyboard, screen reader, tokens are the guide's bar, not a report field). The design source, stack, fonts, and token file are recorded in `design.md` and the code, not here. `/test` reads the acceptance criteria and `verify.md`, so it needs no "what to verify" list in this summary.
+Say it plainly if the self check found and fixed a defect, or if a token/asset issue needs a manual look; otherwise do not list the passing checks (semantic HTML, keyboard, screen reader, tokens are the guide's bar, not a report field). The design source, stack, fonts, and token file are recorded in `design.md` and the code, not here. The acceptance criteria and `verify.md` carry what to verify, so this summary needs no such list.
 
 ---

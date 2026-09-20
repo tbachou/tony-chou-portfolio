@@ -1,7 +1,7 @@
 ---
 name: develop
 allowed-tools: Bash, Read, Grep, Glob, Write, Edit, Agent, AskUserQuestion
-description: "Run /develop to build a feature, UI or backend, from an approved design, a page, component, API, service, or data slice. If something load bearing is undecided and no spec records it, it stops and routes you to /architect; otherwise it reads the spec plus AGENTS.md, builds, and advances the scope."
+description: "Run /develop to build a feature, UI or backend, from an approved design, a page, component, API, service, or data slice. If something load bearing is undecided and no spec records it, it stops and routes you to /architect; otherwise it reads the spec plus AGENTS.md, builds, and advances the spec's status."
 ---
 
 ## Output style (plain words, no dashes, no hyphens)
@@ -21,11 +21,11 @@ Gates, then acts: no upfront question rounds like `/architect`. Read the decisio
 ## Artifact ownership
 
 - Writes app code (plus CSS/tokens for UI).
-- Scope (`docs/scope/`): only the Step 4 touches (feature status → `in-progress`, milestone sub boxes, `Build it` box, code pointer). Marks a feature `done` only at the `Prototype` workflow tier (build plus its own self check; the engineer opted out of separate verification), and even then never while an `Assumed` spec is unratified; at `Alpha`/`Beta`/`GA` it leaves the feature `in-progress` for `/check verify` and `/test` to close, and never ticks `Verify it` or `Test it`. Never creates files in `docs/scope/` (scopes only; analysis/research is `/architect`'s, in the spec's `rationale.md`).
-- Never writes spec content or deliberates a decision (flags the need, defers to `/architect`); never restructures root `AGENTS.md` (that's `/audit`); new area conventions go via `/sync` afterwards. **One narrow exception:** on `Build now, record it as an assumed spec` (Step 0), `/develop` may *create* a spec, but only in `Status: Assumed`, and only the assumption record fields (owed decision, assumption built on, authorized by, code area, requirements seeds). It never writes rationale and never advances an `Assumed` spec past that state; `/architect` owns clearing it. This is the only spec `/develop` creates.
-- One spec touch on an existing spec: the `**Status**:` line (umbrella decision → the `index.md`'s, never a child's), plus filling the feature's spec pointer line. Build start: `Proposed` → `In Progress`; build lands (feature → `done`): `In Progress` → `Accepted` (a spec is not `Accepted` until its feature ships). Never edit spec content, only that line, surgically: read it again right before writing; unexpected state (already `Accepted`, `Superseded`) → flag, don't clobber. **Never move a spec out of `Assumed`** (that is ratification, `/architect`'s job): an `Assumed` spec stays `Assumed` through the build even while the feature is `in-progress`, so it can never reach `Accepted` until `/architect` ratifies it. This is what blocks `done`.
+- **There is no `docs/scope/` in this repo, deliberately.** The spec is the whole tracking surface: a feature's state is its spec's `**Status**:` line, its tasks are the spec's `## Build plan`. Do not create a scope, do not offer to, and do not treat its absence as a gap.
+- Never writes spec content or deliberates a decision (flags the need, defers to `/architect`); never restructures root `AGENTS.md` (that's `/audit`, which also folds in new area conventions afterwards). **One narrow exception:** on `Build now, record it as an assumed spec` (Step 0), `/develop` may *create* a spec, but only in `Status: Assumed`, and only the assumption record fields (owed decision, assumption built on, authorized by, code area, requirements seeds). It never writes rationale and never advances an `Assumed` spec past that state; `/architect` owns clearing it. This is the only spec `/develop` creates.
+- One spec touch on an existing spec: the `**Status**:` line (umbrella decision → the `index.md`'s, never a child's), plus filling the feature's spec pointer line. Build start: `Proposed` → `In Progress`; the feature ships: `In Progress` → `Accepted` (a spec is not `Accepted` until its feature ships). Never edit spec content, only that line, surgically: read it again right before writing; unexpected state (already `Accepted`, `Superseded`) → flag, don't clobber. **Never move a spec out of `Assumed`** (that is ratification, `/architect`'s job): an `Assumed` spec stays `Assumed` through the build, so it can never reach `Accepted` until `/architect` ratifies it. This is what blocks shipping.
 - Artifact base: `docs/` by default, `.workflow/` if `docs/` is a published docs site. Read from whichever exists (paths here assume `docs/`).
-- Shared scope: read it again right before ticking, edit only the specific checkbox, status, or pointer line (never rewrite the file); feature not as expected (already `done`, reworked) → flag, don't overwrite. The freshness check guards against rebuilding what a teammate shipped.
+- Shared spec: read it again right before ticking, edit only the specific checkbox or status line (never rewrite the file); spec not as expected (already `Accepted`, reworked) → flag, don't overwrite. The freshness check guards against rebuilding what a teammate shipped.
 
 ---
 
@@ -51,7 +51,7 @@ Before mutating anything (skip silently if solo, offline, or not using git): `gi
 
 - Behind (count > 0) → stop and warn: "You're N commits behind `origin/$BASE`. A teammate may have already changed or shipped this. Pull first, then run again."
 - Uncommitted work in the area you'll touch → warn: "You have uncommitted changes here. Commit or stash first so this build doesn't tangle with them." Let them proceed if they insist.
-- Feature `in-progress` in the scope AND its code area (pointer line's path) has recent commits by another author (`git log --format='%an' -- <area>`) → warn: "*<feature>* looks like it's partway through the build by someone else. Coordinate before continuing it." Confirm before proceeding.
+- The governing spec is `In Progress` AND its code area has recent commits by another author (`git log --format='%an' -- <area>`) → warn: "*<feature>* looks like it's partway through the build by someone else. Coordinate before continuing it." Confirm before proceeding.
 
 Warnings, not hard blocks, but surface them.
 
@@ -73,11 +73,11 @@ If any source is unnamed, stop and route to the gate (`/architect`, or record an
 
 Don't hardcode to page names or to any one example (timezone is an illustration of the pattern, not a rule); apply the input coverage test to whatever was asked. False negatives are the failure mode, building a real decision without noticing: when a required value's source is unnamed, or you are unsure, treat as owed and ask (panel below).
 
-Read only what this feature needs, never the whole `docs/` tree: its one scope file and its one governing spec (single file, or umbrella `index.md` plus the one child speccing this sub task). No other features' rows, scope files, workspaces, or unrelated specs.
+Read only what this feature needs, never the whole `docs/` tree: its one governing spec (single file, or umbrella `index.md` plus the one child speccing this sub task). No other workspaces, no unrelated specs.
 
 **Check, in order:**
-1. **Locate this feature's scope file (only that one).** Monorepo → `docs/scope/<workspace>/` for the task's package. Pick the file (`scope.md`, or the matching `<epic>.md` in a split) from the At a glance table alone; read just this feature's section. `needs a decision` with no spec pointer yet → decision owed and missing. Malformed → flag and ask, don't guess.
-2. **Open the governing spec via the feature's `spec` pointer**, reading only its build spec sections as defined in the build flow (`flow/build.md`), Step 2 item 1. Found → it's the spec; proceed. No pointer and no linked spec → targeted look in `docs/specs/<workspace>/` for one matching this feature's scope, never a blanket read.
+1. **Locate this feature's governing spec (only that one).** Monorepo → `docs/specs/<workspace>/` for the task's package, else `docs/specs/_root/`. Match on the spec's title and `## Requirements`; read only that spec. No spec covering this feature → a decision may be owed and unrecorded, continue to the test below. Malformed → flag and ask, don't guess.
+2. **Open that spec**, reading only its build spec sections as defined in the build flow (`flow/build.md`), Step 2 item 1. Found → it's the spec; proceed. Nothing matched in step 1 → one more targeted look in `docs/specs/_root/` for a repo wide spec covering this, never a blanket read.
 3. The **nearest** `AGENTS.md` (workspace/area) may already capture the decision, synced from an earlier feature (e.g. "the auth provider is already chosen") → proceed without a new spec.
 
 Decision owed and unrecorded → don't guess, don't silently stop. Ask (single select; `AskUserQuestion` on Claude Code):
@@ -87,7 +87,7 @@ Decision owed and unrecorded → don't guess, don't silently stop. Ask (single s
 - **options**:
   1. `Architect it first`: "Recommended. Capture the decision in a spec before building, so the build has a spec." → **end here** with the handoff below. Do not build.
   2. `No, not needed`: "I've judged there's no real decision here; build directly." → proceed to the build flow (`flow/build.md`).
-  3. `Build now, record it as an assumed spec`: "Build it, but write the assumption down first so the decision lives in the repo, not just this chat. The feature can't be marked `done` until `/architect` ratifies it." → write an `Assumed` spec (below), then proceed to the build flow (`flow/build.md`), leaving the feature `in-progress` with an `assumed decision (spec NNNN)` note in the scope (`docs/scope/`).
+  3. `Build now, record it as an assumed spec`: "Build it, but write the assumption down first so the decision lives in the repo, not just this chat. The spec can't reach `Accepted` until `/architect` ratifies it." → write an `Assumed` spec (below), then proceed to the build flow (`flow/build.md`).
 
 The tool appends "Other" as a free text option automatically.
 
@@ -110,11 +110,11 @@ On `Build now, record it as an assumed spec`, write a minimal `Assumed` spec **b
 <the paths this build will touch>
 
 ## Requirements
-<acceptance criteria seeds carried from the scope Done when, if any>
+<acceptance criteria seeds carried from the task as stated, if any>
 
 ## Ratify
 This decision was recorded by /develop, not deliberated. Run `/architect <feature>`
-to deliberate and ratify it. The feature cannot be marked `done` until then.
+to deliberate and ratify it. This spec cannot reach `Accepted` until then.
 ```
 
 Point the feature's scope `spec` line at this file. The assumption is now durable: it survives `/clear`, teammates read it, and a later `/develop` builds against it instead of guessing again. You still cannot mark the feature `done` (see the done gate in `flow/build.md`, Step 4).

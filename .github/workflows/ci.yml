@@ -56,6 +56,16 @@ jobs:
       - name: Check retrieval corpus is embedded
         run: npm run check:corpus --workspace=apps/api
 
+      # The published API document, guarded three ways (spec 0016): the route
+      # registry against the controllers, every input binding against its
+      # validation pipe, and both committed artifacts against a fresh
+      # generation. The auth half is why it runs on a public repository at
+      # all — a route wrongly marked anonymous in `docs/api/` is a false
+      # security claim anyone can read. Committed files only: no network, no
+      # database, no environment variable, so fork pull requests run it too.
+      - name: Check API document matches the code
+        run: npm run check:openapi --workspace=apps/api
+
       - name: Typecheck API
         run: npx tsc --noEmit -p apps/api/tsconfig.json
 

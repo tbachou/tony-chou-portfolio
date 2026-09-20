@@ -1,0 +1,7 @@
+{
+  "$comment": "TS 6 requires rootDir to be explicit (TS5011). ts-jest compiles one file at a time, so it infers the spec file directory and errors. Setting it here rather than in tsconfig.json keeps the build output at dist/main.js instead of dist/src/main.js.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./"
+  }
+}
