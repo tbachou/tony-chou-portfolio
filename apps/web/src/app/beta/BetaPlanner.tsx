@@ -317,6 +317,10 @@ export function BetaPlanner() {
   const goals = useWatch({ control, name: 'goals' });
 
   const runIdRef = useRef(0);
+  // Same reason as ConversationPanel: the header links back to the portfolio
+  // with next/link, so a visitor can unmount this mid-plan. An abandoned plan
+  // also costs one of the 40 daily global slots, so leaking it is worse here.
+  const abortRef = useRef<AbortController | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const redFlagRef = useRef<HTMLDivElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
@@ -326,6 +330,8 @@ export function BetaPlanner() {
   // never when the gate is skipped from localStorage on load, which must not
   // steal focus from wherever the visitor actually is on the page.
   const focusFormRef = useRef(false);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     try {
@@ -475,6 +481,9 @@ export function BetaPlanner() {
     // together. scrollToResult() owns the scrolling (it honours
     // prefers-reduced-motion), so focus must not scroll on its own.
     const runId = ++runIdRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     focusContainer(resultRef.current, { preventScroll: true });
     setPhase('running');
     setStage(null);
@@ -490,7 +499,7 @@ export function BetaPlanner() {
 
     let terminal = false;
     try {
-      for await (const sse of streamBetaPlan(payload)) {
+      for await (const sse of streamBetaPlan(payload, controller.signal)) {
         if (runIdRef.current !== runId) return;
         switch (sse.type) {
           case 'status':
@@ -536,6 +545,10 @@ export function BetaPlanner() {
       }
     } catch (error) {
       if (runIdRef.current !== runId) return;
+      // An abort is ours (a superseding run, or an unmount), never a failure
+      // the visitor should see. runIdRef already covers the superseding case;
+      // this covers unmount, where runId is unchanged.
+      if (controller.signal.aborted) return;
       if (error instanceof BetaRequestError && error.status === 503) {
         // Global demo budget spent (AC-5): banner state, form stays browsable.
         setCapNotice(error.message);

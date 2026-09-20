@@ -98,11 +98,15 @@ function extractServerMessage(body: unknown): string | null {
  */
 export async function* streamBetaPlan(
   payload: BetaPlanPayload,
+  signal?: AbortSignal,
 ): AsyncGenerator<BetaSseEvent> {
   const res = await fetch(`${API_URL}/beta/plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    // Kept off `payload`: the request contract is `.strict()`, so an extra
+    // property in the body would be a 400.
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!res.ok || !res.body) {
@@ -122,24 +126,31 @@ export async function* streamBetaPlan(
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const blocks = buffer.split('\n\n');
-    buffer = blocks.pop() ?? '';
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop() ?? '';
 
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-      let eventName = 'message';
-      let data = '';
-      for (const line of block.split('\n')) {
-        if (line.startsWith('event:')) eventName = line.slice(6).trim();
-        else if (line.startsWith('data:')) data = line.slice(5).trim();
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+        let eventName = 'message';
+        let data = '';
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          else if (line.startsWith('data:')) data = line.slice(5).trim();
+        }
+        if (!data) continue;
+        yield { type: eventName, ...JSON.parse(data) } as BetaSseEvent;
       }
-      if (!data) continue;
-      yield { type: eventName, ...JSON.parse(data) } as BetaSseEvent;
     }
+  } finally {
+    // See streamNextTurn: releases the body when the consumer stops early or
+    // the component unmounts. A Beta plan that nobody reads still spends a
+    // daily slot, so leaking one is worse here than on the interview.
+    await reader.cancel().catch(() => {});
   }
 }
