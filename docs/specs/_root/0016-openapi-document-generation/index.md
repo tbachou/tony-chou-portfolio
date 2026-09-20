@@ -1,7 +1,7 @@
 # 0016. OpenAPI document generated from the zod contracts
 
 **Date**: 2026-09-20
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
