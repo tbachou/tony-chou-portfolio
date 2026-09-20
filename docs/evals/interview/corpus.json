@@ -1,7 +1,7 @@
 {
-  "corpusHash": "db3e9e47d5f6caac3b08e92457429d6390cd0b28c13074847d40861855cb34e9",
-  "chunkCount": 622,
-  "embeddedAt": "2026-09-03T16:50:16.821Z",
+  "corpusHash": "02d9ca2f6f4c92132a6867d915a54b4620a0cb78c7e752c3e03224b6f7b2ef66",
+  "chunkCount": 623,
+  "embeddedAt": "2026-09-20T00:08:54.948Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
@@ -33,7 +33,7 @@
     },
     {
       "path": "docs/specs/_root/0004-beta-climbing-rehab-planner/index.md",
-      "hash": "a9449ed805ba872566503a00439df8e9b492913f6473b21839b818914abb362c"
+      "hash": "23389a1616bfeb4fb1ea5651221eb688f145f5edaa960dbc0e0becd315bb140b"
     },
     {
       "path": "docs/specs/_root/0004-beta-climbing-rehab-planner/verify.md",
@@ -45,7 +45,7 @@
     },
     {
       "path": "docs/specs/_root/0005-aws-genai-integration/0005-beta-guardrails.md",
-      "hash": "71972e3860b74f87f819caaf5de8bb9cd7965dffc90464503c456890969f6001"
+      "hash": "c75694d5f65497cd1fec730f452940cf5fcdacbdf7c27508ac2b2cf4953eff30"
     },
     {
       "path": "docs/specs/_root/0005-aws-genai-integration/0005-classifier-flow.md",
