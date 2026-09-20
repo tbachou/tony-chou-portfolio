@@ -35,3 +35,18 @@ lab/.venv/
 lab/__pycache__/
 lab/benchmark_results.json
 lab/eval-output/
+
+# Working notes that are not product work (job search, drafts). These were
+# ignored only by .git/info/exclude, which is local to one clone and does not
+# travel: a fresh checkout, or a re-init, left them unprotected with nothing
+# in the repo signalling that they must not be committed. This repo is public,
+# so a commit is a publication and deleting afterwards does not undo it.
+docs/notes/
+
+# Agent worktrees: whole checkouts, each with its own node_modules, dist and
+# .env. The .env files are already covered by the bare `.env` pattern above
+# (a gitignore pattern with no slash matches at any depth), but the trees
+# themselves were also local-exclude only. Scoped to the worktrees directory
+# on purpose — .claude/skills, .claude/agents and .claude/launch.json are
+# tracked and must stay that way.
+.claude/worktrees/
