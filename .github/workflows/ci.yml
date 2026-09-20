@@ -20,6 +20,13 @@ jobs:
     env:
       # prisma.config.ts resolves env("DATABASE_URL") at load time; `prisma
       # generate` (postinstall) never connects, it just needs the var set.
+      #
+      # The boot smoke test below needs it parseable but NOT reachable.
+      # PrismaService.onModuleInit calls $connect(), but the pg adapter does
+      # not open a connection eagerly, so the app boots and serves /health
+      # against a dead address. Verified 2026-09-20 by booting the built
+      # server against a closed port. That is why this job runs no postgres
+      # service: adding one would slow every run and prove nothing.
       DATABASE_URL: postgres://ci:ci@localhost:5432/ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -79,6 +86,42 @@ jobs:
       # build is what closes that gap.
       - name: Build API (same builder Render runs)
         run: npm run build --workspace=apps/api
+
+      # Building is not running. The failures a framework or module system
+      # migration actually produces (an import cycle, reflect-metadata
+      # evaluated too late, a CommonJS package whose named exports do not
+      # resolve) all typecheck clean and all fail at boot. Render is the
+      # only place that used to find out, and it found out in production.
+      #
+      # This runs the built output exactly as Render's startCommand does, on
+      # the same linux x64 and Node 22, and waits for /health. It is not a
+      # substitute for a Render deploy, but it closes the gap that mattered.
+      - name: Boot the built API and check /health
+        env:
+          NODE_ENV: production
+          PORT: '3001'
+          IP_HASH_SALT: ci-not-a-secret
+          ANTHROPIC_API_KEY: sk-ci-placeholder-never-called
+          CORS_ORIGIN: http://localhost:3000
+          BETTER_AUTH_SECRET: ci-not-a-secret-but-long-enough-to-pass
+        run: |
+          node apps/api/dist/main.js &
+          api_pid=$!
+          for i in $(seq 1 30); do
+            sleep 1
+            if curl -sf http://127.0.0.1:3001/health -o /tmp/health.json; then
+              echo "booted ok: $(cat /tmp/health.json)"
+              kill "$api_pid" 2>/dev/null || true
+              exit 0
+            fi
+            if ! kill -0 "$api_pid" 2>/dev/null; then
+              echo "::error::the API process exited before answering /health"
+              exit 1
+            fi
+          done
+          echo "::error::the built API did not answer /health within 30s"
+          kill "$api_pid" 2>/dev/null || true
+          exit 1
 
       - name: Typecheck web
         run: npx tsc --noEmit -p apps/web/tsconfig.json

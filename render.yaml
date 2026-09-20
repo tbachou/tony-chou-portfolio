@@ -18,7 +18,10 @@ services:
   - type: web
     name: tony-chou-portfolio-api
     runtime: node
-    plan: free
+    # Starter, not free. Verified against the live service with the Render
+    # CLI on 2026-09-20, and already recorded in apps/api/AGENTS.md; this
+    # line said `free` and was simply stale.
+    plan: starter
     buildCommand: npm install && npm run build --workspace=apps/api
     startCommand: npm run start:prod --workspace=apps/api
     preDeployCommand: cd apps/api && npx prisma migrate deploy
