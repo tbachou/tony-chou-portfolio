@@ -1,7 +1,7 @@
 ---
 name: debug
 allowed-tools: Bash, Read, Grep, Glob, Write, Edit, Agent
-description: "Run /debug to find and fix the root cause of a bug (something failing, broken, throwing, or behaving wrong) when a test fails for a reason that is not obvious, /check verify finds a failure, or behavior is unexpected. Builds a fast reproducible signal first, then runs a minimize, hypothesize, test, fix, verify loop, makes the minimal fix, and lands a colocated regression test that fails without it. No features, no extra refactors."
+description: "Run /debug to find and fix the root cause of a bug (something failing, broken, throwing, or behaving wrong) when a test fails for a reason that is not obvious, /check finds a failure, or behavior is unexpected. Builds a fast reproducible signal first, then runs a minimize, hypothesize, test, fix, verify loop, makes the minimal fix, and lands a colocated regression test that fails without it. No features, no extra refactors."
 ---
 
 ## Output style (plain words, no dashes, no hyphens)

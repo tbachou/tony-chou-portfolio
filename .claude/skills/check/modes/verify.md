@@ -1,4 +1,4 @@
-# /check verify (runtime proof)
+# /check (runtime proof)
 
 The `verify` mode of `/check`: run the real app and prove the change works. Follow it fully.
 
@@ -6,14 +6,14 @@ The `verify` mode of `/check`: run the real app and prove the change works. Foll
 
 Your role: the acceptance engineer. Trust observed behavior over green checkmarks; a passing suite proves the code the author thought to test, not that the feature exists. Ask: "If I had to sign off that this is real, what would I need to watch happen with my own eyes?" Then drive the actual thing and judge what you see against what the slice was supposed to deliver.
 
-`/check verify` closes the gap between "the tests are green" and "the feature actually works":
+`/check` closes the gap between "the tests are green" and "the feature actually works":
 
 1. Scopes what changed (from git) into observable behaviors to check, anchored to the spec's acceptance criteria when a governing spec exists.
 2. Runs the app the project's own way, reusing its launch method when one exists.
 3. Exercises the changed flow and observes: screenshots for UI, response bodies for APIs, output for CLIs, logs for jobs.
 4. Reports pass/fail per behavior and per acceptance criterion, anything anomalous, and which behaviors are worth locking into permanent assertions.
 
-Runtime counterpart to the test suite: tests assert forever against mocks; `/check verify` opens the real app once and confirms the behavior is real before review.
+Runtime counterpart to the test suite: tests assert forever against mocks; `/check` opens the real app once and confirms the behavior is real before review.
 
 Spec conformance gate: when a governing spec has IDed acceptance criteria (`## Requirements`, `AC-1…`), also prove the implementation conforms to the contract: every criterion met, every specced surface (page, route, table) actually built. Green tests and a working happy path never reveal a surface that was specced but never built, or a migration never applied. See Step 0b and Step 4b.
 
@@ -158,7 +158,7 @@ On FAIL or BLOCKED, tick nothing and report the gaps. Advise `/clear` before mov
 Lead with the verdict; list only what failed or is owed; point to verify.md for the rest (per `docs/conventions.md`). Template:
 
 ```
-## /check verify <feature> Â· <PASS | FAIL | BLOCKED>
+## /check <feature> Â· <PASS | FAIL | BLOCKED>
 
 **<PASS: all N behaviors met, every specced surface built · FAIL: M of N failed · BLOCKED: K couldn't be exercised>.**   (never PASS or ✅ if you did not actually run the app; say "not started")
 Next: PASS → `/predeploy-audit` if this ships to production, else the next feature · FAIL → `/debug <feature>` · missing surface → `/develop <feature>` · BLOCKED → what's needed to run it
@@ -171,12 +171,12 @@ Ran via <command/url>; verified <N> behaviors (evidence recorded). per AC detail
 
 The passing behaviors and their evidence are the record, not the summary; do not list each one. `verify.md` carries the durable steps, so no "what to lock in" list here.
 
-**For /check review**:
+**Worth a closer look in review**:
 - <anything that worked but looked fragile: slow response, console warning, missing empty state>
 ```
 
 Drop the Spec conformance / Missed surfaces / Not applied sections when there was no governing spec. Keep them but write "none" when a contract was loaded and every item is met.
 
-Clean up any process you started. `/check verify` confirms reality, never fixes or asserts: `/debug` for failures, `/develop` to build a surface that is missing or not applied. A FAIL conformance verdict means the feature is not done, even if every test is green.
+Clean up any process you started. `/check` confirms reality, never fixes or asserts: `/debug` for failures, `/develop` to build a surface that is missing or not applied. A FAIL conformance verdict means the feature is not done, even if every test is green.
 
 A BLOCKED verdict is an honest, useful result: it says the change could not be exercised and names what would make it exercisable. A fabricated PASS is the one output this skill must never produce, because every later step trusts it.

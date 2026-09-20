@@ -80,7 +80,7 @@ Tracks:
 - **Logical: big rollout of an already decided pattern** (e.g. "swap inline inputs across 17 files") → still inline, sequenced to stay safe:
   1. **Primitive first**: build the shared thing (helper/module/schema) and confirm it typechecks before touching call sites.
   2. **Apply site by site**: work through the files in turn, applying `<primitive>` per the pattern the spec fixes, preserving exact behavior; tick each as it lands.
-  3. **Gate once at the end**: package wide typecheck/lint and `/check verify` after all sites are migrated, not after each. Remove the superseded code only on this green sweep (ALL sites migrated AND typecheck/lint passing): sites not migrated still reference it, deleting early breaks the build.
+  3. **Gate once at the end**: package wide typecheck/lint and `/check` after all sites are migrated, not after each. Remove the superseded code only on this green sweep (ALL sites migrated AND typecheck/lint passing): sites not migrated still reference it, deleting early breaks the build.
   4. **Partial progress; don't migrate only halfway**: if you stop before every site is done, keep the old code, leave the feature `in-progress`, report migrated versus pending sites explicitly (which files landed, which remain), and say running `/develop` again resumes the pending sites (it detects and skips migrated ones; idempotent and resumable). The old code comes out on the run where the last site lands green.
 - **Both** → track order follows the build approach, not a fixed rule. Default (and for an end to end / tracer bullet slice): logical interface first so the UI binds to something real, then UI. Facade (UI shell first): UI on placeholder data first, wire the logical layer after.
 
@@ -97,19 +97,19 @@ Tracks:
 - **Only mark what actually landed.** Confirm first: files written, code present and typechecking; data layer task → migration applied and schema confirmed live, not merely generated. Interrupted or half done sub task → leave the task unchecked, keep the feature `in-progress`, report exactly what's incomplete and why. Never mark a task `done` on an unverified or incomplete build.
 - **Tick the atomic tasks in the spec** (only what you verified built): each completed `## Build plan` task. The spec is the only tracking surface here, so this is the whole update. **Closing gate: report what you ticked and the status you set**, or say there was no governing spec; never finish silently.
 - **Shipping is the engineer's call, never yours to gate.** Tick what you built. Then, once it landed and self checked (typecheck/build green; UI rendered if you could; migration applied and schema live), offer: advance the spec to `Accepted` now, or take the suggested next step first (below). Record any skipped step as skipped. An `Assumed` governing spec does not block it: flag it ("built on an unratified decision, `/architect` to ratify when you can") and let the engineer decide.
-- **Advance the governing spec when it ships.** When the engineer says the feature is done, advance the `**Status**:` line `In Progress` → `Accepted`, surgically per Artifact ownership (read it again first; not `In Progress`, e.g. `Accepted`/`Superseded`/`Assumed` → flag, don't clobber). If the engineer runs `/check verify` after `/develop`, that skill does it instead.
+- **Advance the governing spec when it ships.** When the engineer says the feature is done, advance the `**Status**:` line `In Progress` → `Accepted`, surgically per Artifact ownership (read it again first; not `In Progress`, e.g. `Accepted`/`Superseded`/`Assumed` → flag, don't clobber). If the engineer runs `/check` after `/develop`, that skill does it instead.
 - **Emit verify steps, then ASK where they go (every run, never save automatically).** Derive concrete steps from the ACs, specific and each tied to its `AC-N` (e.g. "visit `/signup` → sign up → expect redirect to `/auth/verify-email` → AC-1"). **Also one step per row of the spec's Value sourcing table**, so the behavioral layer (the real correctness guarantee; the gate is only design time) exercises each value's source, especially the edge that breaks if it is wrong (vary the input, timezone, locale, currency, or tenant and check the output). This catches a mis sourced value (e.g. a day computed in the wrong timezone) even if the gate missed it. Present this panel; write `verify.md` only on "Save" (`AskUserQuestion` on Claude Code):
   - **question**: "Save these verify steps to the feature's `verify.md`, or just show them in this summary?"
   - **header**: "Save verify steps?"
   - **options**:
-    1. `Save to verify.md`: "Recommended for data, auth, or higher risk features: a durable checklist `/check verify` can run." → write/append the steps to `verify.md` (below).
+    1. `Save to verify.md`: "Recommended for data, auth, or higher risk features: a durable checklist `/check` can run." → write/append the steps to `verify.md` (below).
     2. `Just show in summary`: "Keep them inline in this report only; don't write a file." → include them in the report and stop.
 
-  The tool appends "Other" as a free text option automatically. On **Save**, write/append `verify.md` beside the spec. Single file spec → promote it to a directory, `docs/specs/NNNN-feature.md` → `docs/specs/NNNN-feature/{index.md, rationale.md, verify.md}` (split the decision record sections Context/Options considered/Rationale/References into `rationale.md`, keep the build spec in `index.md`, never double the name). Directory spec → drop `verify.md` in. Existing `verify.md` → append, don't clobber. Format (so `/check verify` can consume it):
+  The tool appends "Other" as a free text option automatically. On **Save**, write/append `verify.md` beside the spec. Single file spec → promote it to a directory, `docs/specs/NNNN-feature.md` → `docs/specs/NNNN-feature/{index.md, rationale.md, verify.md}` (split the decision record sections Context/Options considered/Rationale/References into `rationale.md`, keep the build spec in `index.md`, never double the name). Directory spec → drop `verify.md` in. Existing `verify.md` → append, don't clobber. Format (so `/check` can consume it):
 
   ```markdown
   # Verify: <feature> · spec NNNN · updated <date>
-  _Steps derived from spec NNNN acceptance criteria. `/check verify` runs these._
+  _Steps derived from spec NNNN acceptance criteria. `/check` runs these._
   ## UI / manual
   - [ ] <action> → <expected>        → AC-N
   ## Commands
@@ -118,11 +118,11 @@ Tracks:
   - AC-1 … covered by step … · AC-2 … · …
   ```
 - Relay the track's report (the `## /develop complete` block from `ui-guide.md` and/or `logical-guide.md`).
-- **Suggest the next step; make clear it is optional.** Phrase it as an offer the engineer can take or skip, e.g. "Suggested next: `/check verify <feature>`, or call it done and move to the next thing, your call." The suggestion is the first unfinished stage for this feature's risk level. Never present a stage as required.
+- **Suggest the next step; make clear it is optional.** Phrase it as an offer the engineer can take or skip, e.g. "Suggested next: `/check <feature>`, or call it done and move to the next thing, your call." The suggestion is the first unfinished stage for this feature's risk level. Never present a stage as required.
   - **If the spec is `Assumed`**, suggest ratification first: `/architect <feature>: ratify the assumed <decision>` (it can catch a wrong assumption before you build further on it), but it is still the engineer's call.
-  - **No governing spec** (a one off `/develop`) → infer the tail from the risk of the change: stop after the build for a throwaway change, else point to `/check verify`, and to `/predeploy-audit` as the risk rises.
+  - **No governing spec** (a one off `/develop`) → infer the tail from the risk of the change: stop after the build for a throwaway change, else point to `/check`, and to `/predeploy-audit` as the risk rises.
   - New area conventions the build established belong in `AGENTS.md`; run `/audit` to fold them in.
 
   Always advise `/clear` before the next feature (state lives in files; long sessions cost more even when cached). Suggest `/compact` mid build if this feature runs long.
 
-`/develop` builds; it does not run `/check verify`, `/audit`, or `/architect` for you, it points; you decide.
+`/develop` builds; it does not run `/check`, `/audit`, or `/architect` for you, it points; you decide.

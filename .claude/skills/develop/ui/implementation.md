@@ -251,7 +251,7 @@ Lead with the headline, then Next, then a Heads up only if there is one (per `do
 
 ```
 **Built <name> (<file paths>) Â· <full product surface | component>, WCAG AA, self check passed.**
-Next: /check verify <feature>
+Next: /check <feature>
 Heads up: invented for you to review, swap for the real thing Â· <brand/wordmark · tagline · copy · placeholder assets>.   (omit the whole line if nothing was invented)
 ```
 

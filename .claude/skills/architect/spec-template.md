@@ -27,10 +27,10 @@ deciding? 2 to 4 paragraphs. Do not mention options here, only the problem space
 
 ## Requirements
 
-<!-- BUILD SPEC (the WHAT, /develop builds to this; /check verify checks against it) -->
+<!-- BUILD SPEC (the WHAT, /develop builds to this; /check checks against it) -->
 <!-- The contract. Seed the user stories + acceptance criteria from the scope feature's intent
      and its acceptance-criteria seeds when a scope row exists, then refine with the engineer.
-     Acceptance criteria are the contract /develop builds to and /check verify checks. -->
+     Acceptance criteria are the contract /develop builds to and /check checks. -->
 
 **User stories**:
 - As a <role>, I want <capability> so that <outcome>.
@@ -136,7 +136,7 @@ Do not repeat the pros/cons list, explain the reasoning. 1 to 3 paragraphs.>
 | Hosting | | |
 | Observability | | |
 
-<!-- BUILD SPEC (the WHAT, /develop builds these in order; /check verify checks the AC each satisfies) -->
+<!-- BUILD SPEC (the WHAT, /develop builds these in order; /check checks the AC each satisfies) -->
 ## Build plan
 
 <!-- Ordered build tasks DERIVED from the surface above (data model, API, stack) and the acceptance
@@ -259,7 +259,7 @@ The spec's status mirrors its feature's build lifecycle (scope: planned→`Propo
 
 A spec serves two audiences, and its sections divide cleanly between them:
 
-- **Build spec** (what `/develop` reads to build): **`## Requirements`** (the acceptance criteria contract), **`## Decision`**, the design/spec section (**`## Feature design`** for a FEATURE spec, **`## Proposed stack`** for an ARCHITECTURE spec, or the equivalent spec table, e.g. `## Standard definition`), **`## Build plan`** (the ordered tasks derived from the surface + acceptance criteria), and **`## Consequences`** (the constraints the build must honor). This is the WHAT, the implementable spec. The **acceptance criteria in `## Requirements` are the contract `/develop` builds to and `/check verify` checks.**
+- **Build spec** (what `/develop` reads to build): **`## Requirements`** (the acceptance criteria contract), **`## Decision`**, the design/spec section (**`## Feature design`** for a FEATURE spec, **`## Proposed stack`** for an ARCHITECTURE spec, or the equivalent spec table, e.g. `## Standard definition`), **`## Build plan`** (the ordered tasks derived from the surface + acceptance criteria), and **`## Consequences`** (the constraints the build must honor). This is the WHAT, the implementable spec. The **acceptance criteria in `## Requirements` are the contract `/develop` builds to and `/check` checks.**
 - **Decision record** (human / future decision maker context, the WHY): **`## Context`**, **`## Options considered`**, **`## Rationale`**, and the **`## References`** section. This is decision history, not build input; `/develop` skips it. (**`## Summary`** stays with the build spec in `index.md`, it is the human quick read that orients before the spec.)
 
 Where each audience's sections physically live depends on the spec shape:
