@@ -65,6 +65,12 @@ export class BetaController {
     // events on the open stream.
     await this.betaUsage.assertAvailable(hashedIp);
 
+    // The pipeline runs ~25s at the median, so a visitor navigating away
+    // mid-plan is routine. Without this the screener, drafter and coach all
+    // run to completion for a socket that is already closed.
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -75,8 +81,9 @@ export class BetaController {
       input: body,
       hashedIp,
       emit: (event, data) => writeSseEvent(res, event, data),
+      signal: abort.signal,
     });
 
-    res.end();
+    if (!res.writableEnded) res.end();
   }
 }

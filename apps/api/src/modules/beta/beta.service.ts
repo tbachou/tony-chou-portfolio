@@ -89,8 +89,10 @@ export class BetaService {
     input: BetaPlanRequest;
     hashedIp: string;
     emit: EmitFn;
+    /** Aborted when the visitor disconnects; see the controller's close handler. */
+    signal?: AbortSignal;
   }): Promise<void> {
-    const { input, hashedIp, emit } = params;
+    const { input, hashedIp, emit, signal } = params;
 
     // Code-enforced red-flag gate (clinical audit MUST-FIX): a checked
     // red-flag box blocks deterministically, before any model call — free
@@ -158,7 +160,7 @@ export class BetaService {
 
     try {
       emit('status', { stage: 'screening' });
-      const screening = await this.runScreener(input);
+      const screening = await this.runScreener(input, signal);
 
       if (screening.verdict === 'red_flag') {
         // Hard block: the drafter and coach never run (AC-2, key invariant).
@@ -177,10 +179,16 @@ export class BetaService {
       }
 
       emit('status', { stage: 'drafting' });
-      const { plan, tokens: drafterTokens } = await this.runDrafter(input);
+      const { plan, tokens: drafterTokens } = await this.runDrafter(input, signal);
+
+      // The drafter is the long call (21-27s measured). A visitor who leaves
+      // during it is already gone by here, so skipping the coach saves the
+      // larger remaining share of the request's spend. Throwing rather than
+      // returning keeps one exit path: the catch below owns every refund.
+      if (signal?.aborted) throw new AbandonedRequestError();
 
       emit('status', { stage: 'coaching' });
-      const coachTokens = await this.runCoach(input, plan, emit);
+      const coachTokens = await this.runCoach(input, plan, emit, signal);
 
       const totalTokens = screening.tokens + drafterTokens + coachTokens;
       await this.prisma.$transaction(
@@ -188,6 +196,19 @@ export class BetaService {
       );
       emit('done', {});
     } catch (error) {
+      // A disconnect is not a failure. It still refunds the slot — the
+      // visitor consumed nothing — but tallying it as an error would corrupt
+      // the only signal for "is Beta broken", and emitting would write to a
+      // socket that is already gone.
+      const abandoned = signal?.aborted || error instanceof AbandonedRequestError;
+      if (abandoned) {
+        this.logger.warn('Beta request abandoned by the visitor');
+        await this.usage
+          .refundGlobalSlot('abandoned')
+          .catch(() => this.logger.warn('Beta slot refund failed'));
+        return;
+      }
+
       // Failed attempts never count against the per-IP or global caps (AC-8):
       // the reserved slot is returned. Log shape only, never raw upstream
       // messages (they could echo request content — audit hardening).
@@ -201,6 +222,7 @@ export class BetaService {
 
   private async runScreener(
     input: BetaPlanRequest,
+    signal?: AbortSignal,
   ): Promise<ScreeningResult> {
     const result = await this.timedAgentCall('screener', SCREENER_MODEL, () =>
       this.anthropic.forceToolCall({
@@ -208,6 +230,7 @@ export class BetaService {
         system: loadBetaSkill('screener'),
         userMessage: buildVisitorProfile(input),
         maxTokens: 500,
+        signal,
         toolName: 'report_screening',
         toolDescription:
           'Report the safety screening verdict for this visitor profile.',
@@ -255,6 +278,7 @@ export class BetaService {
 
   private async runDrafter(
     input: BetaPlanRequest,
+    signal?: AbortSignal,
   ): Promise<{ plan: DraftPlan; tokens: number }> {
     // One params object, used by both the first attempt and the redraft: two
     // copies would drift the moment anyone changed the model or maxTokens.
@@ -271,6 +295,7 @@ export class BetaService {
       inputSchema: buildDrafterSchema(input),
       timeoutMs: AGENT_CALL_TIMEOUT_MS,
       maxRetries: 0,
+      signal,
     };
     const result = await this.timedAgentCall('drafter', DRAFTER_MODEL, () =>
       this.anthropic.forceToolCall(drafterParams),
@@ -357,6 +382,7 @@ export class BetaService {
     input: BetaPlanRequest,
     plan: DraftPlan,
     emit: EmitFn,
+    signal?: AbortSignal,
   ): Promise<number> {
     const mode = resolveGuardMode();
     const buffered = mode !== 'off';
@@ -401,6 +427,7 @@ export class BetaService {
             JSON.stringify(toCoachPlan(plan), null, 2),
           ].join('\n'),
           maxTokens: 4000,
+          signal,
           timeoutMs: AGENT_CALL_TIMEOUT_MS,
           maxRetries: 0,
           onToken: buffered
@@ -825,6 +852,18 @@ function assertExplicitProhibitions(
         }
       }
     });
+  }
+}
+
+/**
+ * Thrown when the visitor disconnected before the pipeline finished. Not an
+ * upstream failure: it refunds the slot and tallies `abandonedCount`, and it
+ * never reaches the visitor because there is no longer a visitor to reach.
+ */
+export class AbandonedRequestError extends Error {
+  constructor() {
+    super('Beta request abandoned by the visitor');
+    this.name = 'AbandonedRequestError';
   }
 }
 

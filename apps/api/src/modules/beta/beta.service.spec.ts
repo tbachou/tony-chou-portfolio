@@ -783,6 +783,132 @@ describe('BetaService.generatePlan', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Visitor disconnects mid-plan. The pipeline used to run to completion for
+  // a closed socket: a pre-deploy sweep found neither SSE route watched
+  // req.on('close'), and the browser half never aborted either.
+  // -------------------------------------------------------------------------
+  describe('an abandoned request', () => {
+    /** A signal already aborted, as the controller's close handler leaves it. */
+    function abortedSignal(): AbortSignal {
+      const c = new AbortController();
+      c.abort();
+      return c.signal;
+    }
+
+    it('skips the coach when the visitor left during the drafter', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      // The drafter is the 21-27s call, so the coach is the saving.
+      expect(h.anthropic.streamMessage).not.toHaveBeenCalled();
+    });
+
+    it('refunds the slot as abandoned, not as an error', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      // Tallying a disconnect as an error would corrupt the only signal for
+      // whether Beta is actually broken.
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('abandoned');
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalledWith('error');
+    });
+
+    it('never counts an abandoned plan as a success', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      expect(h.prisma.$transaction).not.toHaveBeenCalled();
+      expect(h.events.map(([name]) => name)).not.toContain('done');
+    });
+
+    it('emits nothing to the closed socket', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      // The visitor is gone; an `error` event would be written into a socket
+      // nobody is reading, and would read as a failure in any replay.
+      expect(h.events.map(([name]) => name)).not.toContain('error');
+    });
+
+    it('hands the signal to every agent call so an in-flight one aborts', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+      const signal = new AbortController().signal;
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal,
+      });
+
+      // Without this the abort only takes effect BETWEEN stages, so a
+      // disconnect during the drafter would still pay for the whole call.
+      for (const call of h.anthropic.forceToolCall.mock.calls) {
+        expect(call[0].signal).toBe(signal);
+      }
+      expect(h.anthropic.streamMessage.mock.calls[0][0].signal).toBe(signal);
+    });
+
+    it('still runs normally when no signal is supplied', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      expect(h.events.map(([name]) => name)).toContain('done');
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalled();
+    });
+  });
+
   describe('global budget reservation', () => {
     it('emits only the demo-budget error when no slot can be reserved', async () => {
       const h = makeHarness();

@@ -64,6 +64,7 @@ export class AnthropicService implements AiProvider {
         ...(params.maxRetries !== undefined && {
           maxRetries: params.maxRetries,
         }),
+        ...(params.signal && { signal: params.signal }),
       },
     );
 
@@ -157,6 +158,7 @@ export class AnthropicService implements AiProvider {
         ...(params.maxRetries !== undefined && {
           maxRetries: params.maxRetries,
         }),
+        ...(params.signal && { signal: params.signal }),
       },
     );
 

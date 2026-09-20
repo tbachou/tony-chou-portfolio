@@ -235,8 +235,10 @@ export class ConversationService {
     history: HistoryTurn[];
     hashedIp: string;
     emit: EmitFn;
+    /** Aborted when the visitor disconnects; see the controller's close handler. */
+    signal?: AbortSignal;
   }): Promise<void> {
-    const { topic, prepared, history, hashedIp, emit } = params;
+    const { topic, prepared, history, hashedIp, emit, signal } = params;
     const { conversationId, turnIndex, isFinal, story, interviewerTurnId } =
       prepared;
 
@@ -249,6 +251,7 @@ export class ConversationService {
     try {
       emit('turn_start', { role: 'interviewer' });
       const interviewerResult = await this.anthropic.streamMessage({
+        signal,
         system: loadConversationSkill('interviewer'),
         userMessage: buildInterviewerUserMessage(
           topic,
@@ -303,7 +306,13 @@ export class ConversationService {
         failLoudly: retrievalStrictFromEnv(),
       });
 
+      // The visitor left while the interviewer was streaming. Tony's turn is
+      // the tool-loop call — several upstream requests — so stopping here is
+      // the bulk of the saving.
+      if (signal?.aborted) throw new AbandonedTurnError();
+
       const tonyGenerated = await this.anthropic.runToolConversation({
+        signal,
         system: loadConversationSkill('tony'),
         userMessage: buildTonyUserMessage(
           story,
@@ -443,6 +452,16 @@ export class ConversationService {
             `Failed to release reserved turn ${interviewerTurnId}; it will consume a turn slot`,
           );
         });
+      // A disconnect is not a failure. The token billing and slot release
+      // above still apply — those tokens were spent and that row must not
+      // linger — but there is nobody to emit to, and logging it as an error
+      // would make an ordinary navigation look like an outage.
+      if (signal?.aborted || error instanceof AbandonedTurnError) {
+        this.logger.warn('Turn abandoned by the visitor');
+        this.logProviderCall('abandoned');
+        return;
+      }
+
       // Name only in the log, fixed text to the visitor. See the constant.
       this.logger.warn(
         `Turn failed: ${error instanceof Error ? error.name : 'unknown error'}`,
@@ -538,9 +557,22 @@ export class ConversationService {
     );
   }
 
-  private logProviderCall(outcome: 'ok' | 'error'): void {
+  private logProviderCall(outcome: 'ok' | 'error' | 'abandoned'): void {
     const { provider, model } = resolveConfiguredProvider();
     this.logger.log(JSON.stringify({ provider, model, outcome }));
+  }
+}
+
+/**
+ * Thrown when the visitor disconnected between the interviewer's turn and
+ * Tony's. Not an upstream failure: the tokens already spent are still billed
+ * and the reserved turn row is still released, but nothing is emitted and it
+ * is not logged as an error.
+ */
+class AbandonedTurnError extends Error {
+  constructor() {
+    super('Turn abandoned by the visitor');
+    this.name = 'AbandonedTurnError';
   }
 }
 

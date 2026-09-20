@@ -21,7 +21,7 @@ export type BetaStatus = {
 };
 
 /** Why a reserved global slot is being returned (each maps to a counter column). */
-export type RefundReason = 'error' | 'red_flag' | 'refusal';
+export type RefundReason = 'error' | 'red_flag' | 'refusal' | 'abandoned';
 
 /**
  * Anonymous outcome/abuse tally columns on BetaDailyUsageCounter. Pure
@@ -29,6 +29,7 @@ export type RefundReason = 'error' | 'red_flag' | 'refusal';
  * visitor content (AC-6 unchanged).
  */
 type OutcomeColumn =
+  | 'abandonedCount'
   | 'errorCount'
   | 'redFlagCount'
   | 'refusalCount'
@@ -39,6 +40,7 @@ type OutcomeColumn =
   | 'injectionBlockCount';
 
 const REFUND_REASON_COLUMN: Record<RefundReason, OutcomeColumn> = {
+  abandoned: 'abandonedCount',
   error: 'errorCount',
   red_flag: 'redFlagCount',
   refusal: 'refusalCount',
