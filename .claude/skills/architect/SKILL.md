@@ -26,16 +26,18 @@ Runs structured discovery, weighs options, and writes or updates a build spec in
 - **Supersede**: replacing a past decision → new spec + update old spec's status line
 - **Ratify**: deliberating an `Assumed` spec that `/develop` recorded when the engineer chose to build before deciding → see *Ratify an assumed decision* below
 
-Spec status behaves one of two ways, decided by whether a buildable scope feature links the spec (a `docs/scope/` row whose `spec` cell points to it):
+**This repo tracks features in specs, not in a separate scope folder.** There is no `docs/scope/`, deliberately: a feature's state is its spec's `**Status**:` line, its tasks are the spec's `## Build plan`, and its acceptance criteria are its `## Requirements`. Do not offer to create a scope, do not ask about linking a feature to one, and do not treat a missing scope as a gap. The spec is the whole tracking surface.
 
-- **Feature linked spec** (typical FEATURE/ENHANCEMENT, or an ARCHITECTURE foundation that has a scope row): status mirrors the feature lifecycle. /architect creates it as `Proposed` and owns its content but never advances the status; /develop advances it to `In Progress` when the feature goes in-progress, then `Accepted` when built and verified (scope `done`). Engineer confirmation ratifies content only; `Accepted` means shipped.
-- **Standalone decision spec** (foundational/stack or cross cutting standard, no scope row links it): decision status. `Proposed` when written, `Accepted` once the engineer ratifies it on confirmation (the decision is then in force). /develop does not advance it.
+Spec status behaves one of two ways, decided by whether the spec governs a buildable feature:
 
-A spec documenting already shipped work (the "already built" path, or a linked feature already `existing`) is born `Accepted`.
+- **Buildable feature spec** (typical FEATURE/ENHANCEMENT, or an ARCHITECTURE foundation with a `## Build plan`): status mirrors the build lifecycle. /architect creates it as `Proposed` and owns its content but never advances the status; /develop advances it to `In Progress` when the build starts, then `Accepted` when the feature ships. Engineer confirmation ratifies content only; `Accepted` means shipped.
+- **Standalone decision spec** (foundational/stack or cross cutting standard, nothing to build directly): decision status. `Proposed` when written, `Accepted` once the engineer ratifies it on confirmation (the decision is then in force). /develop does not advance it.
+
+A spec documenting already shipped work (the "already built" path) is born `Accepted`.
 
 **The `Assumed` status.** `/develop` may create a spec in status `Assumed` when the engineer chooses to build before a load bearing decision is deliberated. It records the assumption the build used, not a deliberated decision, and it blocks the feature from `done`. Only `/architect` clears it, by ratifying (below). `/architect` never creates an `Assumed` spec; it only deliberates one that already exists.
 
-Writes no code. Never updates `AGENTS.md`/`CLAUDE.md` (/sync owns that).
+Writes no code. Never updates `AGENTS.md`/`CLAUDE.md` (`/audit` owns those).
 
 ## Subagents (main thread writes; subagents only read, fetch, or cross check)
 
@@ -63,7 +65,7 @@ That is the intent, not the procedure. How to actually run the questioning (phas
 
 ## Artifact ownership
 
-Spec files in `docs/specs/`, created or updated by this skill only, plus any supporting evidence it produces (inventories, audits), which lives in the spec's `rationale.md` (directory spec) or inline (single file spec), never in the scope folder (`docs/scope/` is owned by `/scope`, not a spec).
+Spec files in `docs/specs/`, created or updated by this skill only, plus any supporting evidence it produces (inventories, audits), which lives in the spec's `rationale.md` (directory spec) or inline (single file spec).
 
 Two independent choices, location (repo shape) and shape (decision size):
 
@@ -74,7 +76,7 @@ Two independent choices, location (repo shape) and shape (decision size):
   - **`index.md`**: the build spec `/develop` reads: `## Summary`, `## Requirements`, `## Decision`, the design/spec section, `## Build plan`, `## Consequences`, `## Follow-up`, and a one line `## Rationale` pointer to `rationale.md`. For an umbrella it also opens with a `## Structure` manifest listing and linking every child spec (one line each: what it is plus which decision it supports), and holds any cross child contract.
   - **`rationale.md`**: the decision record `/develop` skips: `## Context`, `## Options considered`, `## Rationale`, the `## References` section, and any bulky evidence (inventories, audits) under its own subheading. There is no `research/` folder; all evidence lives here.
   - Child specs (umbrella only) are flat `NNNN-<child>.md` files, each complete enough to build from on its own with a short inline rationale (not its own `rationale.md`); promote a child to its own directory only when it grows heavy. Cross child contracts live in the umbrella `index.md`.
-- **One narrow exception into the scope:** after the spec is confirmed, update the matching feature to the ready to build shape (exact edits in *After the spec is written*, step 3). Never dump the atomic task list into the scope. No matching feature: offer to enroll one (see the derive tasks step).
+- **After the spec is confirmed**, check its `## Build plan` is actually buildable and note any follow up that needs its own spec (exact steps in *After the spec is written*, step 3). There is no scope to enroll into; the spec is the tracking surface.
 
 **Artifact base.** specs live under `docs/` by default. If `docs/` is a published docs site (`docusaurus.config.*`, `.vitepress/`, `mkdocs.yml`, Astro Starlight, or Nextra detected), use `.workflow/` instead (`.workflow/specs/`). Always follow whichever base already exists (paths here assume `docs/`).
 
@@ -103,13 +105,13 @@ Wait for the answer; use it as the design topic before pre-flight.
 Run these steps (the `git` commands are literal; everything else uses your agent's file tools):
 
 - **Freshness (teams):** `git fetch` quietly, pick the base branch (`main` if `git rev-parse --verify main` succeeds, else `master`), count commits behind with `git rev-list --count HEAD..origin/<base>`. If >0, warn "pull first" before deciding (a teammate may have added specs or changed this feature).
-- **Resolve the spec location** (`SPEC_DIR`) = the scope workspace mirrored into `docs/specs/`: single repo → `docs/specs/`; monorepo workspace → `docs/specs/<workspace>/`; repo wide → `docs/specs/_root/`. Determine `<workspace>` as the scope does (topic/path/scope row). Create the directory if missing.
+- **Resolve the spec location** (`SPEC_DIR`): single repo → `docs/specs/`; monorepo workspace → `docs/specs/<workspace>/`; repo wide → `docs/specs/_root/`. Determine `<workspace>` from the topic and the paths the feature will touch. Create the directory if missing.
 - **Today's date**: use today's date (inject it into the spec).
 - **List existing specs in this location**: files named `NNNN-*.md` plus any `index.md` in `$SPEC_DIR`, for numbering (per location) and related decision detection.
 - **Count source files** (e.g. `.ts`, `.tsx`, `.js`, `.py`, `.go`, `.rs`, `.java`), excluding `node_modules/`, `.git/`, `dist/`. Informs how much code there is to read, and whether to offload that reading to a `scout` subagent.
 - **Read project context**, the source of truth for the stack and community skills: root `AGENTS.md` (fall back to `CLAUDE.md`, else MISSING), plus the nested `<area>/AGENTS.md` for this feature's area if one exists (e.g. `src/auth/AGENTS.md` for an auth feature).
-- **Read the build approach for THIS feature**: the delivery strategy that governs how the spec's `## Build plan` is ordered and sliced. Precedence: this feature's scope row `Approach` override if declared, else the project default (root `AGENTS.md` first, else the scope header in `docs/scope/`). A feature with its own approach is built by ITS approach; others use the project default. The family: **Tracer Bullet** (thin vertical slices end to end through every layer), **Skateboard** (thinnest usable whole first, then grow), **Facade** (UI shell first, wire the backend later, a prototype path), **Journey** (one complete user path per phase), or a project specific variant. If neither records one, note the assumption and set the default by Staff/Principal judgment (prefer end to end / Tracer Bullet slices for production work). Carry what you find into the spec. Reason about what the approach implies for this feature; no fixed per approach recipe. The four approaches imply materially different `## Build plan` orderings, not the same order relabeled: Facade leads with the UI shell on placeholder data and defers the migration; Journey completes one user path's tasks fully before another's; Tracer Bullet stands up a thin end to end thread first, then thickens; Skateboard builds the smallest usable slice. Let the recorded approach visibly shape the ordering.
-- **Locate the linked scope feature (if any):** cheaply scan `docs/scope/` filenames/headings (including per workspace subdirs) for a feature matching this topic; open only the single scope file containing it (`scope.md`, or the matching `<epic>.md` in a split). If found, read that row's intent plus any acceptance criteria seeds (they seed Stage (a)) and remember the file/row for the derive tasks and linking steps; this also settles feature linked vs standalone status. If no row matches, note the standalone decision path and don't create one now.
+- **Read the build approach for THIS feature**: the delivery strategy that governs how the spec's `## Build plan` is ordered and sliced. Precedence: an `**Approach**:` line on this feature's own spec if it declares one, else the project default in root `AGENTS.md` (`## Build approach`). A feature with its own approach is built by ITS approach; others use the project default. The family: **Tracer Bullet** (thin vertical slices end to end through every layer), **Skateboard** (thinnest usable whole first, then grow), **Facade** (UI shell first, wire the backend later, a prototype path), **Journey** (one complete user path per phase), or a project specific variant. If neither records one, note the assumption and set the default by Staff/Principal judgment (prefer end to end / Tracer Bullet slices for production work). Carry what you find into the spec. Reason about what the approach implies for this feature; no fixed per approach recipe. The four approaches imply materially different `## Build plan` orderings, not the same order relabeled: Facade leads with the UI shell on placeholder data and defers the migration; Journey completes one user path's tasks fully before another's; Tracer Bullet stands up a thin end to end thread first, then thickens; Skateboard builds the smallest usable slice. Let the recorded approach visibly shape the ordering.
+- **Locate an existing spec for this topic (if any):** scan `$SPEC_DIR` filenames and `index.md` headings for a spec covering this feature. If one exists, read its `## Requirements` (they seed Stage (a)) and its `**Status**:` line; this settles Create vs Update vs Supersede, and whether the spec is buildable or standalone. If none matches, this is a new spec.
 - **(Optional)** list installed skills dirs for availability only (`.claude/skills/`, `.agents/skills/`, `skills/`). Relevance is decided by AGENTS.md plus the feature, not name matching.
 
 From the spec list (paths relative to `$SPEC_DIR`):
@@ -122,7 +124,7 @@ From the spec list (paths relative to `$SPEC_DIR`):
 - **Update/supersede detection**: if an existing spec clearly overlaps the topic (same domain, system, decision), before the staged conversation present a decision panel (plain text options where the agent has no picker; the picker adds Other automatically): "I found an existing spec that may overlap: `[path]`, [title]. How should I treat this?", options: **New decision (create a new spec)** · **Update the existing spec in place** · **Supersede it (a new spec replaces it)**. Default to the "(recommended)" option by overlap strength (nearly identical → Update or Supersede; adjacent → New). On update/supersede: set OPERATION, read the existing spec in full, and skip the staged conversation for in place updates.
   - **Assumed spec found**: if the overlapping spec's `**Status**:` is `Assumed`, this is a ratify, not the panel above. Follow *Ratify an assumed decision* (run the design conversation, then either fill in the real content and clear `Assumed`, or supersede if the assumption was wrong).
 
-**Community skills** come from the project's `AGENTS.md`, never a hardcoded name table (names and stacks change). Project wide skills/conventions live in root `AGENTS.md`, area specific ones in the nested `<area>/AGENTS.md` (maintained by `/audit` and `/sync`):
+**Community skills** come from the project's `AGENTS.md`, never a hardcoded name table (names and stacks change). Project wide skills/conventions live in root `AGENTS.md`, area specific ones in the nested `<area>/AGENTS.md` (maintained by `/audit`):
 
 1. Read root `AGENTS.md` and the nested `AGENTS.md` for this feature's area; their `## Agent skills` section lists each installed skill as a bullet with its location and a one line note on what it governs, so you can pick out the relevant ones and their paths directly.
 2. Identify only the skills relevant to *this* feature. Take each relevant skill's path and note from that `## Agent skills` bullet, and open it on demand while writing, only if it materially shapes the decision (see *Write the spec*, item 12). Skip skills the feature doesn't touch.
@@ -156,14 +158,14 @@ The inferred MODE (from Framing) is already one of `FEATURE` / `ARCHITECTURE` / 
 The inputs to apply (you already have them from the design conversation and pre-flight):
 1. Design topic (from the user's original message)
 2. The inferred framing: MODE, platform (web/mobile/API), stack & conventions (from `AGENTS.md`), and any constraints/compliance inferred or confirmed
-2a. The feature's build approach (pre-flight precedence: scope row `Approach` override, else the project default from `AGENTS.md`/scope header, else the noted default) → `BUILD_APPROACH`; order and slice `## Build plan` by what the approach implies for this feature
+2a. The feature's build approach (pre-flight precedence: an `**Approach**:` line on this spec, else the project default from root `AGENTS.md`, else the noted default) → `BUILD_APPROACH`; order and slice `## Build plan` by what the approach implies for this feature
 3. All staged conversation answers, stage by stage: the confirmed acceptance criteria (already IDed AC-1…, to seed `## Requirements`), the confirmed data model (entities/fields/relationships, the target that seeds the `## Build plan` migration, sized to the feature), the confirmed stack/tool picks, API surface, authz model, and edge cases. On the documentation path (staged conversation skipped) treat it as `"Staged design skipped, documenting an already-made decision"`, not an error
 3a. The RECOMMEND items → `RECOMMEND_ITEMS_OR_NONE`: the specific decisions you must make and justify (tool/provider aligned to the stack, session model, etc.); make each call, don't echo it back as an open question. If none, treat as `"none"`
 3b. The References level → `REFERENCES_LEVEL` (`none` | `sources` | `sources+links`, per the rule above). If Stage (c) never ran and you have not asked, default to `none`
 4. Context file contents: `AGENTS.md` (root + the feature area's nested), or `CLAUDE.md` as fallback, or "MISSING"
 5. Existing spec list (filenames + first line of each)
 6. Related spec paths (flagged in pre-flight)
-7. The resolved spec location (`$SPEC_DIR`), next number, and shape: a single file `$SPEC_DIR/NNNN-title.md`, or a directory `$SPEC_DIR/NNNN-title/` (`index.md` + `rationale.md`, plus child specs for an umbrella). Umbrella: write the named child decisions; any inventory/audit goes in `rationale.md`, never in `docs/scope/`, never loose in the code tree. Only the `index.md` carries a `**Status**:` line (it mirrors the feature); child specs omit the lifecycle Status (spec content governed by the umbrella)
+7. The resolved spec location (`$SPEC_DIR`), next number, and shape: a single file `$SPEC_DIR/NNNN-title.md`, or a directory `$SPEC_DIR/NNNN-title/` (`index.md` + `rationale.md`, plus child specs for an umbrella). Umbrella: write the named child decisions; any inventory/audit goes in `rationale.md`, never loose in the code tree. Only the `index.md` carries a `**Status**:` line (it mirrors the feature); child specs omit the lifecycle Status (spec content governed by the umbrella)
 8. Source file count (whether there's code to read; for a large ENHANCEMENT/CROSS-CUTTING codebase, offload the reading to a `scout` subagent per *Subagents* and write from its map)
 9. Operation: `create` | `update` | `supersede`
 10. Today's date (from pre-flight)
@@ -174,7 +176,7 @@ The inputs to apply (you already have them from the design conversation and pre-
 
 ### After the spec is written
 
-Once the spec file exists, read `internal/after-subagent.md` and follow it for checking the spec yourself, reviewing it yourself, confirmation, status ratification, scope linking, and the final spoken summary. Do not read it before you write the spec.
+Once the spec file exists, read `internal/after-subagent.md` and follow it for checking the spec yourself, reviewing it yourself, confirmation, status ratification, the build plan check, and the final spoken summary. Do not read it before you write the spec.
 
 ### Update / Supersede path
 

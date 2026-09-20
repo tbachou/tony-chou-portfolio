@@ -9,7 +9,7 @@
 
 ## Build approach
 
-<TBD, set by /scope> (specs 0002 and 0004 defaulted to Tracer Bullet and noted the assumption; no scope header exists yet)
+**Tracer Bullet** — thin vertical slices end to end through every layer. Specs 0002 and 0004 defaulted to it and noted the assumption; it is the project default until a spec declares its own `**Approach**:` line.
 
 ## Commands
 
@@ -55,7 +55,8 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 
 ## Agent skills
 
-- [architect](.claude/skills/architect/) · [develop](.claude/skills/develop/) · [check](.claude/skills/check/) · [audit](.claude/skills/audit/) · [debug](.claude/skills/debug/) · [predeploy-audit](.claude/skills/predeploy-audit/): local workflow suite (spec → build → verify → gate), no registry source
+- [architect](.claude/skills/architect/) · [develop](.claude/skills/develop/) · [check](.claude/skills/check/) · [audit](.claude/skills/audit/) · [debug](.claude/skills/debug/) · [predeploy-audit](.claude/skills/predeploy-audit/): local workflow suite (spec → build → verify → gate), no registry source. **Project scoped on purpose, not installed globally** (the six were symlinked into `~/.claude/skills/` until 2026-09-20; the links pointed at the main checkout, so their content tracked whatever branch it happened to be on, and they carry repo specific rules like "there is no `docs/scope/` here" that are wrong advice in any other project). They load automatically whenever you work in this repo; do not link them out again.
+- **Code review goes through the built-in `/code-review`**, at `high` effort or above, and `/predeploy-audit` chains it as part of the gate. `/check` proves a change works at runtime and does NOT review code; its `review` mode was retired on 2026-09-20 because the built-in does the job better (effort levels, `--comment`, `--fix`, and an `ultra` multi-agent mode the user can trigger). The global `requesting-code-review` skill exists only as internal machinery for `subagent-driven-development`; do not reach for it here.
 - [agent-brief](.claude/skills/agent-brief/): local, composes a subagent's prompt. Carries the environment facts an agent cannot discover (its shell is Node 20, a fresh worktree has no `node_modules` or generated Prisma client, its base may be stale) plus the revert and confirm bar
 - [github-actions-hardening](.claude/skills/github-actions-hardening/): `wshobson/agents`, GitHub Actions threat model (script injection, privileged triggers, SHA pinning). **Vendored by exception** (spec 0014): upstream no longer publishes it, so there is nowhere to install it from.
 - `github-actions-templates` (`wshobson/agents`), `writing-for-agents` + `codebase-design` (`mattpocock/skills`): registry skills, installed globally, not in this repo.

@@ -27,10 +27,10 @@ deciding? 2 to 4 paragraphs. Do not mention options here, only the problem space
 
 ## Requirements
 
-<!-- BUILD SPEC (the WHAT, /develop builds to this; /check verify checks against it) -->
-<!-- The contract. Seed the user stories + acceptance criteria from the scope feature's intent
-     and its acceptance-criteria seeds when a scope row exists, then refine with the engineer.
-     Acceptance criteria are the contract /develop builds to and /check verify checks. -->
+<!-- BUILD SPEC (the WHAT, /develop builds to this; /check checks against it) -->
+<!-- The contract. Seed the user stories + acceptance criteria from the task as the engineer
+     stated it, then refine with them.
+     Acceptance criteria are the contract /develop builds to and /check checks. -->
 
 **User stories**:
 - As a <role>, I want <capability> so that <outcome>.
@@ -136,7 +136,7 @@ Do not repeat the pros/cons list, explain the reasoning. 1 to 3 paragraphs.>
 | Hosting | | |
 | Observability | | |
 
-<!-- BUILD SPEC (the WHAT, /develop builds these in order; /check verify checks the AC each satisfies) -->
+<!-- BUILD SPEC (the WHAT, /develop builds these in order; /check checks the AC each satisfies) -->
 ## Build plan
 
 <!-- Ordered build tasks DERIVED from the surface above (data model, API, stack) and the acceptance
@@ -146,8 +146,7 @@ Do not repeat the pros/cons list, explain the reasoning. 1 to 3 paragraphs.>
      this feature rather than by a fixed recipe. The data model sketch is the coherent target; its
      migration is sized to the feature (one migration normally; sliced across slices for a large feature
      or a thin thread Tracer Bullet, deferred under Facade; omitted for a slice touching no schema).
-     When a scope feature row links this spec, these tasks are also written into that row's sub-tasks;
-     with no scope row, they live here as the source of truth (see /architect's derive-tasks step). -->
+     These tasks live here as the source of truth; this repo has no second tracking surface. -->
 
 1. <Build task, e.g. "Create the migration for the confirmed data model">, satisfies **AC-1**
 2. <Build task>, satisfies **AC-2**, **AC-3**
@@ -240,15 +239,15 @@ The spec's status mirrors its feature's build lifecycle (scope: planned→`Propo
 |---|---|
 | `Proposed` | spec written, decision agreed, feature NOT yet built. Set by /architect at creation. |
 | `In Progress` | The feature governed by this spec is being built. Set by /develop when the feature goes in-progress. |
-| `Accepted` | The feature is built and verified (scope `done`), the "done and dusted" state. A spec is NOT `Accepted` until its feature ships. Set by /develop on completion or reconciled by /sync. |
+| `Accepted` | The feature is built and verified, the "done and dusted" state. A spec is NOT `Accepted` until its feature ships. Set by /develop on completion. |
 | `Superseded by [NNNN](NNNN-title.md)` | Replaced by a newer spec |
 
-**Which status behavior applies depends on whether a buildable scope feature links this spec:**
-- **Feature linked spec** (a `docs/scope/` row's `spec` cell points to it) → **feature mirrored**: `Proposed` → `In Progress` → `Accepted`, tracking the feature's build lifecycle (table above). Confirmation ratifies content but does not set `Accepted`; /develop advances it.
+**Which status behavior applies depends on whether this spec carries a `## Build plan`:**
+- **Buildable feature spec** (it carries a `## Build plan`) → **lifecycle mirrored**: `Proposed` → `In Progress` → `Accepted`, tracking the build (table above). Confirmation ratifies content but does not set `Accepted`; /develop advances it.
 - **Standalone decision spec** (a foundational/stack or cross cutting standard with **no linked buildable feature**) → **decision status**: `Proposed` when written, then **`Accepted` once the engineer ratifies it** (on confirmation). There's no build phase to gate on, so it is not feature mirrored.
 - **spec documenting already shipped work** (the "already built" path, or a feature already `existing`) → **born `Accepted`**, it describes reality that already exists.
 
-**Umbrella child specs carry no lifecycle status.** In an umbrella directory (`NNNN-<x>/`), only the `index.md` has a `**Status**:` line, it mirrors the feature. The **child specs are spec content**, so **omit the `**Status**:` line on children** (they're governed by the umbrella). `/develop` and `/sync` advance the umbrella `index.md`'s status only, never a child's.
+**Umbrella child specs carry no lifecycle status.** In an umbrella directory (`NNNN-<x>/`), only the `index.md` has a `**Status**:` line, it mirrors the feature. The **child specs are spec content**, so **omit the `**Status**:` line on children** (they're governed by the umbrella). `/develop` advances the umbrella `index.md`'s status only, never a child's.
 
 **A directory spec splits build spec from reasoning.** A directory spec (`NNNN-<x>/`) always contains exactly two core files, plus optional extras:
 - **`index.md`**: the build spec `/develop` reads: `## Summary`, `## Requirements`, `## Decision`, the design/spec section, `## Build plan`, `## Consequences`, `## Follow-up`, and a one line `## Rationale` pointer to `rationale.md`. For an umbrella, `index.md` also opens with a **`## Structure`** section listing and linking every child spec (one line each: what it is + which decision it supports) and holds any **cross child contract**.
@@ -259,7 +258,7 @@ The spec's status mirrors its feature's build lifecycle (scope: planned→`Propo
 
 A spec serves two audiences, and its sections divide cleanly between them:
 
-- **Build spec** (what `/develop` reads to build): **`## Requirements`** (the acceptance criteria contract), **`## Decision`**, the design/spec section (**`## Feature design`** for a FEATURE spec, **`## Proposed stack`** for an ARCHITECTURE spec, or the equivalent spec table, e.g. `## Standard definition`), **`## Build plan`** (the ordered tasks derived from the surface + acceptance criteria), and **`## Consequences`** (the constraints the build must honor). This is the WHAT, the implementable spec. The **acceptance criteria in `## Requirements` are the contract `/develop` builds to and `/check verify` checks.**
+- **Build spec** (what `/develop` reads to build): **`## Requirements`** (the acceptance criteria contract), **`## Decision`**, the design/spec section (**`## Feature design`** for a FEATURE spec, **`## Proposed stack`** for an ARCHITECTURE spec, or the equivalent spec table, e.g. `## Standard definition`), **`## Build plan`** (the ordered tasks derived from the surface + acceptance criteria), and **`## Consequences`** (the constraints the build must honor). This is the WHAT, the implementable spec. The **acceptance criteria in `## Requirements` are the contract `/develop` builds to and `/check` checks.**
 - **Decision record** (human / future decision maker context, the WHY): **`## Context`**, **`## Options considered`**, **`## Rationale`**, and the **`## References`** section. This is decision history, not build input; `/develop` skips it. (**`## Summary`** stays with the build spec in `index.md`, it is the human quick read that orients before the spec.)
 
 Where each audience's sections physically live depends on the spec shape:
