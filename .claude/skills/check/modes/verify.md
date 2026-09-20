@@ -71,7 +71,7 @@ You now hold the `AC-N` list to confirm and the specced surface list to confirm 
 
 ### Step 0c: Calibrate "working" to the build approach
 
-Know what this slice was meant to be. Read the build approach for THIS feature with precedence: the feature's scope row `Approach` override if its row declares one, else the project default (root `AGENTS.md`, else the scope header). This mirrors spec overrides-`AGENTS.md`: a feature declaring its own approach (e.g. a Facade prototype in an otherwise Skateboard project) is verified by ITS approach; every other feature uses the project default. If neither records one, use the reasoned default (an end to end / Tracer Bullet slice for production work) and note the assumption. The wrong bar produces false failures (dinging a prototype for lacking a real backend) or false passes (blessing a slice that never proved the path it existed to prove).
+Know what this slice was meant to be. Read the build approach for THIS feature with precedence: an `**Approach**:` line on the governing spec if it declares one, else the project default in root `AGENTS.md` (`## Build approach`). This mirrors spec overrides-`AGENTS.md`: a feature declaring its own approach (e.g. a Facade prototype in an otherwise Skateboard project) is verified by ITS approach; every other feature uses the project default. If neither records one, use the reasoned default (an end to end / Tracer Bullet slice for production work) and note the assumption. The wrong bar produces false failures (dinging a prototype for lacking a real backend) or false passes (blessing a slice that never proved the path it existed to prove).
 
 Reason as the acceptance engineer about what done means for this slice; no fixed per approach script. The judgment: what did this slice promise to make real, and what is it explicitly still allowed to fake? Verify the former hard; don't fail the slice for the latter. Common framings and their bars: a thin end to end path wired through every layer (the whole path carries a real request to a real result); a thinnest usable whole core loop (that one loop genuinely works, not the trimmings); a UI first shell wired to placeholders (the shell and its placeholder flow render and navigate; a stubbed data source is the plan, not a defect); a full user journey per phase (the journey end to end, not isolated screens). Let the label set the bar, then carry it into the scope and the conformance verdict. Acceptance criteria govern what must be true; the approach tells how much of the stack behind them is expected to be real yet.
 
@@ -152,7 +152,7 @@ Overall verdict PASS requires every behavior verified with cited evidence, and (
 
 On FAIL or BLOCKED, tick nothing and report the gaps. Advise `/clear` before moving to a new feature (the spec and `verify.md` hold the state, so a fresh session loses nothing and stays cheap).
 
-**Confirm the update as a closing gate** (don't skip it): state in the report exactly what you ticked in each file, e.g. "Scope: ticked `Verify it`. Spec: status → `Accepted`." No matching scope row → say so ("no scope row matched `<feature>`"), don't finish silently.
+**Confirm the update as a closing gate** (don't skip it): state in the report exactly what you changed, e.g. "verify.md: ticked 4 of 5 steps. Spec: status → `Accepted`." No governing spec → say so, don't finish silently.
 
 ```
 Lead with the verdict; list only what failed or is owed; point to verify.md for the rest (per `docs/conventions.md`). Template:

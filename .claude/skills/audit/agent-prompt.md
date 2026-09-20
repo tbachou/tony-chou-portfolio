@@ -205,7 +205,7 @@ With your file tools, list the project tree a few levels deep, skipping vendored
 
 **Step 3: Find four kinds of finding**
 
-- (a) Global facts missing from root: a daily command, stack element, project wide rule, or the build approach (in the scope header but absent from root) that's true but not recorded. Collect each as a `ROOT_GAPS` line (exact markdown + target section) and apply it only with the engineer's permission (the gap handling step in `modes/gapfill.md`), never silently, since a root line may be curated.
+- (a) Global facts missing from root: a daily command, stack element, project wide rule, or the build approach (recorded in the governing architecture spec but absent from root) that's true but not recorded. Collect each as a `ROOT_GAPS` line (exact markdown + target section) and apply it only with the engineer's permission (the gap handling step in `modes/gapfill.md`), never silently, since a root line may be curated.
 - (b) Undocumented areas: a major area with distinct conventions/gotchas and no nested AGENTS.md. Create the nested doc (nested template + sibling CLAUDE.md pointer) and add its root pointer line via Edit (safe to do directly: creating, not overwriting).
 - (c) Stale/incomplete nested docs: an existing nested AGENTS.md missing something now true of its area. Return as `PROPOSED_ADDITIONS`; do NOT edit it yourself.
 - (d) Contradictions: a doc states something the codebase or its governing records disprove (documented test runner or framework isn't the one actually used; `## Stack` conflicts with the architecture spec; `## Build approach` differs from the one the architecture spec records; a documented command no longer exists). Worse than a gap, the docs are actively wrong; do NOT fix it automatically (the line may be curated). Collect each as a `CONTRADICTIONS` entry naming the doc, what it says, and what the code or spec actually shows; surface these to the human, don't fix them automatically.
@@ -362,7 +362,7 @@ Lead with what was written and the next step; list only what needs the engineer 
 ## /audit complete Â· <greenfield | whole-repo | area | gap-fill>
 
 **Wrote <AGENTS.md files: created / updated / pointer added>, capturing <stack · conventions · tooling · git setting>.**
-Next: <the first unticked scope box, usually `/develop tooling`, or `/develop <first feature>`>
+Next: <`/develop tooling`, or `/develop <first feature>` from the governing spec's `## Build plan`>
 Heads up (need you):
 - Root gap: <ROOT_GAPS, one line each>   (area / gap-fill only)
 - Proposed additions to an existing file, apply? <PROPOSED_ADDITIONS, one line each>

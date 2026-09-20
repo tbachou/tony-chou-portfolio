@@ -28,8 +28,8 @@ deciding? 2 to 4 paragraphs. Do not mention options here, only the problem space
 ## Requirements
 
 <!-- BUILD SPEC (the WHAT, /develop builds to this; /check checks against it) -->
-<!-- The contract. Seed the user stories + acceptance criteria from the scope feature's intent
-     and its acceptance-criteria seeds when a scope row exists, then refine with the engineer.
+<!-- The contract. Seed the user stories + acceptance criteria from the task as the engineer
+     stated it, then refine with them.
      Acceptance criteria are the contract /develop builds to and /check checks. -->
 
 **User stories**:
@@ -146,8 +146,7 @@ Do not repeat the pros/cons list, explain the reasoning. 1 to 3 paragraphs.>
      this feature rather than by a fixed recipe. The data model sketch is the coherent target; its
      migration is sized to the feature (one migration normally; sliced across slices for a large feature
      or a thin thread Tracer Bullet, deferred under Facade; omitted for a slice touching no schema).
-     When a scope feature row links this spec, these tasks are also written into that row's sub-tasks;
-     with no scope row, they live here as the source of truth (see /architect's derive-tasks step). -->
+     These tasks live here as the source of truth; this repo has no second tracking surface. -->
 
 1. <Build task, e.g. "Create the migration for the confirmed data model">, satisfies **AC-1**
 2. <Build task>, satisfies **AC-2**, **AC-3**
@@ -243,7 +242,7 @@ The spec's status mirrors its feature's build lifecycle (scope: planned→`Propo
 | `Accepted` | The feature is built and verified, the "done and dusted" state. A spec is NOT `Accepted` until its feature ships. Set by /develop on completion. |
 | `Superseded by [NNNN](NNNN-title.md)` | Replaced by a newer spec |
 
-**Which status behavior applies depends on whether a buildable scope feature links this spec:**
+**Which status behavior applies depends on whether this spec carries a `## Build plan`:**
 - **Buildable feature spec** (it carries a `## Build plan`) → **lifecycle mirrored**: `Proposed` → `In Progress` → `Accepted`, tracking the build (table above). Confirmation ratifies content but does not set `Accepted`; /develop advances it.
 - **Standalone decision spec** (a foundational/stack or cross cutting standard with **no linked buildable feature**) → **decision status**: `Proposed` when written, then **`Accepted` once the engineer ratifies it** (on confirmation). There's no build phase to gate on, so it is not feature mirrored.
 - **spec documenting already shipped work** (the "already built" path, or a feature already `existing`) → **born `Accepted`**, it describes reality that already exists.

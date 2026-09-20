@@ -76,7 +76,7 @@ Two independent choices, location (repo shape) and shape (decision size):
   - **`index.md`**: the build spec `/develop` reads: `## Summary`, `## Requirements`, `## Decision`, the design/spec section, `## Build plan`, `## Consequences`, `## Follow-up`, and a one line `## Rationale` pointer to `rationale.md`. For an umbrella it also opens with a `## Structure` manifest listing and linking every child spec (one line each: what it is plus which decision it supports), and holds any cross child contract.
   - **`rationale.md`**: the decision record `/develop` skips: `## Context`, `## Options considered`, `## Rationale`, the `## References` section, and any bulky evidence (inventories, audits) under its own subheading. There is no `research/` folder; all evidence lives here.
   - Child specs (umbrella only) are flat `NNNN-<child>.md` files, each complete enough to build from on its own with a short inline rationale (not its own `rationale.md`); promote a child to its own directory only when it grows heavy. Cross child contracts live in the umbrella `index.md`.
-- **One narrow exception into the scope:** after the spec is confirmed, update the matching feature to the ready to build shape (exact edits in *After the spec is written*, step 3). Never dump the atomic task list into the scope. No matching feature: offer to enroll one (see the derive tasks step).
+- **After the spec is confirmed**, check its `## Build plan` is actually buildable and note any follow up that needs its own spec (exact steps in *After the spec is written*, step 3). There is no scope to enroll into; the spec is the tracking surface.
 
 **Artifact base.** specs live under `docs/` by default. If `docs/` is a published docs site (`docusaurus.config.*`, `.vitepress/`, `mkdocs.yml`, Astro Starlight, or Nextra detected), use `.workflow/` instead (`.workflow/specs/`). Always follow whichever base already exists (paths here assume `docs/`).
 
@@ -176,7 +176,7 @@ The inputs to apply (you already have them from the design conversation and pre-
 
 ### After the spec is written
 
-Once the spec file exists, read `internal/after-subagent.md` and follow it for checking the spec yourself, reviewing it yourself, confirmation, status ratification, scope linking, and the final spoken summary. Do not read it before you write the spec.
+Once the spec file exists, read `internal/after-subagent.md` and follow it for checking the spec yourself, reviewing it yourself, confirmation, status ratification, the build plan check, and the final spoken summary. Do not read it before you write the spec.
 
 ### Update / Supersede path
 

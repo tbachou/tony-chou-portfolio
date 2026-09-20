@@ -178,9 +178,9 @@ Read MODE_FILE_PATH now and follow that mode file as the only mode specific inst
 - The spec opens with `## Summary` right after the `**Status**:` line and before `## Context`. Write it first. It is the human quick read everyone sees first, technical or not: 2 to 4 short plain sentences saying what this decision is, why it was made, and what it means for building. A busy reader should get the gist in about 20 seconds. Gloss any jargon in plain words. No dashes. (Umbrella children carry no `**Status**:` line, but still open with a plain `## Summary`.)
 
 **On the initial `**Status**:` line, set it correctly at creation (do not always write `Proposed`):**
-- **Feature linked spec**: a buildable scope feature links (or will link) this spec (typical FEATURE/ENHANCEMENT, or an ARCHITECTURE foundation with a scope row). Write **`Proposed`**. Its status is mirrored from the feature: /develop advances it to `In Progress`, then `Accepted`, as the feature ships.
-- **Standalone decision spec**: MODE is ARCHITECTURE or CROSS-CUTTING with no buildable scope feature tied to it. Also write **`Proposed`** at creation; ratification (not a build phase) promotes it to `Accepted`, and the main agent sets that on the engineer's confirmation.
-- **Documenting already shipped work**: DOCUMENTATION_CONTEXT is provided, OR the linked scope feature is already `existing` (shipped, before the workflow). Write **`Accepted`**: the spec describes reality that already exists (see the documentation path rule below).
+- **Buildable feature spec**: this spec carries a `## Build plan` (typical FEATURE/ENHANCEMENT, or an ARCHITECTURE foundation with build tasks). Write **`Proposed`**. Its status tracks the build: /develop advances it to `In Progress`, then `Accepted`, as the feature ships.
+- **Standalone decision spec**: MODE is ARCHITECTURE or CROSS-CUTTING with no `## Build plan` (nothing to build directly). Also write **`Proposed`** at creation; ratification (not a build phase) promotes it to `Accepted`, and the main agent sets that on the engineer's confirmation.
+- **Documenting already shipped work**: DOCUMENTATION_CONTEXT is provided. Write **`Accepted`**: the spec describes reality that already exists (see the documentation path rule below).
 - Umbrella children still omit the `**Status**:` line entirely (governed by the umbrella `index.md`).
 
 **On documenting an existing decision (the documentation path, `DOCUMENTATION_CONTEXT` provided):**
@@ -243,5 +243,5 @@ Lead with the decision; the mode, operation, and follow-up detail are in the spe
 
 **Decided: <one sentence>.** Key tradeoff: <one sentence>.
 Spec written to <file path>.
-Heads up: <premise challenged: what · N follow-up items enrolled>   (omit if neither)
+Heads up: <premise challenged: what · N follow-up items needing their own spec>   (omit if neither)
 ```
