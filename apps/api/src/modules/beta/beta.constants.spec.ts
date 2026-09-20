@@ -8,6 +8,7 @@ import {
   RED_FLAG_MESSAGES,
   REFUSAL_MESSAGE,
   namePrescribesCrimping,
+  namePrescribesFullCrimp,
   matchesInjectionBlocklist,
   normalizeForMatch,
 } from './beta.constants';
@@ -78,6 +79,12 @@ describe('namePrescribesCrimping', () => {
     'Full-crimp hangs',
     'Crimping on small edges',
     'Open-hand into half-crimp transition',
+    // Second break-it pass, 2026-09-19: dose phrasing after the noun read as
+    // a postfix negation and stripped an affirmative prescription.
+    'Crimp holds not to failure',
+    'Crimp holds less than 7s',
+    'Crimp holds free hanging',
+    'Crimp training free of pain',
   ])('is true for %j, which programs crimping', (name) => {
     expect(check(name)).toBe(true);
   });
@@ -93,6 +100,39 @@ describe('namePrescribesCrimping', () => {
     'Wrist curls, avoids crimping',
     'Noncrimp putty work',
     'Open-hand putty squeezes',
+    // The rows below are the break-it pass of 2026-09-19: every one is a
+    // clearly negated crimp that the prefix-only pattern fired on. They are
+    // the specification for the fix, landed before it.
+    'Crimp-free tendon glides',
+    'Crimp free tendon glides',
+    'Tendon glides, crimp-less',
+    'Anti-crimp glides',
+    'Crimp-avoidant open-hand glides',
+    'Zero crimping',
+    'Skip crimping',
+    'Tendon glides, hold off crimping',
+    'Tendon glides, steer clear of crimping',
+    'Avoid all crimping',
+    'Stop all crimping; glides only',
+    'Refrain from all crimping',
+    'Do not yet crimp',
+    'Open-hand only, not even a half crimp',
+    'Open-hand only, not yet half-crimp',
+    'Tendon glides (this is not a crimp)',
+    'Tendon glides, not the crimp drills',
+    'No half or full crimp',
+    'Avoid half- and full-crimp',
+    'Neither half nor full crimp',
+    'Tendon glides only; no crimping or half-crimping',
+    'No loading of the finger — crimp holds excluded',
+    'Tendon glides, crimping prohibited',
+    'Tendon glides — crimp grip banned',
+    'Tendon glides — crimping not allowed',
+    'Tendon glides — crimping is off-limits',
+    'Tendon glides, no loading — crimping comes later',
+    'Tendon glides — crimping should wait',
+    'Crimping: none',
+    'No full, half, or open crimping',
   ])('is false for %j, which rules crimping out', (name) => {
     expect(check(name)).toBe(false);
   });
@@ -101,6 +141,48 @@ describe('namePrescribesCrimping', () => {
     expect(check('Open-hand glides (no crimping), then half-crimp holds')).toBe(
       true,
     );
+  });
+});
+
+describe('namePrescribesFullCrimp', () => {
+  const check = (name: string) => namePrescribesFullCrimp(normalizeForMatch(name));
+
+  it.each([
+    'Full-crimp hangs',
+    'Full crimp repeaters on a 20mm edge',
+    'Half-crimp holds, then full crimp',
+    // Second break-it pass, 2026-09-19: a bare postfix "not" and a "less" or
+    // "free" after the noun are dose words here, not negations.
+    'Full crimp holds not longer than 7 seconds',
+    'Full crimp holds are not optional',
+    'Full crimp not more than 3 sets',
+    'Full crimp holds less than 5s',
+    'Full crimp holds free hang',
+    'Full crimp holds free hanging on the 20mm edge',
+  ])('is true for %j, which programs full crimp', (name) => {
+    expect(check(name)).toBe(true);
+  });
+
+  it.each([
+    'Half-crimp isometric holds',
+    'Open-hand hangs (no full crimping)',
+    'Open-hand hangs only, no full crimp until stage 3',
+    'Half-crimp holds, not full crimp',
+    // Break-it rows, 2026-09-19, same pattern hole as namePrescribesCrimping.
+    'Open-hand hangs only; avoid half- and full-crimp until stage 4',
+    'Stay open-hand; no half or full crimp yet',
+    'Half crimp is fine, full crimp is not',
+    'Full crimp: not yet',
+    'Full-crimp holds excluded',
+    'Full crimp stays off the menu',
+    'Full-crimp-free hangboard session',
+    'Zero full crimp',
+    'Neither half nor full crimp',
+    'No half-crimp or full-crimp',
+    'Hold off full crimping',
+    'Skip full crimp for now',
+  ])('is false for %j, which rules full crimp out', (name) => {
+    expect(check(name)).toBe(false);
   });
 });
 

@@ -95,6 +95,8 @@ export interface ClinicalRuleSource {
     | 'cc-by-sa'
     | 'cc-by-nc'
     | 'cc-by-nc-nd'
+    /** Free to read (e.g. on PMC) but no reuse grant; treat as closed for text. */
+    | 'none'
     | 'closed';
   /** What this source actually supports, in the reviewer's own words. */
   readonly supports: string;
@@ -305,6 +307,42 @@ const ROBLES_PEREZ_2025: SourceRef = {
   licence: 'cc-by',
 };
 
+const SCHOFFL_2006: SourceRef = {
+  citation:
+    'Schöffl VR, Schöffl I. Injuries to the finger flexor pulley system in rock climbers: current concepts. J Hand Surg Am 2006;31:647-54',
+  doi: '10.1016/j.jhsa.2006.02.011',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/16632061/',
+  licence: 'closed',
+};
+const HARTNETT_2024: SourceRef = {
+  citation:
+    'Hartnett E, Bondoc S, Feretti AM. Climbing while healing: an orthotic intervention for rock climbers with a low-grade A2 pulley injury, a case series. J Hand Ther 2024;37:419-428',
+  doi: '10.1016/j.jht.2023.08.005',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/37805347/',
+  licence: 'closed',
+};
+const DAY_2019: SourceRef = {
+  citation:
+    'Day JM, Lucado AM, Uhl TL. A comprehensive rehabilitation program for treating lateral elbow tendinopathy. Int J Sports Phys Ther 2019;14:818-829',
+  doi: '10.26603/ijspt20190818',
+  url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC6769266/',
+  licence: 'none',
+};
+const DAY_2015: SourceRef = {
+  citation:
+    'Day JM, Bush H, Nitz AJ, Uhl TL. Scapular muscle performance in individuals with lateral epicondylalgia. J Orthop Sports Phys Ther 2015;45:414-24',
+  doi: '10.2519/jospt.2015.5290',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/25579691/',
+  licence: 'closed',
+};
+const DAY_2021: SourceRef = {
+  citation:
+    'Day JM, et al. The effect of scapular muscle strengthening on functional recovery in patients with lateral elbow tendinopathy: a pilot randomized controlled trial. J Sport Rehabil 2021;30:744-753',
+  doi: '10.1123/jsr.2020-0203',
+  url: 'https://pubmed.ncbi.nlm.nih.gov/33440342/',
+  licence: 'closed',
+};
+
 /**
  * Ids are prefixed by scope (`GEN`, `FP`, `ET`, `SI`) and never reused.
  *
@@ -383,9 +421,26 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
   {
     id: 'FP-01',
     scope: 'finger_pulley',
-    text: 'Early: protected motion, not total rest — tendon glides, gentle open-hand putty or rice-bucket work, light massage. No crimping of any kind.',
-    evidence: 'author-judgement',
-    sources: [],
+    text: 'Early: Beta does not know how severe the injury is, and published guidance protects all but the mildest pulley injuries before loading them, so a fresh injury starts with a short protection phase — no finger loading and no climbing, only pain-free tendon glides and light massage — before protected motion (gentle open-hand putty or rice-bucket work). The advance criteria, not the time window, release the visitor from protection. No crimping of any kind.',
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        SCHOFFL_2006,
+        'The field-standard current-concepts paper: initial protection before loading for all but the mildest pulley injuries, then protected motion. The source this rule was tightened to match; before that it began with motion.',
+      ),
+      cite(
+        MERGOUM_2025,
+        'Grade-stratified return-to-play review: initial immobilisation for every grade but the mildest, 10-14 days for grade II. With Schöffl 2006, the reason the early phase now leads with protection.',
+      ),
+      cite(
+        SCHOFFL_2009,
+        'Cadaver loading data behind the crimp prohibition: A2 pulley force 287 N in crimp versus 121 N in slope grip.',
+      ),
+      cite(
+        HARTNETT_2024,
+        'Counterweight: four climbers with low-grade injuries kept climbing three times a week in a pulley ring orthosis for 12 weeks and improved. n=4, no control; recorded so the early prohibition is not read as settled.',
+      ),
+    ],
   },
   {
     id: 'FP-02',
@@ -471,9 +526,22 @@ export const CLINICAL_RULES: readonly ClinicalRule[] = [
   {
     id: 'ET-02',
     scope: 'elbow_tendinopathy',
-    text: 'Add shoulder-blade and rotator-cuff support work in the middle stages; poor scapular control feeds elbow overload.',
-    evidence: 'author-judgement',
-    sources: [],
+    text: 'Add shoulder-blade and rotator-cuff support work in the middle stages; scapular weakness is commonly found alongside elbow tendinopathy.',
+    evidence: 'sort-c',
+    sources: [
+      cite(
+        DAY_2015,
+        'Case-control study finding scapular muscle weakness alongside lateral epicondylalgia. Supports the association this rule now states; the authors write that cause and effect cannot be established, which is why the earlier causal wording was removed.',
+      ),
+      cite(
+        DAY_2019,
+        'Clinical commentary describing a comprehensive lateral elbow programme that includes scapular strengthening. Expert opinion; the abstract says the protocol was then untested, and the body was not read. The DOI target is dead, so the PMC link is the durable one.',
+      ),
+      cite(
+        DAY_2021,
+        'Counterweight: the pilot RCT that tested adding scapular strengthening found no between-group difference. n=32, both arms already receiving a full multimodal package; a failure to show benefit, not a demonstration of none.',
+      ),
+    ],
   },
   {
     id: 'ET-03',

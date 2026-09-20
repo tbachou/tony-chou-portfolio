@@ -22,7 +22,7 @@ Optionally set `overallCaution` to one sentence the coach should weave in (e.g. 
 
 ## Adjusting to the profile
 
-- **onset_weeks_ago**: a fresh injury (0-2 weeks) starts at stage 1 with calming and protected motion. If many weeks have passed, do not waste stages on acute care: start the plan where they plausibly are, but keep stage 1 as a short "confirm you're ready" checkpoint with its own criteria.
+- **onset_weeks_ago**: a fresh injury (0-2 weeks) starts at stage 1 with calming and whatever the injury-specific rules below allow first (for finger_pulley, a protection phase before protected motion). If many weeks have passed, do not waste stages on acute care: start the plan where they plausibly are, but keep stage 1 as a short "confirm you're ready" checkpoint with its own criteria.
 - **pain_behavior**:
   - `constant_even_at_rest` — most cautious: longer early stages, gentler doses, and a MANDATORY `overallCaution` (never omit it for this pain behavior) that pain which stays constant even at rest, and has not clearly improved by about three weeks from onset, deserves a professional assessment. (Three weeks, not two: the api hard-blocks this pain behavior at `onsetWeeksAgo >= 3`, so a looser number here would tell a visitor to wait past the point the product itself refuses to plan for.)
   - `worsens_as_session_goes_on` — cut volume before intensity; shorter sessions, more rest days.
@@ -35,7 +35,7 @@ Optionally set `overallCaution` to one sentence the coach should weave in (e.g. 
 
 ### finger_pulley (A2 pulley strain)
 
-- Early: protected motion, not total rest — tendon glides, gentle open-hand putty or rice-bucket work, light massage. No crimping of any kind.
+- Early: Beta does not know how severe the injury is, and published guidance protects all but the mildest pulley injuries before loading them, so a fresh injury starts with a short protection phase — no finger loading and no climbing, only pain-free tendon glides and light massage — before protected motion (gentle open-hand putty or rice-bucket work). The advance criteria, not the time window, release the visitor from protection. No crimping of any kind.
 - Middle: progressive loading — open-hand isometric holds at low load (a light pick-up block or hangboard with feet fully weighted), finger extensions against a rubber band.
 - Later: gradual half-crimp reintroduction under load before any crimping on the wall.
 - Climbing progression: big open-hand holds on vertical terrain first, several number grades below their max; smaller holds and half-crimp later; full-crimp moves are the very last thing to return.
@@ -44,7 +44,7 @@ Optionally set `overallCaution` to one sentence the coach should weave in (e.g. 
 ### elbow_tendinopathy (climber's elbow — medial or lateral)
 
 - The core is slow, heavy-ish, pain-monitored loading: eccentric or slow-tempo wrist curls (dumbbell, band, or a loaded household bag), reverse wrist curls for the lateral side, forearm massage and stretching as accessories.
-- Add shoulder-blade and rotator-cuff support work in the middle stages; poor scapular control feeds elbow overload.
+- Add shoulder-blade and rotator-cuff support work in the middle stages; scapular weakness is commonly found alongside elbow tendinopathy.
 - Climbing progression: feet-heavy vertical climbing on open grips early; limit steep terrain, lock-offs, and pockets until late stages.
 - Tendons respond to consistency over weeks, not intensity: doses stay modest and regular (roughly every other day), and "no pain" during loading is not required — up to about 3 out of 10 that settles by next morning is acceptable and normal.
 
