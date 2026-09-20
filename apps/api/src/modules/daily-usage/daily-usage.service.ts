@@ -2,9 +2,7 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 import { utcDateOnly } from '../../common/utils/date.util';
-
-const DAILY_TURN_CAP = Number(process.env.DAILY_TURN_CAP ?? 300);
-const DAILY_TOKEN_CAP = Number(process.env.DAILY_TOKEN_CAP ?? 150000);
+import { readNumericEnv } from '../../common/config/env.config';
 
 @Injectable()
 export class DailyUsageService {
@@ -15,10 +13,14 @@ export class DailyUsageService {
     const counter = await this.prisma.dailyUsageCounter.findUnique({
       where: { date: utcDateOnly(new Date()) },
     });
+    // Read per call, not captured in a module const: see env.config.ts. A
+    // bad value throws here rather than becoming NaN and disabling the cap,
+    // and main.ts has already refused to boot on one anyway.
+    const turnCap = readNumericEnv('DAILY_TURN_CAP');
+    const tokenCap = readNumericEnv('DAILY_TOKEN_CAP');
     if (
       counter &&
-      (counter.turnCount >= DAILY_TURN_CAP ||
-        counter.tokenCount >= DAILY_TOKEN_CAP)
+      (counter.turnCount >= turnCap || counter.tokenCount >= tokenCap)
     ) {
       throw new HttpException(
         'Daily usage limit reached, try again tomorrow',
