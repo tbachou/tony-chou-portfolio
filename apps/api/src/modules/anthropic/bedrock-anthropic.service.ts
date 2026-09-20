@@ -58,6 +58,7 @@ export class BedrockAnthropicService implements AiProvider {
         ...(params.maxRetries !== undefined && {
           maxRetries: params.maxRetries,
         }),
+        ...(params.signal && { signal: params.signal }),
       },
     );
 
@@ -153,6 +154,7 @@ export class BedrockAnthropicService implements AiProvider {
         ...(params.maxRetries !== undefined && {
           maxRetries: params.maxRetries,
         }),
+        ...(params.signal && { signal: params.signal }),
       },
     );
 

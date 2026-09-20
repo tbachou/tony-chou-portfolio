@@ -111,6 +111,10 @@ model BetaDailyUsageCounter {
   planCount           Int      @default(0)
   tokenCount          Int      @default(0)
   errorCount          Int      @default(0)
+  // A visitor who disconnected mid-plan. Refunds the slot like an error but
+  // is not one: counting it as an error would corrupt the only signal for
+  // whether Beta is actually failing.
+  abandonedCount      Int      @default(0)
   redFlagCount        Int      @default(0)
   refusalCount        Int      @default(0)
   throttledCount      Int      @default(0)

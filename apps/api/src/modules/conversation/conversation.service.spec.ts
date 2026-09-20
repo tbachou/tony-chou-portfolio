@@ -69,6 +69,11 @@ function makeHarness() {
     },
   };
   const anthropic = {
+    // Declared on AiProvider since the seam existed; the service now reads it
+    // to tell a real upstream failure from a visitor disconnect. Null is the
+    // "not an upstream error" answer, which is right for the thrown Errors
+    // these tests use.
+    classifyUpstreamError: jest.fn().mockReturnValue(null),
     streamMessage: jest.fn(),
     forceToolCall: jest.fn(),
     // The Tony generation runs through here now (0012 phase three AC-4); only

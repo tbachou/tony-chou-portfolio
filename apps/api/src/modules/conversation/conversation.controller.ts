@@ -79,6 +79,11 @@ export class ConversationController {
       hashedIp,
     });
 
+    // A turn pair is two model calls, the second a tool loop. Without this
+    // both run to completion for a socket the visitor already closed.
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -91,8 +96,9 @@ export class ConversationController {
       history: conversation.turns,
       hashedIp,
       emit: (event, data) => writeSseEvent(res, event, data),
+      signal: abort.signal,
     });
 
-    res.end();
+    if (!res.writableEnded) res.end();
   }
 }

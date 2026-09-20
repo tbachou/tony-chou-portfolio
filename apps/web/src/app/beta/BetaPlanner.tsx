@@ -30,239 +30,28 @@ import {
 } from '@/lib/beta-copy';
 import { PlanDisplay } from './PlanDisplay';
 
-const ACK_STORAGE_KEY = 'beta-disclaimer-acknowledged-v1';
-
-// ---------------------------------------------------------------------
-// Plain-language labels for the API enum values (values themselves must
-// match beta.constants.ts exactly — the server validates with IsIn).
-// ---------------------------------------------------------------------
-
-const INJURY_OPTIONS: { value: InjuryArea; label: string; hint: string }[] = [
-  {
-    value: 'finger_pulley',
-    label: 'Finger pulley strain',
-    hint: 'Pain at the base of a finger, often worst on crimps',
-  },
-  {
-    value: 'elbow_tendinopathy',
-    label: "Climber's elbow",
-    hint: 'Tendon pain on the inside or outside of the elbow',
-  },
-  {
-    value: 'shoulder_impingement',
-    label: 'Shoulder impingement',
-    hint: 'Pinching pain overhead or on cross-body moves',
-  },
-];
-
-const SYMPTOM_LABELS: Record<Symptom, string> = {
-  sudden_pop_with_swelling: 'A sudden pop, snap, or tearing feeling when it happened',
-  numbness_or_tingling: 'Numbness or tingling',
-  cannot_bear_weight_or_grip: 'Can’t bear weight, or can’t grip at all',
-  night_pain: 'Pain that wakes me at night',
-  pain_with_specific_holds_or_moves: 'Pain on specific holds or moves',
-  pain_at_session_start_that_warms_up: 'Hurts at the start of a session, then eases',
-  morning_stiffness: 'Morning stiffness',
-  mild_swelling: 'Mild swelling',
-  tenderness_to_touch: 'Tender to the touch',
-  weakness_or_early_fatigue: 'Weakness or early fatigue',
-};
-
-const PAIN_BEHAVIOR_LABELS: Record<PainBehavior, string> = {
-  none_at_rest_hurts_under_load: 'Fine at rest, hurts under load',
-  warms_up_then_fine: 'Warms up, then feels fine',
-  worsens_as_session_goes_on: 'Gets worse as a session goes on',
-  constant_even_at_rest: 'Constant, even at rest',
-};
-
-const DISCIPLINE_LABELS: Record<Discipline, string> = {
-  bouldering: 'Bouldering',
-  sport: 'Sport',
-  trad: 'Trad',
-  indoor_gym: 'Indoor gym',
-};
-
-const EQUIPMENT_LABELS: Record<EquipmentAccess, string> = {
-  climbing_gym: 'Climbing gym',
-  home_wall: 'Home wall',
-  hangboard: 'Hangboard',
-  resistance_bands: 'Resistance bands',
-  weights: 'Weights',
-  none: 'None of these',
-};
-
-const PIPELINE_STAGES: { id: BetaStage; label: string }[] = [
-  { id: 'screening', label: 'Screening' },
-  { id: 'drafting', label: 'Drafting' },
-  { id: 'coaching', label: 'Coaching' },
-];
-
-// Batched per stage transition, never per token (AC-4).
-const STAGE_ANNOUNCEMENTS: Record<BetaStage, string> = {
-  screening: 'Screening your answers for warning signs.',
-  drafting: 'Screening passed. Drafting your staged progression.',
-  coaching: 'Turning the draft into plain language. Your plan is streaming in.',
-};
-
-const CAP_NOTICE_DEFAULT =
-  'Beta caps itself at 20 plans a day so a portfolio demo can’t run away with the AI bill. Today’s budget is spent — it resets at midnight UTC. The form below stays open if you want to look around.';
-
-const HOURLY_THROTTLE_MESSAGE =
-  'You’ve hit the hourly attempt limit — Beta allows 3 attempts per hour per visitor. Take a breather and try again in a little while.';
-
-const NETWORK_ERROR_MESSAGE =
-  'Couldn’t reach the planner service. It runs on a small demo server that sometimes naps between visitors — give it a few seconds and try again.';
-
-type Phase = 'idle' | 'running' | 'done' | 'red_flag' | 'error';
-
-// ---------------------------------------------------------------------
-// Client-side validation. Browser-native bubbles are transient, show one
-// error at a time, cannot be recalled, and frequently render outside the
-// viewport at 200% zoom — so the form opts out with noValidate and owns
-// its own errors. The `required` / `min` / `max` attributes stay: they
-// still map to aria-required and describe the control to assistive tech.
-// ---------------------------------------------------------------------
-
-type FieldName =
-  | 'injuryArea'
-  | 'onsetWeeks'
-  | 'painBehavior'
-  | 'grade'
-  | 'discipline'
-  | 'sessionsPerWeek';
-
-// DOM order, so the error summary reads the form top to bottom.
-const FIELD_ORDER: FieldName[] = [
-  'injuryArea',
-  'onsetWeeks',
-  'painBehavior',
-  'grade',
-  'discipline',
-  'sessionsPerWeek',
-];
-
-// Where an error-summary link sends focus. Radio groups have no single
-// control, so the link targets the first option in the group.
-const FIELD_ANCHORS: Record<FieldName, string> = {
-  injuryArea: `beta-injury-${INJURY_OPTIONS[0].value}`,
-  onsetWeeks: 'beta-onset',
-  painBehavior: `beta-pain-${PAIN_BEHAVIORS[0]}`,
-  grade: 'beta-grade',
-  discipline: `beta-discipline-${DISCIPLINES[0]}`,
-  sessionsPerWeek: 'beta-sessions',
-};
-
-const GRADE_PATTERN = /^[A-Za-z0-9 .+/-]+$/;
-
-/**
- * Every rule the form enforces, in one place. The values are the api's enum
- * values and the server re-validates all of them with IsIn (spec 0004) —
- * this schema is the first gate, never the only one.
- *
- * The two numeric answers stay strings: their inputs are text-like, an empty
- * box has to stay distinguishable from a deliberate zero, and Number('') is
- * 0. The three required choices have no default, so an untouched group fails
- * its enum and reports the sentence written here rather than "invalid
- * option".
- */
-const plannerSchema = z.object({
-  injuryArea: z.enum(INJURY_AREAS, { error: 'Choose the area that hurts.' }),
-  onsetWeeks: z.string().superRefine((value, ctx) => {
-    const weeks = value.trim();
-    if (weeks === '') {
-      ctx.addIssue({ code: 'custom', message: 'Enter how many weeks ago it started.' });
-      return;
-    }
-    const parsed = Number(weeks);
-    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 520) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Enter a whole number of weeks between 0 and 520.',
-      });
-    }
-  }),
-  symptoms: z.array(z.enum(SYMPTOMS)),
-  painBehavior: z.enum(PAIN_BEHAVIORS, {
-    error: 'Choose the pattern that best fits your pain.',
-  }),
-  grade: z.string().superRefine((value, ctx) => {
-    const entered = value.trim();
-    if (entered === '') {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Enter the grade you were climbing before the injury.',
-      });
-      return;
-    }
-    if (!GRADE_PATTERN.test(entered)) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Use a plain climbing grade like V5, 5.11a, or 6b+.',
-      });
-    }
-  }),
-  discipline: z.enum(DISCIPLINES, { error: 'Choose your main discipline.' }),
-  goals: z.string(),
-  sessionsPerWeek: z.string().superRefine((value, ctx) => {
-    const sessions = value.trim();
-    if (sessions === '') return;
-    const parsed = Number(sessions);
-    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 14) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Enter a whole number of sessions between 0 and 14, or leave this blank.',
-      });
-    }
-  }),
-  equipment: z.array(z.enum(EQUIPMENT_ACCESS)),
-});
-
-type PlannerValues = z.infer<typeof plannerSchema>;
-
-function errorId(field: FieldName) {
-  return `beta-error-${field}`;
-}
-
-function describedBy(...ids: (string | false | undefined)[]) {
-  return ids.filter(Boolean).join(' ') || undefined;
-}
-
-/** Persistent, per-control error text. Never colour alone: it carries an
- *  icon and bold weight too, and the control gets aria-invalid. */
-function FieldError({ field, message }: { field: FieldName; message?: string }) {
-  if (!message) return null;
-  return (
-    <p id={errorId(field)} className="beta-field-error">
-      <span aria-hidden="true" className="beta-field-error-mark">
-        !
-      </span>
-      <span>{message}</span>
-    </p>
-  );
-}
-
-/**
- * Move focus to a container the visitor cannot reach with Tab.
- *
- * The tabindex is applied for the duration of the focus and removed on blur,
- * rather than living in the markup. A permanent tabindex="-1" makes the
- * container the nearest focusable ancestor of everything inside it, and a
- * browser that declines to focus the control that was clicked focuses that
- * ancestor instead. Safari does exactly that for radios and checkboxes, so
- * every click on a choice in the form put focus on the <form> and lit the
- * whole card with the .beta-focus-target:focus ring.
- *
- * Focus still has to be visible wherever script puts it, which is why that
- * ring keys off :focus rather than :focus-visible — programmatic focus does
- * not match :focus-visible. Keeping the container unfocusable until the
- * moment it is focused is what stops a click from borrowing that ring.
- */
-function focusContainer(el: HTMLElement | null, options?: FocusOptions) {
-  if (!el) return;
-  el.setAttribute('tabindex', '-1');
-  el.addEventListener('blur', () => el.removeAttribute('tabindex'), { once: true });
-  el.focus(options);
-}
+import {
+  ACK_STORAGE_KEY,
+  CAP_NOTICE_DEFAULT,
+  DISCIPLINE_LABELS,
+  EQUIPMENT_LABELS,
+  HOURLY_THROTTLE_MESSAGE,
+  INJURY_OPTIONS,
+  NETWORK_ERROR_MESSAGE,
+  PAIN_BEHAVIOR_LABELS,
+  PIPELINE_STAGES,
+  STAGE_ANNOUNCEMENTS,
+  SYMPTOM_LABELS,
+} from './planner/options';
+import {
+  FIELD_ANCHORS,
+  FIELD_ORDER,
+  plannerSchema,
+  type FieldName,
+  type Phase,
+  type PlannerValues,
+} from './planner/schema';
+import { FieldError, describedBy, errorId, focusContainer } from './planner/a11y';
 
 export function BetaPlanner() {
   // Disclaimer gate (AC-3). Read in useEffect to stay hydration-safe.
@@ -317,6 +106,10 @@ export function BetaPlanner() {
   const goals = useWatch({ control, name: 'goals' });
 
   const runIdRef = useRef(0);
+  // Same reason as ConversationPanel: the header links back to the portfolio
+  // with next/link, so a visitor can unmount this mid-plan. An abandoned plan
+  // also costs one of the 40 daily global slots, so leaking it is worse here.
+  const abortRef = useRef<AbortController | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const redFlagRef = useRef<HTMLDivElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
@@ -326,6 +119,8 @@ export function BetaPlanner() {
   // never when the gate is skipped from localStorage on load, which must not
   // steal focus from wherever the visitor actually is on the page.
   const focusFormRef = useRef(false);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     try {
@@ -349,11 +144,9 @@ export function BetaPlanner() {
     };
   }, []);
 
-  // A terminal safety state must never be screen-only: the card carries the
-  // actionable half (which professional to see; that the plan is truncated),
-  // while the sr-only line only summarises. Focus is the reliable delivery
-  // path — a live region inserted into the DOM already populated is announced
-  // inconsistently — so the roles below are the backstop, not the mechanism.
+  // A terminal safety state must never be screen-only. Focus is the reliable
+  // delivery path: a live region inserted already-populated is announced
+  // inconsistently, so the roles below are the backstop, not the mechanism.
   useEffect(() => {
     if (phase === 'red_flag') focusContainer(redFlagRef.current);
   }, [phase]);
@@ -382,23 +175,17 @@ export function BetaPlanner() {
     }
   }
 
-  // A failed submit puts focus on the summary, so the visitor hears what is
-  // wrong and can jump straight to any of it. Keyed on submitCount rather
-  // than on the errors themselves: this has to fire once per attempt, not
-  // again every time the visitor clears one of the errors by typing. On a
-  // clean submit the summary is not rendered and focusContainer no-ops.
+  // Keyed on submitCount, not the errors: this fires once per attempt, not
+  // again each time the visitor clears one by typing. On a clean submit the
+  // summary is not rendered and focusContainer no-ops.
   useEffect(() => {
     if (submitCount > 0) focusContainer(errorSummaryRef.current);
   }, [submitCount]);
 
   /**
-   * Copies the plan the visitor is looking at, WITH the context the screen
-   * gives it: `buildPlanClipboardText` prepends the educational framing and
-   * appends the stop conditions. Copying `planText` alone produced a bare
-   * protocol with neither, which is the artifact AC-G14 exists to prevent.
-   *
-   * Entirely client side: the text is already rendered, so nothing is
-   * requested and nothing is sent.
+   * Copies the plan WITH its on-screen context: the educational framing and
+   * the stop conditions. Copying planText alone produced a bare protocol
+   * with neither, which is the artifact AC-G14 exists to prevent.
    */
   async function copyPlan() {
     try {
@@ -467,14 +254,14 @@ export function BetaPlanner() {
     if (sessions !== '') payload.sessionsPerWeek = Number(sessions);
     if (values.equipment.length > 0) payload.equipmentAccess = values.equipment;
 
-    // Move focus before the render that disables the fieldset, otherwise the
+    // Focus must move before the render that disables the fieldset, or the
     // focused submit button is disabled out from under the visitor and focus
-    // drops to <body>. Disabling the button on its own would do the same, so
-    // excluding it from the fieldset would not have fixed this — and the
-    // viewport is about to scroll here anyway, which keeps focus and view
-    // together. scrollToResult() owns the scrolling (it honours
-    // prefers-reduced-motion), so focus must not scroll on its own.
+    // drops to <body>. scrollToResult owns the scrolling (it honours
+    // prefers-reduced-motion), so this focus must not scroll.
     const runId = ++runIdRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     focusContainer(resultRef.current, { preventScroll: true });
     setPhase('running');
     setStage(null);
@@ -490,7 +277,7 @@ export function BetaPlanner() {
 
     let terminal = false;
     try {
-      for await (const sse of streamBetaPlan(payload)) {
+      for await (const sse of streamBetaPlan(payload, controller.signal)) {
         if (runIdRef.current !== runId) return;
         switch (sse.type) {
           case 'status':
@@ -536,6 +323,10 @@ export function BetaPlanner() {
       }
     } catch (error) {
       if (runIdRef.current !== runId) return;
+      // An abort is ours (a superseding run, or an unmount), never a failure
+      // the visitor should see. runIdRef already covers the superseding case;
+      // this covers unmount, where runId is unchanged.
+      if (controller.signal.aborted) return;
       if (error instanceof BetaRequestError && error.status === 503) {
         // Global demo budget spent (AC-5): banner state, form stays browsable.
         setCapNotice(error.message);
@@ -575,12 +366,10 @@ export function BetaPlanner() {
   const showPipeline = phase !== 'idle';
   // A failure with plan text already on screen means the stream died mid-plan.
   const planCutOff = phase === 'error' && planText.length > 0;
-  // Every error, not just the ones FIELD_ORDER anchors. Counting only the
-  // anchored six meant an error on any other field (the two arrays, goals)
-  // rendered no summary, announced nothing, and moved no focus — the submit
-  // button would simply do nothing, which is the worst thing this form can
-  // do to somebody who is hurt. Unreachable with today's schema; a rule
-  // added to one of those fields would reach it.
+  // Every error, not only the ones FIELD_ORDER anchors. Counting just the
+  // anchored six made an error elsewhere render no summary and move no
+  // focus, so the submit button did nothing at all. Unreachable today; a
+  // new rule on goals or either array would reach it.
   const errorFields = Object.keys(errors) as (keyof typeof errors)[];
   const errorCount = errorFields.length;
 

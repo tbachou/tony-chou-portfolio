@@ -69,7 +69,7 @@ export type ToolLoopRequest = {
  */
 export type CreateMessage = (
   body: ToolLoopRequest,
-  options: { timeout?: number; maxRetries?: number },
+  options: { timeout?: number; maxRetries?: number; signal?: AbortSignal },
 ) => Promise<ProviderMessage>;
 
 type CarriedUsage = { inputTokens: number; outputTokens: number };
@@ -164,7 +164,7 @@ function hasNoText(text: string): boolean {
 async function askForTheAnswer(
   create: CreateMessage,
   body: Omit<ToolLoopRequest, 'tools'>,
-  options: { timeout?: number; maxRetries?: number },
+  options: { timeout?: number; maxRetries?: number; signal?: AbortSignal },
 ): Promise<ProviderMessage> {
   return create(body, options);
 }
@@ -188,6 +188,7 @@ export async function runToolConversation(
     ...(params.maxRetries !== undefined && {
       maxRetries: params.maxRetries,
     }),
+    ...(params.signal && { signal: params.signal }),
   };
 
   /** The request minus its tools, shared by the loop and the recovery call. */

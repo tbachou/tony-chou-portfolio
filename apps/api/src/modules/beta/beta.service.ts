@@ -89,8 +89,21 @@ export class BetaService {
     input: BetaPlanRequest;
     hashedIp: string;
     emit: EmitFn;
+    /** Aborted when the visitor disconnects; see the controller's close handler. */
+    signal?: AbortSignal;
   }): Promise<void> {
-    const { input, hashedIp, emit } = params;
+    const { input, hashedIp, signal } = params;
+
+    // Every emit in this method goes through here. The abandoned branch in
+    // the catch used to be the only place that stopped writing, which left
+    // the screener's red_flag and off_topic paths, and a coach that resolves
+    // after the abort, still writing into a destroyed socket. res.write()
+    // returns false rather than throwing there, so the cost was not a crash:
+    // it was a replay that shows a plan delivered to a visitor who had gone.
+    const emit: EmitFn = (event, data) => {
+      if (signal?.aborted) return;
+      params.emit(event, data);
+    };
 
     // Code-enforced red-flag gate (clinical audit MUST-FIX): a checked
     // red-flag box blocks deterministically, before any model call — free
@@ -156,9 +169,10 @@ export class BetaService {
       return;
     }
 
+    let committed = false;
     try {
       emit('status', { stage: 'screening' });
-      const screening = await this.runScreener(input);
+      const screening = await this.runScreener(input, signal);
 
       if (screening.verdict === 'red_flag') {
         // Hard block: the drafter and coach never run (AC-2, key invariant).
@@ -177,17 +191,58 @@ export class BetaService {
       }
 
       emit('status', { stage: 'drafting' });
-      const { plan, tokens: drafterTokens } = await this.runDrafter(input);
+      const { plan, tokens: drafterTokens } = await this.runDrafter(input, signal);
+
+      // The drafter is the long call (21-27s measured). A visitor who leaves
+      // during it is already gone by here, so skipping the coach saves the
+      // larger remaining share of the request's spend. Throwing rather than
+      // returning keeps one exit path: the catch below owns every refund.
+      if (signal?.aborted) throw new AbandonedRequestError();
 
       emit('status', { stage: 'coaching' });
-      const coachTokens = await this.runCoach(input, plan, emit);
+      const coachTokens = await this.runCoach(input, plan, emit, signal);
 
       const totalTokens = screening.tokens + drafterTokens + coachTokens;
       await this.prisma.$transaction(
         this.usage.successIncrementOps(hashedIp, totalTokens),
       );
+      // Mirrors conversation.service.ts: once the transaction has charged the
+      // turn, no later throw may refund it. Nothing awaits between here and
+      // the end of the try today, so this guards a window that is currently
+      // one statement wide — which is exactly how long it stays true for.
+      committed = true;
       emit('done', {});
     } catch (error) {
+      // A disconnect is not a failure. It still refunds the slot — the
+      // visitor consumed nothing — but tallying it as an error would corrupt
+      // the only signal for "is Beta broken", and emitting would write to a
+      // socket that is already gone.
+      // An abort that coincides with a real upstream failure is still a
+      // failure: filing it as abandoned would hide a 5xx from errorCount,
+      // which is the signal this branch exists to protect. Only an abort
+      // with no upstream classification counts as the visitor leaving.
+      const upstream = this.anthropic.classifyUpstreamError(error);
+      const abandoned =
+        error instanceof AbandonedRequestError ||
+        (signal?.aborted === true && upstream === null);
+
+      // The slot was already consumed by a completed plan; refunding here
+      // would hand back a plan the visitor actually received.
+      if (committed) {
+        this.logger.warn(
+          `Beta turn failed after commit: ${this.describeError(error)}`,
+        );
+        return;
+      }
+
+      if (abandoned) {
+        this.logger.warn('Beta request abandoned by the visitor');
+        await this.usage
+          .refundGlobalSlot('abandoned')
+          .catch(() => this.logger.warn('Beta slot refund failed'));
+        return;
+      }
+
       // Failed attempts never count against the per-IP or global caps (AC-8):
       // the reserved slot is returned. Log shape only, never raw upstream
       // messages (they could echo request content — audit hardening).
@@ -201,6 +256,7 @@ export class BetaService {
 
   private async runScreener(
     input: BetaPlanRequest,
+    signal?: AbortSignal,
   ): Promise<ScreeningResult> {
     const result = await this.timedAgentCall('screener', SCREENER_MODEL, () =>
       this.anthropic.forceToolCall({
@@ -208,6 +264,7 @@ export class BetaService {
         system: loadBetaSkill('screener'),
         userMessage: buildVisitorProfile(input),
         maxTokens: 500,
+        signal,
         toolName: 'report_screening',
         toolDescription:
           'Report the safety screening verdict for this visitor profile.',
@@ -230,6 +287,9 @@ export class BetaService {
         timeoutMs: AGENT_CALL_TIMEOUT_MS,
         maxRetries: 0,
       }),
+      undefined,
+      {},
+      signal,
     );
 
     const raw = result.input as {
@@ -255,6 +315,7 @@ export class BetaService {
 
   private async runDrafter(
     input: BetaPlanRequest,
+    signal?: AbortSignal,
   ): Promise<{ plan: DraftPlan; tokens: number }> {
     // One params object, used by both the first attempt and the redraft: two
     // copies would drift the moment anyone changed the model or maxTokens.
@@ -271,9 +332,13 @@ export class BetaService {
       inputSchema: buildDrafterSchema(input),
       timeoutMs: AGENT_CALL_TIMEOUT_MS,
       maxRetries: 0,
+      signal,
     };
     const result = await this.timedAgentCall('drafter', DRAFTER_MODEL, () =>
       this.anthropic.forceToolCall(drafterParams),
+      undefined,
+      {},
+      signal,
     );
 
     try {
@@ -305,8 +370,13 @@ export class BetaService {
       this.logger.warn(
         `Beta drafter output malformed (${this.describeError(error)}); redrafting once`,
       );
-      const retry = await this.timedAgentCall('drafter', DRAFTER_MODEL, () =>
-        this.anthropic.forceToolCall(drafterParams),
+      const retry = await this.timedAgentCall(
+        'drafter',
+        DRAFTER_MODEL,
+        () => this.anthropic.forceToolCall(drafterParams),
+        undefined,
+        {},
+        signal,
       );
       const plan = parseDraftPlan(retry.input, input);
       // Both calls' tokens count: the visitor's plan cost both.
@@ -357,6 +427,7 @@ export class BetaService {
     input: BetaPlanRequest,
     plan: DraftPlan,
     emit: EmitFn,
+    signal?: AbortSignal,
   ): Promise<number> {
     const mode = resolveGuardMode();
     const buffered = mode !== 'off';
@@ -401,6 +472,7 @@ export class BetaService {
             JSON.stringify(toCoachPlan(plan), null, 2),
           ].join('\n'),
           maxTokens: 4000,
+          signal,
           timeoutMs: AGENT_CALL_TIMEOUT_MS,
           maxRetries: 0,
           onToken: buffered
@@ -418,6 +490,7 @@ export class BetaService {
       // One literal per plan makes "is enforce actually live?" readable from
       // the deployed service instead of inferable from an SSE event.
       { guardMode: mode },
+      signal,
     );
 
     if (buffered) {
@@ -494,6 +567,7 @@ export class BetaService {
     fn: () => Promise<T>,
     canRetry: () => boolean = () => true,
     extra: Record<string, string> = {},
+    signal?: AbortSignal,
   ): Promise<T> {
     const startedAt = Date.now();
     let retried = false;
@@ -502,6 +576,9 @@ export class BetaService {
       try {
         result = await fn();
       } catch (error) {
+        // Retrying against an aborted signal buys a second upstream call
+        // that can only fail the same way.
+        if (signal?.aborted) throw error;
         if (!this.isRetryableUpstreamError(error) || !canRetry()) throw error;
         retried = true;
         this.logger.warn(
@@ -532,8 +609,12 @@ export class BetaService {
           ...extra,
           durationMs: Date.now() - startedAt,
           retried,
-          outcome: 'error',
-          error: this.describeError(error),
+          // An abort is the visitor leaving, not the agent failing. Logged as
+          // its own outcome because the real APIUserAbortError carries
+          // name 'Error', so the error field reads "Error status=none" and
+          // is indistinguishable from a genuine upstream fault.
+          outcome: signal?.aborted ? 'abandoned' : 'error',
+          ...(signal?.aborted ? {} : { error: this.describeError(error) }),
         }),
       );
       throw error;
@@ -825,6 +906,18 @@ function assertExplicitProhibitions(
         }
       }
     });
+  }
+}
+
+/**
+ * Thrown when the visitor disconnected before the pipeline finished. Not an
+ * upstream failure: it refunds the slot and tallies `abandonedCount`, and it
+ * never reaches the visitor because there is no longer a visitor to reach.
+ */
+export class AbandonedRequestError extends Error {
+  constructor() {
+    super('Beta request abandoned by the visitor');
+    this.name = 'AbandonedRequestError';
   }
 }
 

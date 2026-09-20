@@ -39,6 +39,13 @@ export function ConversationPanel() {
   // or React invoking a handler more than once) from firing a second,
   // concurrent /conversation/turn call while one is already in flight.
   const isBusyRef = useRef(false);
+  // Aborts the in-flight turn when the visitor navigates away mid-stream.
+  // ProjectsSection links with next/link, so leaving unmounts this panel
+  // while the API is still generating; without this the connection stays
+  // open and the server keeps producing tokens nobody will read.
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     fetchTopics()
@@ -79,11 +86,19 @@ export function ConversationPanel() {
       setTranscript((prev) => [...prev, { role, text }]);
     }
 
+    // A new turn supersedes anything still streaming.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      for await (const event of streamNextTurn({
-        topicId: selectedTopic.slug,
-        conversationId: forConversationId
-      })) {
+      for await (const event of streamNextTurn(
+        {
+          topicId: selectedTopic.slug,
+          conversationId: forConversationId
+        },
+        controller.signal
+      )) {
         if (event.type === 'turn_start') {
           commitCurrentTurn(); // the previous turn in this pair, if any
           currentRole = event.role;
@@ -117,6 +132,10 @@ export function ConversationPanel() {
         }
       }
     } catch {
+      // An abort is this component's own doing — a superseding turn, or an
+      // unmount. Showing "lost connection" for it would be a lie, and on
+      // unmount it is a setState on a gone component.
+      if (controller.signal.aborted) return;
       setAnnouncement('');
       setPanelState({ status: 'turn-error', message: 'Lost connection to the interview. Try again.' });
     } finally {
