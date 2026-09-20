@@ -28,6 +28,7 @@ import {
   PLAN_STOP_CONDITIONS_HEADING,
   buildPlanClipboardText,
 } from '@/lib/beta-copy';
+import { readStored, writeStored } from '@/lib/safe-storage';
 import { PlanDisplay } from './PlanDisplay';
 
 import {
@@ -123,11 +124,8 @@ export function BetaPlanner() {
   useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
-    try {
-      if (localStorage.getItem(ACK_STORAGE_KEY) === 'true') setAcknowledged(true);
-    } catch {
-      // Storage unavailable (private mode etc.) — the gate simply shows.
-    }
+    // Storage unavailable (private mode etc.) — the gate simply shows.
+    if (readStored(ACK_STORAGE_KEY) === 'true') setAcknowledged(true);
   }, []);
 
   useEffect(() => {
@@ -168,11 +166,8 @@ export function BetaPlanner() {
   function acknowledge() {
     focusFormRef.current = true;
     setAcknowledged(true);
-    try {
-      localStorage.setItem(ACK_STORAGE_KEY, 'true');
-    } catch {
-      // Best effort: this visit is unlocked either way.
-    }
+    // Best effort: this visit is unlocked either way.
+    writeStored(ACK_STORAGE_KEY, 'true');
   }
 
   // Keyed on submitCount, not the errors: this fires once per attempt, not

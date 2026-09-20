@@ -7,6 +7,7 @@ import {
   THEME_STORAGE_KEY,
   type ThemePreference
 } from '@/lib/theme';
+import { readStored, writeStored } from '@/lib/safe-storage';
 
 const NEXT_PREFERENCE: Record<ThemePreference, ThemePreference> = {
   system: 'light',
@@ -68,13 +69,8 @@ function ThemeGlyph({ preference }: { preference: ThemePreference }) {
 }
 
 function readStoredPreference(): ThemePreference {
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (isThemePreference(stored)) return stored;
-  } catch {
-    // localStorage unavailable (private mode, blocked cookies) — follow the OS.
-  }
-  return 'system';
+  const stored = readStored(THEME_STORAGE_KEY);
+  return isThemePreference(stored) ? stored : 'system';
 }
 
 /**
@@ -126,11 +122,9 @@ export function ThemeToggle() {
     setPreference((current) => {
       const next = NEXT_PREFERENCE[current];
       applyThemePreference(next);
-      try {
-        localStorage.setItem(THEME_STORAGE_KEY, next);
-      } catch {
-        // Non-persistent is still better than non-functional.
-      }
+      // Non-persistent is still better than non-functional, so the result
+      // is deliberately ignored.
+      writeStored(THEME_STORAGE_KEY, next);
       return next;
     });
   }, []);

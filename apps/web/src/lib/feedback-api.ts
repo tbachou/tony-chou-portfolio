@@ -2,6 +2,7 @@ import type {
   FeedbackCategoryValue as FeedbackCategory,
   FeedbackSourceValue as FeedbackSource,
 } from '@portfolio/shared';
+import { readServerMessage } from './http-error';
 
 // Owned by @portfolio/shared, alongside the schema the api validates with.
 export {
@@ -18,7 +19,6 @@ export {
 // drift here turns into 400s (same convention as beta-api.ts).
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-
 
 
 
@@ -43,17 +43,6 @@ export class FeedbackRequestError extends Error {
   }
 }
 
-/** Pulls the human-readable message out of a NestJS error body. */
-function extractServerMessage(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null;
-  const message = (body as { message?: unknown }).message;
-  if (typeof message === 'string') return message;
-  if (Array.isArray(message)) {
-    return message.filter((m): m is string => typeof m === 'string').join(' ');
-  }
-  return null;
-}
-
 export async function submitFeedback(payload: FeedbackPayload): Promise<{ id: string }> {
   const res = await fetch(`${API_URL}/feedback`, {
     method: 'POST',
@@ -62,12 +51,7 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ id: st
   });
 
   if (!res.ok) {
-    let message: string | null = null;
-    try {
-      message = extractServerMessage(await res.json());
-    } catch {
-      // Non-JSON error body: fall through to the generic message.
-    }
+    const message = await readServerMessage(res);
     throw new FeedbackRequestError(
       res.status,
       message ?? `The feedback request failed (status ${res.status}).`,
