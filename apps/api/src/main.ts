@@ -4,10 +4,19 @@ import { AppModule } from './app.module';
 import { resolveAllowedOrigins } from './common/utils/allowed-origins.util';
 import { validateEnv } from './common/config/env.config';
 
-// Before anything else, and fatal on failure. These variables bound the
-// Anthropic bill, and the old `Number(process.env.X ?? n)` turned a typo into
-// NaN, which every `>=` comparison reads as "under the cap". Refusing to boot
-// is the recoverable outcome; serving uncapped is not.
+// Fatal on failure, before the Nest app is created and before the server
+// listens. These variables bound the Anthropic bill, and the old
+// `Number(process.env.X ?? n)` turned a typo into NaN, which every `>=`
+// comparison reads as "under the cap". Refusing to boot is the recoverable
+// outcome; serving uncapped is not.
+//
+// NOT the first thing that runs, despite sitting at the top: the imports
+// above are hoisted, so the whole AppModule graph is evaluated first (it
+// reaches `new PrismaClient()` at lib/prisma.ts via lib/auth.ts). That is
+// harmless only while numeric env reads stay LAZY — a module-level
+// `readNumericEnv(...)` anywhere in that graph would throw during import,
+// before this line, and the one-shot "every bad variable at once" report
+// would never be printed. That is why the consumers read per call.
 //
 // At module scope rather than inside bootstrap() so the throw stays
 // synchronous: from inside an async function it would surface as an unhandled
