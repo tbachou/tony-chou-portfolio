@@ -1,7 +1,7 @@
 {
-  "corpusHash": "02d9ca2f6f4c92132a6867d915a54b4620a0cb78c7e752c3e03224b6f7b2ef66",
-  "chunkCount": 623,
-  "embeddedAt": "2026-09-20T00:08:54.948Z",
+  "corpusHash": "bb2167a7a40faec2e2e0e1c951445b2990c8024e2f7d3f0f8f3acebad707ae8f",
+  "chunkCount": 664,
+  "embeddedAt": "2026-09-20T16:16:14.138Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
@@ -166,6 +166,18 @@
     {
       "path": "docs/specs/_root/0014-agent-skill-storage/index.md",
       "hash": "ab06b104e188ffa081b4ec24c6c753852a3c469012e2dbf629b6ee2b725365c8"
+    },
+    {
+      "path": "docs/specs/_root/0015-nestjs-12-esm-migration/index.md",
+      "hash": "faf3ed27c2925893bf2fe75ee648446aca580b3b0c2a9811f9a6c48335eaee66"
+    },
+    {
+      "path": "docs/specs/_root/0016-openapi-document-generation/index.md",
+      "hash": "1c990388d921d9473fedc98af0eeb2dcfef072ee29a274c3603df7de0d6a4250"
+    },
+    {
+      "path": "docs/specs/_root/0016-openapi-document-generation/verify.md",
+      "hash": "c3fac78ead55637b92593ec486dca48f79e63f4d8e085ac4e6d6fcc820c87f17"
     }
   ]
 }
