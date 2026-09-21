@@ -4,7 +4,7 @@ import {
   scanControllerSource,
   type ScanResult,
   type ScannedRoute,
-} from './controller-scan';
+} from './controller-scan.js';
 
 const NEST = `import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UsePipes } from '@nestjs/common';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
@@ -253,6 +253,28 @@ import { SomeOtherPipe as ZodValidationPipe } from './not-the-real-pipe';
 `,
       ).bindings,
     ).toEqual([{ kind: 'Body', validated: false }]);
+  });
+
+  it('recognises the pipe when the specifier carries an ESM .js extension', () => {
+    // The ESM migration appended .js to every relative specifier. The module
+    // suffix check matched on the extensionless path, so every validated
+    // binding silently became `validated: false` — which would have published
+    // "this route validates nothing" for eight real routes in docs/api/
+    // rather than failing loudly.
+    expect(
+      only(
+        `
+        @Controller('feedback')
+        export class FeedbackController {
+          @Post()
+          create(@Body(new ZodValidationPipe(schema)) dto: unknown) {}
+        }
+      `,
+        `import { Body, Controller, Post } from '@nestjs/common';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
+`,
+      ).bindings,
+    ).toEqual([{ kind: 'Body', validated: true, schemaName: 'schema' }]);
   });
 });
 
