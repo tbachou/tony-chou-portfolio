@@ -109,6 +109,10 @@
       "kind": "registry",
       "source": "hashicorp/agent-skills"
     },
+    "typesafe-ai": {
+      "kind": "registry",
+      "source": "typesafe-ai/skills"
+    },
     "vercel-react-best-practices": {
       "kind": "registry",
       "source": "vercel-labs/agent-skills"
