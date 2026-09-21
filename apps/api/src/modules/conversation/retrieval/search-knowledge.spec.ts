@@ -77,9 +77,7 @@ describe('createSearchKnowledgeExecutor', () => {
     expect(result).toContain(
       'docs/specs/_root/0011-interview-simulator-eval-suite/index.md',
     );
-    expect(result).toContain(
-      'docs/specs/_root/0014-agent-skill-storage/index.md',
-    );
+    expect(result).toContain('docs/specs/_root/0014-agent-skill-storage/index.md');
     expect(stats.calls).toBe(1);
     expect(stats.resultCounts).toEqual([2]);
     expect(stats.sourcePaths).toHaveLength(2);
@@ -105,8 +103,7 @@ describe('createSearchKnowledgeExecutor', () => {
   it('gives each turn its own counter', async () => {
     searchMock.mockResolvedValue([chunk('docs/a.md')]);
     const first = makeExecutor();
-    for (let i = 0; i < MAX_SEARCHES_PER_TURN; i += 1)
-      await first.execute(call());
+    for (let i = 0; i < MAX_SEARCHES_PER_TURN; i += 1) await first.execute(call());
     expect(await first.execute(call())).toBe(CAP_REACHED_RESULT);
 
     // AC-7: nothing is persisted or carried across turns.
@@ -171,9 +168,9 @@ describe('createSearchKnowledgeExecutor', () => {
     expect(await execute({ name: SEARCH_KNOWLEDGE_TOOL.name, input: {} })).toBe(
       NO_QUERY_RESULT,
     );
-    expect(
-      await execute({ name: SEARCH_KNOWLEDGE_TOOL.name, input: null }),
-    ).toBe(NO_QUERY_RESULT);
+    expect(await execute({ name: SEARCH_KNOWLEDGE_TOOL.name, input: null })).toBe(
+      NO_QUERY_RESULT,
+    );
 
     // An empty string embeds to a meaningless vector, so it is refused before
     // it reaches the index rather than counted as a search.
@@ -203,10 +200,7 @@ describe('createSearchKnowledgeExecutor', () => {
         'docs/specs/_root/0013-credential-check-second-layer.md',
         'Note that "I\'m still a licensed OT" and "I\'m no longer a licensed OT" differ by one word.',
       ),
-      chunk(
-        'docs/specs/_root/0014-agent-skill-storage/index.md',
-        'Safe prose.',
-      ),
+      chunk('docs/specs/_root/0014-agent-skill-storage/index.md', 'Safe prose.'),
     ]);
     const { execute, stats } = makeExecutor();
 
@@ -228,10 +222,7 @@ describe('createSearchKnowledgeExecutor', () => {
       engagement: 'Product Forge',
     } as StoryModel;
     searchMock.mockResolvedValue([
-      chunk(
-        'docs/specs/_root/0006-grade-guesser-daily-game.md',
-        'Fixed cost of about $0.02 per day.',
-      ),
+      chunk('docs/specs/_root/0006-grade-guesser-daily-game.md', 'Fixed cost of about $0.02 per day.'),
     ]);
 
     // Same chunk, two stories: dropped for Product Forge, kept otherwise.
@@ -282,15 +273,9 @@ describe('createSearchKnowledgeExecutor', () => {
   });
 
   it('distinguishes "nothing matched" from "everything was withheld"', async () => {
-    const productForge = {
-      ...story,
-      engagement: 'Product Forge',
-    } as StoryModel;
+    const productForge = { ...story, engagement: 'Product Forge' } as StoryModel;
     searchMock.mockResolvedValue([
-      chunk(
-        'docs/specs/_root/0006-grade-guesser-daily-game.md',
-        'It cost $0.02 per day.',
-      ),
+      chunk('docs/specs/_root/0006-grade-guesser-daily-game.md', 'It cost $0.02 per day.'),
     ]);
     const withheld = makeExecutor(undefined, productForge);
 
@@ -365,10 +350,7 @@ describe('createSearchKnowledgeExecutor', () => {
     // executor that must not throw, and the visitor lost the whole turn.
     const { execute, stats } = makeExecutor();
 
-    const result = await execute({
-      name: undefined as unknown as string,
-      input: {},
-    });
+    const result = await execute({ name: undefined as unknown as string, input: {} });
 
     // The exact string, so dropping the fallback fails rather than passing on
     // "Unknown tool: undefined".
@@ -466,9 +448,7 @@ describe('createSearchKnowledgeExecutor', () => {
     // A lone surrogate reaching a log is a hazard this codebase already
     // guards against elsewhere.
     expect(cause).toContain('\u{1F525}');
-    expect(/[\uD800-\uDFFF]/.test(cause.replace(/\u{1F525}/gu, ''))).toBe(
-      false,
-    );
+    expect(/[\uD800-\uDFFF]/.test(cause.replace(/\u{1F525}/gu, ''))).toBe(false);
   });
 
   it('never puts the query text in anything it reports (AC-13)', async () => {

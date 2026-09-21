@@ -1,8 +1,5 @@
 import type { Index } from '@upstash/vector';
-import type {
-  ToolDefinition,
-  ToolExecutor,
-} from '../../anthropic/ai-provider.interface.js';
+import type { ToolDefinition, ToolExecutor } from '../../anthropic/ai-provider.interface.js';
 import type { StoryModel } from '../../../generated/prisma/models.js';
 import { evaluateTonyResponse } from '../ownership-guard.js';
 import { search, type RetrievedChunk } from './vector-store.js';

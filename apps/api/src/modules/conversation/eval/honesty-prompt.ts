@@ -40,7 +40,7 @@ export function buildHonestyUserMessage(params: {
     retrieved.length === 0
       ? 'Retrieved sections: none. The tool was not used this turn, so every claim in the answer must be supported by the story facts above.'
       : [
-          "Retrieved sections handed to the persona (each begins with the source document path). These are Tony's own committed documents. An ownership claim about the work they describe is supported by them, not an overclaim:",
+          'Retrieved sections handed to the persona (each begins with the source document path). These are Tony\'s own committed documents. An ownership claim about the work they describe is supported by them, not an overclaim:',
           ...retrieved.map(
             (section, index) => `--- result ${index + 1} ---\n${section}`,
           ),

@@ -56,9 +56,7 @@ export function renderScoreboard(
 
   lines.push('## Scores by dimension');
   lines.push('');
-  lines.push(
-    '| Dimension | Mean | Scored cases | Judge errors | Δ vs baseline | Noise band | Significance |',
-  );
+  lines.push('| Dimension | Mean | Scored cases | Judge errors | Δ vs baseline | Noise band | Significance |');
   lines.push('|---|---|---|---|---|---|---|');
   for (const dimension of DIMENSIONS) {
     const d = agg.perDimension[dimension];
@@ -101,9 +99,7 @@ export function renderScoreboard(
 
   const erroredLines: string[] = [];
   for (const caseId of agg.generationErrors) {
-    erroredLines.push(
-      `- \`${caseId}\`: generation_error (turn pair failed after one retry)`,
-    );
+    erroredLines.push(`- \`${caseId}\`: generation_error (turn pair failed after one retry)`);
   }
   for (const [caseId, dims] of Object.entries(agg.judgeErrorCases)) {
     erroredLines.push(`- \`${caseId}\`: judge_error on ${dims.join(', ')}`);

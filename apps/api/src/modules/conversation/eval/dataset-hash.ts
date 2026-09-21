@@ -10,7 +10,9 @@ import { createHash } from 'node:crypto';
  * property insertion order.
  */
 export function hashDataset(payload: unknown): string {
-  return createHash('sha256').update(stableStringify(payload)).digest('hex');
+  return createHash('sha256')
+    .update(stableStringify(payload))
+    .digest('hex');
 }
 
 function stableStringify(value: unknown): string {
