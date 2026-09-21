@@ -199,7 +199,7 @@ async function main(): Promise<void> {
       `${JSON.stringify(
         {
           generatedAt: new Date().toISOString(),
-          note: 'Sentences are test fixtures from ownership-guard.spec.ts, deliberately including false claims, and are NOT statements by Tony Chou.',
+          note: 'Sentences are test fixtures from credential-corpus.fixture.ts, deliberately including false claims, and are NOT statements by Tony Chou.',
           model: CREDENTIAL_CHECK_MODEL,
           elapsedMs: elapsed,
           cases: cases.map((c, i) => ({ ...c, ...verdicts[i] })),

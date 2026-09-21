@@ -43,7 +43,7 @@ import {
   CREDENTIAL_GUARD_REASON,
   evaluateTonyResponse,
 } from '../../src/modules/conversation/ownership-guard.js';
-import { loadCorpus, type Case } from './corpus.js';
+import { loadCorpus, SPEC_PATH, type Case } from './corpus.js';
 
 const QUESTION_PATH = path.join(import.meta.dirname, 'question.md');
 
@@ -416,7 +416,7 @@ async function main(): Promise<void> {
     prompt.instructions.length + prompt.yes.length + prompt.no.length;
 
   console.log(
-    `\nCorpus: ${cases.length} labelled sentences from ownership-guard.spec.ts`,
+    `\nCorpus: ${cases.length} labelled sentences from ${path.basename(SPEC_PATH)}`,
   );
   console.log(
     `  ${claims} claims (must suppress) · ${honest} honest (must allow)`,
@@ -566,7 +566,7 @@ async function main(): Promise<void> {
       generatedAt: new Date().toISOString(),
       note:
         'Spike output. Every sentence here is a test fixture from ' +
-        'ownership-guard.spec.ts, deliberately including false claims, and is ' +
+        'credential-corpus.fixture.ts, deliberately including false claims, and is ' +
         'NOT a statement by Tony Chou.',
       questionPath: path.relative(process.cwd(), QUESTION_PATH),
       question: questionMarkdown,

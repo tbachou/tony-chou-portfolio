@@ -1,8 +1,8 @@
 /**
- * Extracts the labelled credential corpus from `ownership-guard.spec.ts`.
+ * Extracts the labelled credential corpus from `credential-corpus.fixture.ts`.
  *
- * EXTRACTED, NOT COPIED, and that is the whole point of this file. The spec is
- * the source of truth: every sentence in it was produced by an adversarial
+ * EXTRACTED, NOT COPIED, and that is the whole point of this file. The fixture
+ * is the source of truth, shared by both layers spec 0013 keeps: every sentence in it was produced by an adversarial
  * review that ran the real guard and captured a wrong verdict, across eight
  * rounds. A copied corpus would drift the moment a ninth round adds a case,
  * and the spike would then be measuring a stale instrument while reporting
@@ -32,7 +32,7 @@ export const SPEC_PATH = path.resolve(
   'src',
   'modules',
   'conversation',
-  'ownership-guard.spec.ts',
+  'credential-corpus.fixture.ts',
 );
 
 /**
