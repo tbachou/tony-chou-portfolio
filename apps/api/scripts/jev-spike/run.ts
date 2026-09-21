@@ -36,16 +36,16 @@ import { config as loadEnv } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-loadEnv({ path: path.resolve(__dirname, '..', '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '..', '.env') });
 
-import type { StoryModel } from '../../src/generated/prisma/models';
+import type { StoryModel } from '../../src/generated/prisma/models.js';
 import {
   CREDENTIAL_GUARD_REASON,
   evaluateTonyResponse,
-} from '../../src/modules/conversation/ownership-guard';
-import { loadCorpus, type Case } from './corpus';
+} from '../../src/modules/conversation/ownership-guard.js';
+import { loadCorpus, type Case } from './corpus.js';
 
-const QUESTION_PATH = path.join(__dirname, 'question.md');
+const QUESTION_PATH = path.join(import.meta.dirname, 'question.md');
 
 type Prompt = { instructions: string; yes: string; no: string };
 

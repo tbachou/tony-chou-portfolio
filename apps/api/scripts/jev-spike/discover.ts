@@ -30,16 +30,16 @@ import { config as loadEnv } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-loadEnv({ path: path.resolve(__dirname, '..', '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '..', '.env') });
 
 const CORPUS_PATH = path.resolve(
-  __dirname,
+  import.meta.dirname,
   '..',
   '..',
   '.corpus',
   'ac-g9-corpus-run.json',
 );
-const QUESTIONS_PATH = path.join(__dirname, 'discover-questions.md');
+const QUESTIONS_PATH = path.join(import.meta.dirname, 'discover-questions.md');
 
 /** Pinned for the same reason run.ts pins: a moving alias makes two runs
  *  incomparable, and this one is meant to be re-run against later harvests. */

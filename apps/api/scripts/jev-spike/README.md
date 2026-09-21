@@ -10,7 +10,7 @@ sections for the full record; this file is the operator's note.
 
 ## What it measured
 
-Whether a *System One* model — TypeSafe's Jev, which returns a calibrated
+Whether a _System One_ model — TypeSafe's Jev, which returns a calibrated
 probability instead of text — is a better second layer for the clinical
 credential check than the Haiku forced tool call spec 0013 chose.
 
@@ -18,11 +18,11 @@ Same 149 labelled sentences in every arm, extracted live from the guard's own
 spec file rather than copied, so a ninth adversarial round is picked up
 automatically.
 
-| arm | missed claims | suppressed honest | latency |
-|---|---|---|---|
-| regex, on its own spec | 0 / 70 | 0 / 79 | none |
-| Haiku 4.5, prompt v2 | 0 / 70 | 7 / 79 | ~1.2s |
-| Jev `jev-1.13.0`, question v2 at t=0.2 | 0 / 70 | 5 / 79 | ~0.2s |
+| arm                                    | missed claims | suppressed honest | latency |
+| -------------------------------------- | ------------- | ----------------- | ------- |
+| regex, on its own spec                 | 0 / 70        | 0 / 79            | none    |
+| Haiku 4.5, prompt v2                   | 0 / 70        | 7 / 79            | ~1.2s   |
+| Jev `jev-1.13.0`, question v2 at t=0.2 | 0 / 70        | 5 / 79            | ~0.2s   |
 
 **Verdict: Haiku.** Both models caught every claim zero-shot; the two-sentence
 gap is smaller than one prompt iteration moves. An early-access vendor with no

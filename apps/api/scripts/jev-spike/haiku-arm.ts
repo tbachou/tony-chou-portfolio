@@ -32,12 +32,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 
-loadEnv({ path: path.resolve(__dirname, '..', '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '..', '.env') });
 
-import { AnthropicService } from '../../src/modules/anthropic/anthropic.service';
-import { loadCorpus, type Case } from './corpus';
+import { AnthropicService } from '../../src/modules/anthropic/anthropic.service.js';
+import { loadCorpus, type Case } from './corpus.js';
 
-const PROMPT_PATH = path.join(__dirname, 'haiku-prompt.md');
+const PROMPT_PATH = path.join(import.meta.dirname, 'haiku-prompt.md');
 
 /** Transcribed from credential-check.ts on the spec-0013 branch. */
 const CREDENTIAL_VERDICT_CATEGORIES = [

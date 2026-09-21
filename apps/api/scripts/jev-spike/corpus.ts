@@ -17,15 +17,16 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-// Pinned to the TypeScript 5.x compiler API, which this repo is on (^5.7.3).
-// TypeScript 7 is the Go port and its main entry no longer carries the JS
-// compiler API at all — `ts.ScriptTarget` is simply undefined, so this file
-// throws at runtime while typechecking clean. If a TS 7 upgrade lands, this
-// extractor needs the API's new home, or replacing outright.
+// Uses the JS compiler API, which this repo still has on TypeScript ^6.0.3
+// (verified: 2248 exports, ScriptTarget and createSourceFile present).
+// TypeScript 7 is the Go port and its main entry drops that API entirely —
+// `ts.ScriptTarget` is simply undefined, so this file would throw at runtime
+// while typechecking clean. If a TS 7 upgrade lands, this extractor needs the
+// API's new home, or replacing outright.
 import ts from 'typescript';
 
 export const SPEC_PATH = path.resolve(
-  __dirname,
+  import.meta.dirname,
   '..',
   '..',
   'src',
