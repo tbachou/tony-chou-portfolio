@@ -1,16 +1,18 @@
 import type { Mock } from 'vitest';
 import { Logger } from '@nestjs/common';
+import type { AnthropicService } from '../anthropic/anthropic.service.js';
 import { ConversationService } from './conversation.service.js';
-import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums.js';
+import { CREDENTIAL_GUARD_FALLBACK } from './credential-check.js';
+import {
+  ConversationRole,
+  StoryOwnership,
+} from '../../generated/prisma/enums.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { AiProvider } from '../anthropic/ai-provider.interface.js';
 import { TURN_ERROR_MESSAGE } from './conversation.constants.js';
 import { runToolConversation } from '../anthropic/tool-conversation.js';
 import type { DailyUsageService } from '../daily-usage/daily-usage.service.js';
-import type {
-  HistoryTurn,
-  TopicWithStories,
-} from './conversation.service.js';
+import type { HistoryTurn, TopicWithStories } from './conversation.service.js';
 
 // PrismaService is only referenced through constructor injection; the real
 // module drags in the generated Prisma client, which no test may touch.
@@ -96,16 +98,41 @@ function makeHarness() {
       tokens,
     })),
   };
+  // Spec 0013's second layer. Separate from `anthropic` on purpose: the check
+  // is pinned to the concrete direct service (AC-9), so a test that moved the
+  // provider token must not silently move the safety check with it. Defaulted
+  // to a passing verdict so the many tests that never trip the prefilter do
+  // not each have to stub it.
+  const credentialCheck = {
+    // Configured by default: the startup guard is exercised explicitly below,
+    // and every other test would otherwise have to opt out of it.
+    isConfigured: vi.fn().mockReturnValue(true),
+    classifyUpstreamError: vi.fn().mockReturnValue(null),
+    forceToolCall: vi.fn().mockResolvedValue({
+      input: { category: 'no_credential_mentioned', reasoning: 'n/a' },
+      inputTokens: 5,
+      outputTokens: 2,
+    }),
+  };
   const service = new ConversationService(
     prisma as unknown as PrismaService,
     anthropic as unknown as AiProvider,
     dailyUsage as unknown as DailyUsageService,
+    credentialCheck as unknown as AnthropicService,
   );
   const events: [string, unknown][] = [];
   const emit = (event: string, data: unknown) => {
     events.push([event, data]);
   };
-  return { prisma, anthropic, dailyUsage, service, events, emit };
+  return {
+    credentialCheck,
+    prisma,
+    anthropic,
+    dailyUsage,
+    service,
+    events,
+    emit,
+  };
 }
 
 const prepared = {
@@ -322,7 +349,12 @@ describe('ConversationService.generateTurnPair', () => {
         if (upstreamCalls <= 2) {
           return Promise.resolve({
             content: [
-              { type: 'tool_use', id: `tu_${upstreamCalls}`, name: 't', input: {} },
+              {
+                type: 'tool_use',
+                id: `tu_${upstreamCalls}`,
+                name: 't',
+                input: {},
+              },
             ],
             stop_reason: 'tool_use',
             usage: { input_tokens: 1200, output_tokens: 90 },
@@ -419,7 +451,7 @@ describe('ConversationService.generateTurnPair', () => {
     expect(h.dailyUsage.incrementOp).toHaveBeenCalledTimes(1);
   });
 
-  it('counts Tony\'s tokens when a failure lands between the call and the write', async () => {
+  it("counts Tony's tokens when a failure lands between the call and the write", async () => {
     const h = makeHarness();
     h.anthropic.streamMessage.mockResolvedValueOnce({
       text: 'q',
@@ -558,7 +590,9 @@ describe('ConversationService.generateTurnPair', () => {
 
     const lines = warn.mock.calls.map(([line]) => String(line));
     expect(
-      lines.some((l) => l.startsWith('searchKnowledge failed: unknown tool requested: nope')),
+      lines.some((l) =>
+        l.startsWith('searchKnowledge failed: unknown tool requested: nope'),
+      ),
     ).toBe(true);
     warn.mockRestore();
   });
@@ -636,7 +670,8 @@ describe('ConversationService.generateTurnPair', () => {
 
     it('logs { provider: "bedrock", model, outcome: "error" } on failure when AI_PROVIDER=bedrock', async () => {
       process.env.AI_PROVIDER = 'bedrock';
-      process.env.BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
+      process.env.BEDROCK_MODEL_ID =
+        'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
       const h = makeHarness();
       h.anthropic.streamMessage.mockRejectedValue(new Error('boom'));
       const logSpy = vi.spyOn(Logger.prototype, 'log');
@@ -692,10 +727,30 @@ describe('ConversationService.loadConversation (spec 0012 AC-3)', () => {
   it('orders by turnIndex, interviewer before Tony within a pair, whatever order the rows arrive in', async () => {
     const h = makeHarness();
     h.prisma.conversationTurn.findMany.mockResolvedValue([
-      { turnIndex: 1, role: ConversationRole.TONY, text: 'A2', topicId: 'topic-1' },
-      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1', topicId: 'topic-1' },
-      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: 'Q2', topicId: 'topic-1' },
-      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1', topicId: 'topic-1' },
+      {
+        turnIndex: 1,
+        role: ConversationRole.TONY,
+        text: 'A2',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 0,
+        role: ConversationRole.TONY,
+        text: 'A1',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 1,
+        role: ConversationRole.INTERVIEWER,
+        text: 'Q2',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 0,
+        role: ConversationRole.INTERVIEWER,
+        text: 'Q1',
+        topicId: 'topic-1',
+      },
     ]);
 
     const loaded = await h.service.loadConversation('conv-1');
@@ -712,9 +767,24 @@ describe('ConversationService.loadConversation (spec 0012 AC-3)', () => {
   it('skips the empty placeholder row for the transcript but still counts it for the next slot', async () => {
     const h = makeHarness();
     h.prisma.conversationTurn.findMany.mockResolvedValue([
-      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1', topicId: 'topic-1' },
-      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1', topicId: 'topic-1' },
-      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: '', topicId: 'topic-1' },
+      {
+        turnIndex: 0,
+        role: ConversationRole.INTERVIEWER,
+        text: 'Q1',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 0,
+        role: ConversationRole.TONY,
+        text: 'A1',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 1,
+        role: ConversationRole.INTERVIEWER,
+        text: '',
+        topicId: 'topic-1',
+      },
     ]);
 
     const loaded = await h.service.loadConversation('conv-1');
@@ -865,5 +935,184 @@ describe('interviewer user message (spec 0012 AC-1, AC-2)', () => {
     ]);
 
     expect(message).toContain('Prior conversation:\nInterviewer: Q1\nTony: A1');
+  });
+});
+
+describe('the credential check, spec 0013 layer two', () => {
+  // Carries a distinctive tail, so 'the fallback replaced it' is provable.
+  // The fallback itself says "occupational therapist for six years", so a
+  // substring check on the clinical words alone could never discriminate.
+  const CLINICAL =
+    'I was an occupational therapist for six years, then came the pipeline rebuild.';
+  const NOT_CLINICAL = 'I rebuilt the deployment pipeline over two sprints.';
+
+  /** Drives one turn whose Tony answer is `text`. */
+  async function runWith(h: ReturnType<typeof makeHarness>, text: string) {
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'q',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text,
+      inputTokens: 10,
+      outputTokens: 10,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+      stoppedOnMaxTokens: false,
+    });
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+    });
+    return h.events
+      .filter(([name]) => name === 'token')
+      .map(([, payload]) => (payload as { text: string }).text)
+      .join('');
+  }
+
+  it('makes no call at all when the prefilter does not match (AC-1)', async () => {
+    const h = makeHarness();
+    const streamed = await runWith(h, NOT_CLINICAL);
+    expect(h.credentialCheck.forceToolCall).not.toHaveBeenCalled();
+    expect(streamed).toBe(NOT_CLINICAL);
+  });
+
+  it('streams the answer unchanged when the verdict clears it (AC-2)', async () => {
+    const h = makeHarness();
+    h.credentialCheck.forceToolCall.mockResolvedValueOnce({
+      input: { category: 'past_tense_ok', reasoning: 'stated in the past' },
+      inputTokens: 5,
+      outputTokens: 2,
+    });
+    const streamed = await runWith(h, CLINICAL);
+    expect(h.credentialCheck.forceToolCall).toHaveBeenCalledTimes(1);
+    expect(streamed).toBe(CLINICAL);
+  });
+
+  it('substitutes the fallback on a current_claim, emitting no original token (AC-2)', async () => {
+    const h = makeHarness();
+    h.credentialCheck.forceToolCall.mockResolvedValueOnce({
+      input: { category: 'current_claim', reasoning: 'claims a live licence' },
+      inputTokens: 5,
+      outputTokens: 2,
+    });
+    const streamed = await runWith(h, CLINICAL);
+    expect(streamed).toBe(CREDENTIAL_GUARD_FALLBACK);
+    expect(streamed).not.toContain('then came the pipeline rebuild');
+  });
+
+  it('suppresses on `ambiguous`, because unsure is not permission (AC-2)', async () => {
+    const h = makeHarness();
+    h.credentialCheck.forceToolCall.mockResolvedValueOnce({
+      input: { category: 'ambiguous', reasoning: 'cannot tell' },
+      inputTokens: 5,
+      outputTokens: 2,
+    });
+    expect(await runWith(h, CLINICAL)).toBe(CREDENTIAL_GUARD_FALLBACK);
+  });
+
+  it('suppresses a category outside the enum rather than reading it as permission (AC-2)', async () => {
+    const h = makeHarness();
+    h.credentialCheck.forceToolCall.mockResolvedValueOnce({
+      input: { category: 'looks_fine_to_me', reasoning: 'invented' },
+      inputTokens: 5,
+      outputTokens: 2,
+    });
+    // Suppressed, but with the GENERIC copy: an unparsable verdict means we do
+    // not know what the answer said, and the credential copy would assert a
+    // subject the visitor may never have raised.
+    const streamed = await runWith(h, CLINICAL);
+    expect(streamed).not.toContain('then came the pipeline rebuild');
+    expect(streamed).not.toBe(CREDENTIAL_GUARD_FALLBACK);
+  });
+
+  it('fails CLOSED on a provider error, and does not emit turn_error (AC-3)', async () => {
+    const h = makeHarness();
+    h.credentialCheck.forceToolCall.mockRejectedValueOnce(
+      new Error('upstream exploded'),
+    );
+    const streamed = await runWith(h, CLINICAL);
+    // Still suppressed — that is the fail-closed property — but the copy is
+    // the generic one, because a provider error is not evidence the answer
+    // claimed anything.
+    expect(streamed).not.toContain('then came the pipeline rebuild');
+    expect(streamed).not.toBe(CREDENTIAL_GUARD_FALLBACK);
+    // A throw escaping the check would be caught by generateTurnPair's handler,
+    // which deletes the reserved turn and emits turn_error instead of the
+    // fallback — so the check would not fail closed at all.
+    expect(h.events.map(([name]) => name)).not.toContain('turn_error');
+  });
+
+  it('bills the check as spend without counting it as a persisted row (AC-6)', async () => {
+    const h = makeHarness();
+    h.credentialCheck.forceToolCall.mockResolvedValueOnce({
+      input: { category: 'past_tense_ok', reasoning: 'past' },
+      inputTokens: 5,
+      outputTokens: 2,
+    });
+    await runWith(h, CLINICAL);
+    const call = h.dailyUsage.incrementOp.mock.calls.at(-1) as [number, number];
+    expect(call[0]).toBe(2);
+    // interviewer 2 + tony 20 + the check's 7
+    expect(call[1]).toBe(29);
+  });
+
+  it('makes no call when CREDENTIAL_CHECK_ENABLED is false (AC-5)', async () => {
+    process.env.CREDENTIAL_CHECK_ENABLED = 'false';
+    try {
+      const h = makeHarness();
+      const streamed = await runWith(h, CLINICAL);
+      expect(h.credentialCheck.forceToolCall).not.toHaveBeenCalled();
+      expect(streamed).toBe(CLINICAL);
+    } finally {
+      delete process.env.CREDENTIAL_CHECK_ENABLED;
+    }
+  });
+
+  it('never logs the answer text, only the verdict and story id (AC-7)', async () => {
+    const h = makeHarness();
+    h.credentialCheck.forceToolCall.mockResolvedValueOnce({
+      input: { category: 'current_claim', reasoning: 'claims a live licence' },
+      inputTokens: 5,
+      outputTokens: 2,
+    });
+    const warn = vi.spyOn(Logger.prototype, 'warn');
+    await runWith(h, CLINICAL);
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(lines.some((l) => l.includes('current_claim'))).toBe(true);
+    expect(lines.some((l) => l.includes('occupational therapist'))).toBe(false);
+    expect(lines.some((l) => l.includes('claims a live licence'))).toBe(false);
+    warn.mockRestore();
+  });
+});
+
+describe('the credential check startup guard, spec 0013 AC-10', () => {
+  afterEach(() => {
+    delete process.env.CREDENTIAL_CHECK_ENABLED;
+  });
+
+  it('refuses to start when the check is enabled and the key is absent', () => {
+    const h = makeHarness();
+    h.credentialCheck.isConfigured.mockReturnValue(false);
+    // The failure this prevents is silent and total: the check fails closed,
+    // so booting would replace EVERY clinical answer with the fallback, and
+    // the only symptom would be a persona that will not discuss its own past.
+    expect(() => h.service.onModuleInit()).toThrow(/ANTHROPIC_API_KEY/);
+  });
+
+  it('starts when the key is absent but the check is switched off', () => {
+    process.env.CREDENTIAL_CHECK_ENABLED = 'false';
+    const h = makeHarness();
+    h.credentialCheck.isConfigured.mockReturnValue(false);
+    expect(() => h.service.onModuleInit()).not.toThrow();
+  });
+
+  it('starts normally when the key is present', () => {
+    const h = makeHarness();
+    expect(() => h.service.onModuleInit()).not.toThrow();
   });
 });

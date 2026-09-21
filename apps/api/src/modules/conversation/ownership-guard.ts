@@ -134,7 +134,7 @@ function isRejectedFigure(lower: string, index: number): boolean {
 /** A clinical credential noun. `ot` needs both boundaries: without the
  *  lookbehind it matches inside "remote", "note", "robot", "screenshot". */
 const CLINICAL =
-  '(?:occupational therap(?:y|ist)|occupational therapy practitioner|(?<![-\\w])otr(?:/l)?(?![-\\w])|(?<![-\\w])o[./]?t(?![-\\w])|c/ndt|nbcot)';
+  '(?:occupational therap(?:y|ist)|occupational therapy practitioner|(?<![-\\w])otr(?:/l)?(?![-\\w])|(?<![-\\w])o[./]?ts?(?![-\\w])|c/ndt|nbcot)';
 
 /** Characters a window may span, stopping at a sentence end or any marker that
  *  makes the sentence past tense or a denial. This is what keeps "I have not
@@ -210,6 +210,38 @@ export function isBlankResponse(text: string): boolean {
   return text.replace(BLANK_CHARACTERS, '').length === 0;
 }
 
+/**
+ * Lowercase, fold every apostrophe variant to ASCII, collapse whitespace.
+ *
+ * Exported because spec 0013's second layer must key on the SAME normalisation
+ * this guard does. Each step is here because skipping it was a recorded bypass:
+ * U+2019 is the default typography of the model whose output this reads and
+ * defeated every branch written with an ASCII apostrophe, and a double space —
+ * an ordinary stream-join artefact, needing no exotic input — walked past the
+ * whole guard. A second layer that normalised differently would reintroduce
+ * both, silently, on the side where a miss skips the safety check entirely.
+ *
+ * Indices stay self-consistent for callers that slice the result;
+ * PRODUCT_FORGE_NUMERIC_CLAIM reads raw `text` and is digits only, so nothing
+ * shifts under it.
+ */
+export function normalizeForMatch(text: string): string {
+  return (
+    text
+      .toLowerCase()
+      .replace(/[\u2018\u2019\u02bc\u00b4\u2032\uff07`]/g, "'")
+      // Invisible format characters, stripped BEFORE the whitespace collapse.
+      // JS `\s` does not include U+200B, U+00AD or U+2060, so without this a
+      // zero-width space mid-word renders identically to the plain sentence in
+      // a browser and defeats every branch below AND the second layer's
+      // prefilter, which shares this function. Found by the pre-deploy
+      // adversarial pass: "I am a lice\u200bnsed occupa\u200btional
+      // thera\u200bpist." passed both layers.
+      .replace(/[\p{Cf}\u00ad]/gu, '')
+      .replace(/\s+/g, ' ')
+  );
+}
+
 export function evaluateTonyResponse(
   text: string,
   story: StoryModel,
@@ -229,16 +261,7 @@ export function evaluateTonyResponse(
   // an ASCII apostrophe, but U+2019 is the default typography of the model
   // whose output this reads — so "I’m a licensed occupational therapist"
   // walked straight through a guard that blocked the ASCII spelling.
-  const lower = text
-    .toLowerCase()
-    // Every branch below is written with an ASCII apostrophe and single ASCII
-    // spaces. U+2019 is the model's default typography, and a double space is
-    // an ordinary stream-join artefact — either one silently bypassed the whole
-    // guard. Indices stay self-consistent because isRejectedFigure slices
-    // `lower` too; PRODUCT_FORGE_NUMERIC_CLAIM reads raw `text` and is digits
-    // only, so nothing else shifts.
-    .replace(/[\u2018\u2019\u02bc\u00b4\u2032\uff07`]/g, "'")
-    .replace(/\s+/g, ' ');
+  const lower = normalizeForMatch(text);
 
   // First, ahead of the commercial rules: it is the only check here guarding a
   // real regulated qualification, and whichever branch fires first supplies the

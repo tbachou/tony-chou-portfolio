@@ -33,6 +33,18 @@ export class AnthropicService implements AiProvider {
   private readonly model =
     process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL;
 
+  /**
+   * Whether the direct path can make a call at all, without making one.
+   *
+   * Exists so a startup check can fail fast (spec 0013 AC-10) rather than
+   * every request discovering the absence one at a time. Reads the same
+   * variable `getClient` does, so the two cannot disagree about what
+   * "configured" means.
+   */
+  isConfigured(): boolean {
+    return Boolean(process.env.ANTHROPIC_API_KEY);
+  }
+
   private getClient(): Anthropic {
     if (!process.env.ANTHROPIC_API_KEY) {
       throw new InternalServerErrorException(

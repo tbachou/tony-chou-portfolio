@@ -10,6 +10,7 @@ import {
   type PreparedTurn,
   type TopicWithStories,
 } from '../../src/modules/conversation/conversation.service.js';
+import type { AnthropicService } from '../../src/modules/anthropic/anthropic.service.js';
 import { loadConversationSkill } from '../../src/modules/conversation/skill-loader.js';
 import type { PrismaService } from '../../src/modules/prisma/prisma.service.js';
 import type { DailyUsageService } from '../../src/modules/daily-usage/daily-usage.service.js';
@@ -59,7 +60,9 @@ class CapturingProvider implements AiProvider {
     private readonly injectQuestion?: string,
   ) {}
 
-  async streamMessage(params: StreamMessageParams): Promise<StreamMessageResult> {
+  async streamMessage(
+    params: StreamMessageParams,
+  ): Promise<StreamMessageResult> {
     // Exhaustive on purpose: if the production prompts are ever composed or
     // a third model call appears in generateTurnPair, fail loudly instead of
     // silently misclassifying (and mis-scoring) a turn.
@@ -236,6 +239,37 @@ export type GenerationCapture = {
  * own errors and reports them as a `turn_error` emit, so failure is detected
  * from the event stream, not a rejection.
  */
+
+// AC-4: the eval's honesty layer one must stay deterministic and the harness
+// must make no extra model call, so the second layer is off for the whole run.
+// Set here rather than inherited, so a shell that happens to export something
+// else cannot turn a scored run into a spending one.
+process.env.CREDENTIAL_CHECK_ENABLED = 'false';
+
+/**
+ * AC-4 and AC-11: the eval must make NO credential-check call.
+ *
+ * Two mechanisms, because either alone is unsafe. The env flag above keeps the
+ * layer from running at all. This stub is the tripwire for the day that stops
+ * working — and it deliberately does more than throw, because
+ * `credentialVerifier` catches everything by design, so a throw alone would be
+ * swallowed, silently substitute the fallback for a real answer, and quietly
+ * crater the scoreboard instead of failing.
+ */
+const credentialCheckStub = {
+  forceToolCall(): never {
+    console.error(
+      '\nFATAL: the eval harness reached the credential check. It must not — ' +
+        'this spends real money per case and substitutes fallback copy for ' +
+        'generated answers, so every score in this run would be wrong.\n',
+    );
+    process.exit(1);
+  },
+  classifyUpstreamError(): null {
+    return null;
+  },
+} as unknown as AnthropicService;
+
 async function generateOnce(
   provider: AiProvider,
   evalCase: EvalCase,
@@ -246,6 +280,7 @@ async function generateOnce(
     makePrismaStub(),
     capture,
     dailyUsageStub,
+    credentialCheckStub,
   );
   const { topic, prepared } = synthesized;
 

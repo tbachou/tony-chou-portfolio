@@ -30,7 +30,10 @@
     "sweep:threshold": "tsx scripts/threshold-sweep.ts",
     "judge": "tsx scripts/beta-guard-judge.ts",
     "prebuild": "npm run build --workspace=@portfolio/shared",
-    "sync:corpus": "tsx prisma/sync-corpus.ts"
+    "sync:corpus": "tsx prisma/sync-corpus.ts",
+    "spike:jev": "tsx scripts/jev-spike/run.ts",
+    "spike:jev:discover": "tsx scripts/jev-spike/discover.ts",
+    "spike:haiku": "tsx scripts/jev-spike/haiku-arm.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.32.4",
@@ -67,6 +70,7 @@
     "@types/node": "^22.10.0",
     "@types/pg": "^8.20.3",
     "@types/supertest": "^7.0.0",
+    "@typesafe-ai/sdk": "^0.6.0",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

@@ -9,12 +9,20 @@ import { join } from 'path';
 // monorepo root by hand.
 const SKILL_DIR_CANDIDATES = [
   join(process.cwd(), 'src', 'modules', 'conversation', 'skills'),
-  join(process.cwd(), 'apps', 'api', 'src', 'modules', 'conversation', 'skills'),
+  join(
+    process.cwd(),
+    'apps',
+    'api',
+    'src',
+    'modules',
+    'conversation',
+    'skills',
+  ),
 ];
 
 const cache = new Map<string, string>();
 
-export type ConversationSkillName = 'interviewer' | 'tony';
+export type ConversationSkillName = 'interviewer' | 'tony' | 'credential-check';
 
 export function loadConversationSkill(name: ConversationSkillName): string {
   const cached = cache.get(name);
