@@ -72,7 +72,11 @@ export const TOP_K = 3;
  */
 export const MINIMUM_SIMILARITY = 0.68;
 
-type ChunkMetadata = { heading: string; headingPath: string; sourcePath: string };
+type ChunkMetadata = {
+  heading: string;
+  headingPath: string;
+  sourcePath: string;
+};
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -96,7 +100,8 @@ function requireEnv(name: string): string {
  */
 export function isRetrievalConfigured(): boolean {
   return Boolean(
-    process.env.UPSTASH_VECTOR_REST_URL && process.env.UPSTASH_VECTOR_REST_TOKEN,
+    process.env.UPSTASH_VECTOR_REST_URL &&
+    process.env.UPSTASH_VECTOR_REST_TOKEN,
   );
 }
 
@@ -154,7 +159,10 @@ export async function replaceAll(index: Index, chunks: Chunk[]): Promise<void> {
  * which is what makes the attribution in AC-6 possible at all: without the
  * path the persona has nothing to name.
  */
-export async function search(index: Index, query: string): Promise<RetrievedChunk[]> {
+export async function search(
+  index: Index,
+  query: string,
+): Promise<RetrievedChunk[]> {
   // includeData is required to get the chunk text back. Without it the query
   // returns ids, scores and metadata only, so the model would receive a
   // citation with nothing to cite. Caught by the first live query.

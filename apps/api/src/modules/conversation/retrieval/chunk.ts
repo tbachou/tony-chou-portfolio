@@ -69,7 +69,11 @@ export function chunkMarkdown(text: string, sourcePath: string): Chunk[] {
   // Index 0 is unused; 1 to 6 hold the current heading text at each level.
   const openHeadings: string[] = [];
   const fileTitle = sourcePath.split('/').pop() ?? sourcePath;
-  let current: Section = { heading: fileTitle, headingPath: fileTitle, lines: [] };
+  let current: Section = {
+    heading: fileTitle,
+    headingPath: fileTitle,
+    lines: [],
+  };
   let inFence = false;
 
   for (const line of lines) {

@@ -45,7 +45,8 @@ function repo(): string {
 const status = (root: string, cwd = root) => git(STATUS_ARGS, cwd);
 
 afterEach(() => {
-  while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true });
+  while (repos.length)
+    rmSync(repos.pop() as string, { recursive: true, force: true });
 });
 
 describe('commit before you run', () => {
@@ -69,11 +70,14 @@ describe('commit before you run', () => {
     }
   });
 
-  it('ignores the suite\'s own outputs, the one carve out', () => {
+  it("ignores the suite's own outputs, the one carve out", () => {
     // Every run rewrites these, so counting them would make the second run in
     // a row always refuse.
     const root = repo();
-    writeFileSync(path.join(root, 'docs/evals/interview/scoreboard.md'), 'changed\n');
+    writeFileSync(
+      path.join(root, 'docs/evals/interview/scoreboard.md'),
+      'changed\n',
+    );
     writeFileSync(path.join(root, 'docs/evals/interview/results.json'), '{}\n');
     expect(status(root)).toBe('');
   });
@@ -83,7 +87,9 @@ describe('commit before you run', () => {
     // the whole check to that workspace and miss a dirty packages/shared.
     const root = repo();
     writeFileSync(path.join(root, 'packages/shared/contracts.ts'), 'changed\n');
-    expect(status(root, path.join(root, 'apps/api'))).toContain('packages/shared');
+    expect(status(root, path.join(root, 'apps/api'))).toContain(
+      'packages/shared',
+    );
   });
 
   it('sees a rename, which a hand written parser twice did not', () => {

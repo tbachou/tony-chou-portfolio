@@ -29,8 +29,7 @@ export type IndexInfo = {
 };
 
 export type PopulationVerdict =
-  | { ok: true; vectorCount: number }
-  | { ok: false; message: string };
+  { ok: true; vectorCount: number } | { ok: false; message: string };
 
 /**
  * Exact equality, not a threshold.

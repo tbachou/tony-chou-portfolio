@@ -102,9 +102,7 @@ export class ConversationService {
    * An unknown conversationId yields no rows, which prepareTurn treats as a
    * new conversation.
    */
-  async loadConversation(
-    conversationId?: string,
-  ): Promise<LoadedConversation> {
+  async loadConversation(conversationId?: string): Promise<LoadedConversation> {
     if (!conversationId) return emptyConversation();
     const rows = await this.prisma.conversationTurn.findMany({
       where: { conversationId },

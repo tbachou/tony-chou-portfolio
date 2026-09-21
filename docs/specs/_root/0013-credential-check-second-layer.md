@@ -344,6 +344,8 @@ It is worth stating plainly what this spec is not. The persona already answers t
 
 `licen` · `therapist` · `therapy` · `occupational` · `c/ndt` · `ndt` · `nbcot` · `otr` · `clinic` · `patient` · `rehab` · `credential` · `certif` · `practi` · `ot` (this one with word boundaries on both sides, since bare `ot` matches inside "remote", "note" and "robot")
 
+**Amended 2026-09-21: add `caseload`.** The list above was pinned by reasoning about vocabulary, and the corpus found what that missed. "I could take a caseload again tomorrow." is a claim in `modalClaims`, names no other clinical word, and routed nowhere — so the second layer would never have seen it. Option 3 is what kept this invisible: the deterministic guard blocks that sentence, so nothing downstream noticed. Under Option 4 it would have reached a visitor unchecked, which is the sharpest available argument for keeping both layers. Three boundary forms are also known not to route — `OT-trained` and `ex-OT` fail the bare-`ot` rule's hyphen guards and `O.T.` is not `ot`. All three are honest sentences in the corpus, so nothing is currently exposed by them, and narrowing those guards is not free: the same rule exists because bare `ot` matches inside "remote", "note" and "robot". They are pinned in `credential-check.spec.ts` so a fourth cannot appear silently.
+
 Deliberately over inclusive: several of these fire on ordinary engineering talk ("practice", "certif", "credential"), and that is correct here. A false positive costs one cheap model call; a false negative skips the safety check silently. This is the opposite of the asymmetry inside the guard, and the difference is the point.
 
 **The verdict enum** (closed; the tool schema enforces it):

@@ -25,7 +25,15 @@ import type { StoryModel } from '../../../generated/prisma/models.js';
  * is handed can make its own honest answer fail.
  */
 
-const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..', '..', '..', '..');
+const REPO_ROOT = path.resolve(
+  import.meta.dirname,
+  '..',
+  '..',
+  '..',
+  '..',
+  '..',
+  '..',
+);
 
 /** The fixture stories, shaped as the guard consumes them. */
 const storyFixtures = stories.map(

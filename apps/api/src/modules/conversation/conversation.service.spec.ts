@@ -1,16 +1,16 @@
 import type { Mock } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { ConversationService } from './conversation.service.js';
-import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums.js';
+import {
+  ConversationRole,
+  StoryOwnership,
+} from '../../generated/prisma/enums.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { AiProvider } from '../anthropic/ai-provider.interface.js';
 import { TURN_ERROR_MESSAGE } from './conversation.constants.js';
 import { runToolConversation } from '../anthropic/tool-conversation.js';
 import type { DailyUsageService } from '../daily-usage/daily-usage.service.js';
-import type {
-  HistoryTurn,
-  TopicWithStories,
-} from './conversation.service.js';
+import type { HistoryTurn, TopicWithStories } from './conversation.service.js';
 
 // PrismaService is only referenced through constructor injection; the real
 // module drags in the generated Prisma client, which no test may touch.
@@ -322,7 +322,12 @@ describe('ConversationService.generateTurnPair', () => {
         if (upstreamCalls <= 2) {
           return Promise.resolve({
             content: [
-              { type: 'tool_use', id: `tu_${upstreamCalls}`, name: 't', input: {} },
+              {
+                type: 'tool_use',
+                id: `tu_${upstreamCalls}`,
+                name: 't',
+                input: {},
+              },
             ],
             stop_reason: 'tool_use',
             usage: { input_tokens: 1200, output_tokens: 90 },
@@ -419,7 +424,7 @@ describe('ConversationService.generateTurnPair', () => {
     expect(h.dailyUsage.incrementOp).toHaveBeenCalledTimes(1);
   });
 
-  it('counts Tony\'s tokens when a failure lands between the call and the write', async () => {
+  it("counts Tony's tokens when a failure lands between the call and the write", async () => {
     const h = makeHarness();
     h.anthropic.streamMessage.mockResolvedValueOnce({
       text: 'q',
@@ -558,7 +563,9 @@ describe('ConversationService.generateTurnPair', () => {
 
     const lines = warn.mock.calls.map(([line]) => String(line));
     expect(
-      lines.some((l) => l.startsWith('searchKnowledge failed: unknown tool requested: nope')),
+      lines.some((l) =>
+        l.startsWith('searchKnowledge failed: unknown tool requested: nope'),
+      ),
     ).toBe(true);
     warn.mockRestore();
   });
@@ -636,7 +643,8 @@ describe('ConversationService.generateTurnPair', () => {
 
     it('logs { provider: "bedrock", model, outcome: "error" } on failure when AI_PROVIDER=bedrock', async () => {
       process.env.AI_PROVIDER = 'bedrock';
-      process.env.BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
+      process.env.BEDROCK_MODEL_ID =
+        'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
       const h = makeHarness();
       h.anthropic.streamMessage.mockRejectedValue(new Error('boom'));
       const logSpy = vi.spyOn(Logger.prototype, 'log');
@@ -692,10 +700,30 @@ describe('ConversationService.loadConversation (spec 0012 AC-3)', () => {
   it('orders by turnIndex, interviewer before Tony within a pair, whatever order the rows arrive in', async () => {
     const h = makeHarness();
     h.prisma.conversationTurn.findMany.mockResolvedValue([
-      { turnIndex: 1, role: ConversationRole.TONY, text: 'A2', topicId: 'topic-1' },
-      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1', topicId: 'topic-1' },
-      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: 'Q2', topicId: 'topic-1' },
-      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1', topicId: 'topic-1' },
+      {
+        turnIndex: 1,
+        role: ConversationRole.TONY,
+        text: 'A2',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 0,
+        role: ConversationRole.TONY,
+        text: 'A1',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 1,
+        role: ConversationRole.INTERVIEWER,
+        text: 'Q2',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 0,
+        role: ConversationRole.INTERVIEWER,
+        text: 'Q1',
+        topicId: 'topic-1',
+      },
     ]);
 
     const loaded = await h.service.loadConversation('conv-1');
@@ -712,9 +740,24 @@ describe('ConversationService.loadConversation (spec 0012 AC-3)', () => {
   it('skips the empty placeholder row for the transcript but still counts it for the next slot', async () => {
     const h = makeHarness();
     h.prisma.conversationTurn.findMany.mockResolvedValue([
-      { turnIndex: 0, role: ConversationRole.INTERVIEWER, text: 'Q1', topicId: 'topic-1' },
-      { turnIndex: 0, role: ConversationRole.TONY, text: 'A1', topicId: 'topic-1' },
-      { turnIndex: 1, role: ConversationRole.INTERVIEWER, text: '', topicId: 'topic-1' },
+      {
+        turnIndex: 0,
+        role: ConversationRole.INTERVIEWER,
+        text: 'Q1',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 0,
+        role: ConversationRole.TONY,
+        text: 'A1',
+        topicId: 'topic-1',
+      },
+      {
+        turnIndex: 1,
+        role: ConversationRole.INTERVIEWER,
+        text: '',
+        topicId: 'topic-1',
+      },
     ]);
 
     const loaded = await h.service.loadConversation('conv-1');
