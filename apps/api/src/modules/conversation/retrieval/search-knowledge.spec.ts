@@ -1,3 +1,4 @@
+import type { MockedFunction } from 'vitest';
 import {
   CAP_REACHED_RESULT,
   createSearchKnowledgeExecutor,
@@ -14,11 +15,11 @@ import { search } from './vector-store.js';
 import { StoryOwnership } from '../../../generated/prisma/enums.js';
 import type { StoryModel } from '../../../generated/prisma/models.js';
 
-jest.mock('./vector-store', () => ({
-  search: jest.fn(),
+vi.mock('./vector-store', () => ({
+  search: vi.fn(),
 }));
 
-const searchMock = search as jest.MockedFunction<typeof search>;
+const searchMock = search as MockedFunction<typeof search>;
 
 const chunk = (sourcePath: string, text = 'body', heading = 'Decision') => ({
   sourcePath,
@@ -41,10 +42,10 @@ const story = {
 } as StoryModel;
 
 function makeExecutor(
-  openIndex = jest.fn(() => ({}) as never),
+  openIndex = vi.fn(() => ({}) as never),
   storyOverride: StoryModel = story,
 ) {
-  const onFailure = jest.fn();
+  const onFailure = vi.fn();
   const { execute, stats } = createSearchKnowledgeExecutor({
     openIndex,
     story: storyOverride,
@@ -126,7 +127,7 @@ describe('createSearchKnowledgeExecutor', () => {
   });
 
   it('degrades when the credentials are missing rather than failing turn setup', async () => {
-    const openIndex = jest.fn(() => {
+    const openIndex = vi.fn(() => {
       throw new Error('UPSTASH_VECTOR_REST_URL is not set');
     });
     const { execute, stats } = makeExecutor(openIndex as never);
@@ -238,9 +239,9 @@ describe('createSearchKnowledgeExecutor', () => {
 
   it('throws instead of degrading when the eval asks it to (AC-9)', async () => {
     searchMock.mockRejectedValue(new Error('upstream 503'));
-    const onFailure = jest.fn();
+    const onFailure = vi.fn();
     const { execute, stats } = createSearchKnowledgeExecutor({
-      openIndex: jest.fn(() => ({}) as never),
+      openIndex: vi.fn(() => ({}) as never),
       story,
       onFailure,
       failLoudly: true,

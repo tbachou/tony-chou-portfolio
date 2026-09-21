@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { ConversationService } from './conversation.service.js';
 import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums.js';
@@ -13,14 +14,14 @@ import type {
 
 // PrismaService is only referenced through constructor injection; the real
 // module drags in the generated Prisma client, which no test may touch.
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
 // Agent prompts live as markdown skill files on disk; tests never read the
 // filesystem (the beta.service.spec convention).
-jest.mock('./skill-loader', () => ({
-  loadConversationSkill: jest.fn(() => 'stub skill prompt'),
+vi.mock('./skill-loader', () => ({
+  loadConversationSkill: vi.fn(() => 'stub skill prompt'),
 }));
 
 // conversation.service.ts uses `Prisma.PrismaClientKnownRequestError` at
@@ -28,7 +29,7 @@ jest.mock('./skill-loader', () => ({
 // generated/prisma/client.ts's full module graph — unrelated to this spec
 // and not something these tests exercise (that branch is prepareTurn's
 // unique-constraint race, not generateTurnPair).
-jest.mock('../../generated/prisma/client', () => ({
+vi.mock('../../generated/prisma/client', () => ({
   Prisma: { PrismaClientKnownRequestError: class {} },
 }));
 
@@ -60,12 +61,12 @@ const topic: TopicWithStories = {
 
 function makeHarness() {
   const prisma = {
-    $transaction: jest.fn().mockResolvedValue([]),
+    $transaction: vi.fn().mockResolvedValue([]),
     conversationTurn: {
-      findMany: jest.fn().mockResolvedValue([]),
-      update: jest.fn((args: unknown) => ({ __op: 'update', args })),
-      create: jest.fn((args: unknown) => ({ __op: 'create', args })),
-      delete: jest.fn().mockResolvedValue(undefined),
+      findMany: vi.fn().mockResolvedValue([]),
+      update: vi.fn((args: unknown) => ({ __op: 'update', args })),
+      create: vi.fn((args: unknown) => ({ __op: 'create', args })),
+      delete: vi.fn().mockResolvedValue(undefined),
     },
   };
   const anthropic = {
@@ -73,13 +74,13 @@ function makeHarness() {
     // to tell a real upstream failure from a visitor disconnect. Null is the
     // "not an upstream error" answer, which is right for the thrown Errors
     // these tests use.
-    classifyUpstreamError: jest.fn().mockReturnValue(null),
-    streamMessage: jest.fn(),
-    forceToolCall: jest.fn(),
+    classifyUpstreamError: vi.fn().mockReturnValue(null),
+    streamMessage: vi.fn(),
+    forceToolCall: vi.fn(),
     // The Tony generation runs through here now (0012 phase three AC-4); only
     // the interviewer still uses streamMessage. Defaulted so the many tests
     // that only care about the interviewer do not each have to stub it.
-    runToolConversation: jest.fn().mockResolvedValue({
+    runToolConversation: vi.fn().mockResolvedValue({
       text: 'a',
       inputTokens: 1,
       outputTokens: 1,
@@ -88,8 +89,8 @@ function makeHarness() {
     }),
   };
   const dailyUsage = {
-    assertCapNotExceeded: jest.fn().mockResolvedValue(undefined),
-    incrementOp: jest.fn((count: number, tokens: number) => ({
+    assertCapNotExceeded: vi.fn().mockResolvedValue(undefined),
+    incrementOp: vi.fn((count: number, tokens: number) => ({
       __op: 'incrementOp',
       count,
       tokens,
@@ -469,7 +470,7 @@ describe('ConversationService.generateTurnPair', () => {
       stoppedOnIterationCap: false,
       stoppedOnMaxTokens: true,
     });
-    const warn = jest.spyOn(Logger.prototype, 'warn');
+    const warn = vi.spyOn(Logger.prototype, 'warn');
 
     await h.service.generateTurnPair({
       topic,
@@ -503,7 +504,7 @@ describe('ConversationService.generateTurnPair', () => {
       stoppedOnIterationCap: false,
       stoppedOnMaxTokens: false,
     });
-    const warn = jest.spyOn(Logger.prototype, 'warn');
+    const warn = vi.spyOn(Logger.prototype, 'warn');
 
     await h.service.generateTurnPair({
       topic,
@@ -545,7 +546,7 @@ describe('ConversationService.generateTurnPair', () => {
         };
       },
     );
-    const warn = jest.spyOn(Logger.prototype, 'warn');
+    const warn = vi.spyOn(Logger.prototype, 'warn');
 
     await h.service.generateTurnPair({
       topic,
@@ -610,7 +611,7 @@ describe('ConversationService.generateTurnPair', () => {
         inputTokens: 1,
         outputTokens: 1,
       });
-      const logSpy = jest.spyOn(Logger.prototype, 'log');
+      const logSpy = vi.spyOn(Logger.prototype, 'log');
 
       await h.service.generateTurnPair({
         topic,
@@ -638,7 +639,7 @@ describe('ConversationService.generateTurnPair', () => {
       process.env.BEDROCK_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
       const h = makeHarness();
       h.anthropic.streamMessage.mockRejectedValue(new Error('boom'));
-      const logSpy = jest.spyOn(Logger.prototype, 'log');
+      const logSpy = vi.spyOn(Logger.prototype, 'log');
 
       await h.service.generateTurnPair({
         topic,
@@ -762,7 +763,7 @@ describe('ConversationService.prepareTurn topic scoping', () => {
     const h = makeHarness();
     // The harness stub returns a plain object, not a promise; prepareTurn
     // awaits it either way. Retyped because that shape widens the mock to never.
-    (h.prisma.conversationTurn.create as jest.Mock).mockReturnValue({
+    (h.prisma.conversationTurn.create as Mock).mockReturnValue({
       id: 'turn-9',
     });
 
@@ -781,7 +782,7 @@ describe('ConversationService.prepareTurn topic scoping', () => {
     const h = makeHarness();
     // The harness stub returns a plain object, not a promise; prepareTurn
     // awaits it either way. Retyped because that shape widens the mock to never.
-    (h.prisma.conversationTurn.create as jest.Mock).mockReturnValue({
+    (h.prisma.conversationTurn.create as Mock).mockReturnValue({
       id: 'turn-9',
     });
 

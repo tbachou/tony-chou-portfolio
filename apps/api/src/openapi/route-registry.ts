@@ -2,7 +2,7 @@
  * Every route `apps/api` serves, as spec 0016 describes it.
  *
  * This file lives in `src/` and not `scripts/` for one mechanical reason:
- * jest's `rootDir` is `src`, so a spec file beside `scripts/` would never be
+ * the runner's root is `src`, so a spec file beside `scripts/` would never be
  * collected. Four eval and retrieval files sit in `src/` for the same reason
  * (see `apps/api/AGENTS.md`). The thin wrappers stay in `scripts/`.
  *

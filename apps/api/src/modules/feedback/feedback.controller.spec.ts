@@ -3,7 +3,7 @@
 // only uses the AllowAnonymous decorator, so stub the module at the test
 // boundary instead of widening transformIgnorePatterns (see
 // app.controller.spec.ts).
-jest.mock('@thallesp/nestjs-better-auth', () => ({
+vi.mock('@thallesp/nestjs-better-auth', () => ({
   AllowAnonymous: () => () => undefined,
 }));
 
@@ -11,7 +11,7 @@ jest.mock('@thallesp/nestjs-better-auth', () => ({
 // these tests must never touch a database (repo convention). The controller
 // itself never uses Prisma directly, but importing feedback.service.ts
 // transitively does.
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -32,7 +32,7 @@ describe('FeedbackController', () => {
   });
 
   it('derives hashedIp from the request and delegates to the service (AC-I1)', async () => {
-    const submit = jest.fn().mockResolvedValue({ id: 'cfeedback1' });
+    const submit = vi.fn().mockResolvedValue({ id: 'cfeedback1' });
     const controller = new FeedbackController({
       submit,
     } as unknown as FeedbackService);
@@ -47,7 +47,7 @@ describe('FeedbackController', () => {
   });
 
   it('never passes the raw request IP to the service — only the hashed rate-limit identity (AC-I2)', async () => {
-    const submit = jest.fn().mockResolvedValue({ id: 'cfeedback2' });
+    const submit = vi.fn().mockResolvedValue({ id: 'cfeedback2' });
     const controller = new FeedbackController({
       submit,
     } as unknown as FeedbackService);

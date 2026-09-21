@@ -9,7 +9,7 @@ import type { CreateFeedback } from '@portfolio/shared';
 // these tests must never touch a database, so the module is stubbed and the
 // service gets a hand-rolled prisma double instead (repo convention, see
 // beta-usage.service.spec.ts).
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -21,14 +21,14 @@ const TODAY_END = new Date(Date.UTC(2026, 7, 20));
 function makePrisma() {
   return {
     feedback: {
-      count: jest.fn(),
-      create: jest.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
     },
   };
 }
 
 function makePublisher() {
-  return { publish: jest.fn() };
+  return { publish: vi.fn() };
 }
 
 describe('FeedbackService', () => {
@@ -37,12 +37,12 @@ describe('FeedbackService', () => {
   let service: FeedbackService;
 
   beforeAll(() => {
-    jest.useFakeTimers({ now: NOW });
+    vi.useFakeTimers({ now: NOW });
     Logger.overrideLogger(false);
   });
 
   afterAll(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   beforeEach(() => {

@@ -5,7 +5,7 @@ import type { PrismaService } from '../prisma/prisma.service.js';
 // The real PrismaService pulls in the generated client and the pg adapter;
 // these tests must never touch a database, so the module is stubbed and the
 // service gets a hand-rolled prisma double instead.
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -17,8 +17,8 @@ const TODAY = new Date(Date.UTC(2026, 8, 20));
 function makePrisma() {
   return {
     dailyUsageCounter: {
-      findUnique: jest.fn(),
-      upsert: jest.fn(),
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
     },
   };
 }
@@ -40,12 +40,12 @@ describe('DailyUsageService', () => {
   const originalEnv: Record<string, string | undefined> = {};
 
   beforeAll(() => {
-    jest.useFakeTimers({ now: NOW });
+    vi.useFakeTimers({ now: NOW });
     for (const key of ENV_KEYS) originalEnv[key] = process.env[key];
   });
 
   afterAll(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   beforeEach(() => {

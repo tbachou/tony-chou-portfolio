@@ -157,7 +157,7 @@ jobs:
         run: npm run lint
 
       - name: Beta safety regression tests
-        run: npm test --workspace=apps/api -- --ci
+        run: npm test --workspace=apps/api
 
       # The web app's own safety-critical rendering: that the educational
       # framing reaches the screen on both the coach and guard-fallback

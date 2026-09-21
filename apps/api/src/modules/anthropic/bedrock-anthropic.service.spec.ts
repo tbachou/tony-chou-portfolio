@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import {
   assertBedrockCredentialsConfigured,
@@ -107,7 +108,7 @@ describe('assertBedrockCredentialsConfigured (boot guard)', () => {
 describe('BedrockAnthropicService.forceToolCall image handling', () => {
   const IMAGE = { data: 'Ynl0ZXM=', mediaType: 'image/webp' };
 
-  function stubbed(create: jest.Mock) {
+  function stubbed(create: Mock) {
     const service = new BedrockAnthropicService();
     (service as unknown as { client: unknown }).client = {
       messages: { create },
@@ -116,7 +117,7 @@ describe('BedrockAnthropicService.forceToolCall image handling', () => {
   }
 
   function okResponse() {
-    return jest.fn().mockResolvedValue({
+    return vi.fn().mockResolvedValue({
       content: [{ type: 'tool_use', input: { grade: 5 } }],
       usage: { input_tokens: 10, output_tokens: 20 },
     });

@@ -10,7 +10,7 @@ import { GradePhotosService, isRecordNotFound } from './grade-photos.service.js'
 import type { PhotoStorageService } from './photo-storage.service.js';
 import type { CreateGradePhoto } from '@portfolio/shared';
 
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -47,16 +47,15 @@ async function realJpeg(): Promise<Buffer> {
 function makeDeps(options: { createError?: unknown; rows?: unknown[] } = {}) {
   const prisma = {
     gradePhoto: {
-      findMany: jest.fn(() => Promise.resolve(options.rows ?? [row()])),
-      create: jest.fn<
-        Promise<ReturnType<typeof row>>,
-        [{ data: Record<string, unknown> }]
+      findMany: vi.fn(() => Promise.resolve(options.rows ?? [row()])),
+      create: vi.fn<
+        (args: { data: Record<string, unknown> }) => Promise<ReturnType<typeof row>>
       >(() =>
         options.createError
           ? Promise.reject(options.createError)
           : Promise.resolve(row()),
       ),
-      update: jest.fn((args: { where: { id: string }; data: { active: boolean } }) =>
+      update: vi.fn((args: { where: { id: string }; data: { active: boolean } }) =>
         Promise.resolve(row({ active: args.data.active })),
       ),
     },
@@ -65,14 +64,14 @@ function makeDeps(options: { createError?: unknown; rows?: unknown[] } = {}) {
   const storage = {
     // Typed off the real signatures rather than by naming unused parameters,
     // so `mock.calls[0][0]` is a string here without an `as` cast.
-    put: jest.fn<Promise<void>, [string, Buffer, string]>(() =>
+    put: vi.fn<(key: string, body: Buffer, contentType: string) => Promise<void>>(() =>
       Promise.resolve(),
     ),
-    deleteQuietly: jest.fn<Promise<void>, [string]>(() => Promise.resolve()),
-    presignGet: jest.fn((key: string) =>
+    deleteQuietly: vi.fn<(key: string) => Promise<void>>(() => Promise.resolve()),
+    presignGet: vi.fn((key: string) =>
       Promise.resolve(`https://bucket.s3.us-east-2.amazonaws.com/${key}?X-Amz-Signature=sig`),
     ),
-    getBytes: jest.fn(),
+    getBytes: vi.fn(),
   };
 
   const service = new GradePhotosService(
@@ -85,11 +84,11 @@ function makeDeps(options: { createError?: unknown; rows?: unknown[] } = {}) {
 
 describe('GradePhotosService', () => {
   beforeEach(() => {
-    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   describe('create: object first, then row (AC-9)', () => {
     it('writes the object before the row', async () => {

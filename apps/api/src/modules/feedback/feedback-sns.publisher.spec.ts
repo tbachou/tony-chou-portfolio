@@ -1,17 +1,32 @@
+import type { Mock } from 'vitest';
+import { SNSClient as SNSClientMock } from '@aws-sdk/client-sns';
 import { Logger } from '@nestjs/common';
 import { FeedbackSnsPublisher } from './feedback-sns.publisher.js';
 
-const SEND_MOCK = jest.fn();
+// Hoisted with the factory below. A plain `const SEND_MOCK = vi.fn()` is in
+// the temporal dead zone when vi.mock runs: Vitest lifts mock factories above
+// the module body, so the factory captured undefined and every assertion on
+// SEND_MOCK silently saw zero calls. Jest's babel hoisting tolerated it.
+const { SEND_MOCK } = vi.hoisted(() => ({ SEND_MOCK: vi.fn() }));
 
 // The real @aws-sdk/client-sns makes network calls; these tests must never
 // touch the network, so the client is stubbed entirely. PublishCommand is
 // kept real (a plain input holder) so the publisher's call shape is
 // verified end to end.
-jest.mock('@aws-sdk/client-sns', () => {
-  const actual = jest.requireActual('@aws-sdk/client-sns');
+vi.mock('@aws-sdk/client-sns', async () => {
+  const actual = await vi.importActual<typeof import('@aws-sdk/client-sns')>(
+    '@aws-sdk/client-sns',
+  );
   return {
     ...actual,
-    SNSClient: jest.fn().mockImplementation(() => ({ send: SEND_MOCK })),
+    // A `function`, not an arrow: the publisher calls `new SNSClient({})`, and
+    // an arrow function is not a constructor, so Vitest throws
+    // "() => ({...}) is not a constructor" — which the publisher's own
+    // try/catch swallows and reports as a bare TypeError. Jest wrapped the
+    // implementation so an arrow worked there.
+    SNSClient: vi.fn(function () {
+      return { send: SEND_MOCK };
+    }),
   };
 });
 
@@ -29,7 +44,7 @@ describe('FeedbackSnsPublisher', () => {
   const ORIGINAL_ENV = process.env;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     process.env = { ...ORIGINAL_ENV };
   });
 
@@ -40,7 +55,7 @@ describe('FeedbackSnsPublisher', () => {
   describe('construction', () => {
     it('logs a single WARN when SNS_FEEDBACK_TOPIC_ARN is absent', () => {
       delete process.env.SNS_FEEDBACK_TOPIC_ARN;
-      const warnSpy = jest
+      const warnSpy = vi
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
 
@@ -54,7 +69,7 @@ describe('FeedbackSnsPublisher', () => {
 
     it('does not warn when the topic ARN is configured', () => {
       process.env.SNS_FEEDBACK_TOPIC_ARN = 'arn:aws:sns:us-east-2:1:topic';
-      const warnSpy = jest
+      const warnSpy = vi
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
 
@@ -67,7 +82,7 @@ describe('FeedbackSnsPublisher', () => {
   describe('publish', () => {
     it('is a no-op when the topic ARN is absent (no client constructed)', async () => {
       delete process.env.SNS_FEEDBACK_TOPIC_ARN;
-      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       const publisher = new FeedbackSnsPublisher();
 
       publisher.publish(EVENT);
@@ -78,7 +93,7 @@ describe('FeedbackSnsPublisher', () => {
 
     it('publishes the exact payload shape from the spec when the topic ARN is set', async () => {
       process.env.SNS_FEEDBACK_TOPIC_ARN = 'arn:aws:sns:us-east-2:1:topic';
-      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       SEND_MOCK.mockResolvedValue({});
       const publisher = new FeedbackSnsPublisher();
 
@@ -100,8 +115,8 @@ describe('FeedbackSnsPublisher', () => {
 
     it('never throws when the publish call rejects, and logs the error name only — never the message text', async () => {
       process.env.SNS_FEEDBACK_TOPIC_ARN = 'arn:aws:sns:us-east-2:1:topic';
-      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-      const errorSpy = jest
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const errorSpy = vi
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
       const failure = new Error(
@@ -125,16 +140,17 @@ describe('FeedbackSnsPublisher', () => {
 
     it('swallows a synchronous client construction failure the same way as a publish failure (name only, no throw)', async () => {
       process.env.SNS_FEEDBACK_TOPIC_ARN = 'arn:aws:sns:us-east-2:1:topic';
-      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-      const errorSpy = jest
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const errorSpy = vi
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
       const constructionFailure = new Error('missing AWS_REGION');
       constructionFailure.name = 'ConfigurationError';
-      const { SNSClient } = jest.requireMock('@aws-sdk/client-sns') as {
-        SNSClient: jest.Mock;
-      };
-      SNSClient.mockImplementationOnce(() => {
+      const SNSClient = SNSClientMock as unknown as Mock;
+      // `function`, not an arrow, for the same reason as the factory above:
+      // this stands in for a constructor, and an arrow would throw
+      // "not a constructor" before ever reaching this throw.
+      SNSClient.mockImplementationOnce(function () {
         throw constructionFailure;
       });
       const publisher = new FeedbackSnsPublisher();

@@ -28,11 +28,11 @@ describe('OriginCheckGuard', () => {
     process.env.CORS_ORIGIN = `${ALLOWED}, ${OTHER_ALLOWED}`;
     // Every rejection warns by design; without this the full-suite run is
     // noisy with expected output, which is how real warnings get ignored.
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   afterAll(() => {

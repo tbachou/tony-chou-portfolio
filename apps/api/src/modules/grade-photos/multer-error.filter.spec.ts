@@ -7,8 +7,8 @@ import { isFileTooLarge, MulterErrorFilter } from './multer-error.filter.js';
 
 function makeHost() {
   const response = {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
   };
   const host = {
     switchToHttp: () => ({ getResponse: () => response }),
@@ -18,10 +18,10 @@ function makeHost() {
 
 describe('MulterErrorFilter (AC-17)', () => {
   beforeEach(() => {
-    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it('turns multer\'s size abort into 413', async () => {
     // The cap is enforced as the stream arrives rather than after buffering,
@@ -65,7 +65,7 @@ describe('MulterErrorFilter (AC-17)', () => {
   });
 
   it('logs the error name only, never its message', () => {
-    const log = jest
+    const log = vi
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
     const { host } = makeHost();

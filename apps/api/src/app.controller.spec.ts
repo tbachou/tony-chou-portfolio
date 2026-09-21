@@ -2,7 +2,7 @@
 // dist (.mjs), which Jest's CommonJS transform cannot parse. The controller
 // only uses the AllowAnonymous decorator, so stub the module at the test
 // boundary instead of widening transformIgnorePatterns.
-jest.mock('@thallesp/nestjs-better-auth', () => ({
+vi.mock('@thallesp/nestjs-better-auth', () => ({
   AllowAnonymous: () => () => undefined,
 }));
 

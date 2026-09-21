@@ -25,14 +25,14 @@ import type { BetaUsageService } from './beta-usage.service.js';
 // The agent prompts are markdown files read from disk relative to
 // process.cwd(); these tests lock pipeline behavior, not prompt contents,
 // so the loader is stubbed out entirely.
-jest.mock('./skill-loader', () => ({
-  loadBetaSkill: jest.fn(() => 'stub skill prompt'),
+vi.mock('./skill-loader', () => ({
+  loadBetaSkill: vi.fn(() => 'stub skill prompt'),
 }));
 
 // PrismaService is only referenced through constructor injection here; the
 // real module drags in the generated Prisma client and the pg adapter, none
 // of which may be touched by these tests (no real database, ever).
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -136,19 +136,19 @@ function classifyFakeUpstreamError(
 }
 
 function makeHarness() {
-  const prisma = { $transaction: jest.fn().mockResolvedValue([]) };
+  const prisma = { $transaction: vi.fn().mockResolvedValue([]) };
   const anthropic = {
-    forceToolCall: jest.fn(),
-    streamMessage: jest.fn(),
-    classifyUpstreamError: jest.fn(classifyFakeUpstreamError),
+    forceToolCall: vi.fn(),
+    streamMessage: vi.fn(),
+    classifyUpstreamError: vi.fn(classifyFakeUpstreamError),
   };
   const usage = {
-    reserveGlobalSlot: jest.fn().mockResolvedValue(true),
-    refundGlobalSlot: jest.fn().mockResolvedValue(undefined),
-    recordRedFlagBlock: jest.fn().mockResolvedValue(undefined),
-    recordGuardBlock: jest.fn().mockResolvedValue(undefined),
-    recordInjectionBlock: jest.fn().mockResolvedValue(undefined),
-    successIncrementOps: jest.fn().mockReturnValue(['global-op', 'ip-op']),
+    reserveGlobalSlot: vi.fn().mockResolvedValue(true),
+    refundGlobalSlot: vi.fn().mockResolvedValue(undefined),
+    recordRedFlagBlock: vi.fn().mockResolvedValue(undefined),
+    recordGuardBlock: vi.fn().mockResolvedValue(undefined),
+    recordInjectionBlock: vi.fn().mockResolvedValue(undefined),
+    successIncrementOps: vi.fn().mockReturnValue(['global-op', 'ip-op']),
   };
   const service = new BetaService(
     prisma as unknown as PrismaService,
@@ -1352,7 +1352,7 @@ describe('BetaService.generatePlan', () => {
 
       async function runCapturingLogs(mode: string | undefined) {
         const logged: string[] = [];
-        const spy = jest
+        const spy = vi
           .spyOn(Logger.prototype, 'log')
           .mockImplementation((message) => {
             logged.push(String(message));

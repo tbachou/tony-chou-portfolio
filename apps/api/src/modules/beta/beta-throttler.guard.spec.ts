@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import type { ExecutionContext } from '@nestjs/common';
 import {
   ThrottlerException,
@@ -9,7 +10,7 @@ import { rateLimitIdentity } from '../../common/utils/ip-hash.util.js';
 // The guard's BetaUsageService injection pulls in PrismaService, whose real
 // module drags in the generated Prisma client and the pg adapter; these
 // tests must never touch a database.
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -20,7 +21,7 @@ jest.mock('../prisma/prisma.service', () => ({
  * (getErrorMessage reads `options` and `errorMessage`).
  */
 type GuardInternals = {
-  betaUsage: { recordThrottled: jest.Mock };
+  betaUsage: { recordThrottled: Mock };
   options: Record<string, unknown>;
   errorMessage: string;
   getTracker(req: Record<string, unknown>): Promise<string>;
@@ -31,7 +32,7 @@ type GuardInternals = {
 };
 
 function makeGuard(
-  recordThrottled: jest.Mock = jest.fn().mockResolvedValue(undefined),
+  recordThrottled: Mock = vi.fn().mockResolvedValue(undefined),
 ) {
   const guard = Object.create(
     BetaThrottlerGuard.prototype,
@@ -78,7 +79,7 @@ describe('BetaThrottlerGuard', () => {
 
     it('rejects with the unaltered 429 even when the tally write fails', async () => {
       const { guard } = makeGuard(
-        jest.fn().mockRejectedValue(new Error('db down')),
+        vi.fn().mockRejectedValue(new Error('db down')),
       );
 
       const error: unknown = await guard

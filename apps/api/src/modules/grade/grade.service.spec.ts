@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import {
   GoneException,
   Logger,
@@ -14,7 +15,7 @@ import { publicIdFor, type GradePhoto } from './photo-pool.js';
 // these tests must never touch a database, so the module is stubbed and the
 // service gets a hand-rolled prisma double instead (repo convention, see
 // feedback.service.spec.ts).
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -79,7 +80,7 @@ function makePrisma(
 
   const prisma = {
     gradeProblem: {
-      create: jest.fn((args: { data: Record<string, unknown> }) => {
+      create: vi.fn((args: { data: Record<string, unknown> }) => {
         const photoId = args.data.photoId as string;
         state.createCalls.push(args.data);
         if (state.rows.has(photoId)) {
@@ -92,17 +93,17 @@ function makePrisma(
       }),
     },
     gradePhoto: {
-      findMany: jest.fn((args: Record<string, unknown>) => {
+      findMany: vi.fn((args: Record<string, unknown>) => {
         state.findManyArgs.push(args);
         return Promise.resolve(pool.filter((p) => p.active));
       }),
-      findUnique: jest.fn((args: { where: { objectKey: string } }) =>
+      findUnique: vi.fn((args: { where: { objectKey: string } }) =>
         Promise.resolve(
           pool.find((p) => p.objectKey === args.where.objectKey) ?? null,
         ),
       ),
     },
-    $queryRaw: jest.fn((_strings: TemplateStringsArray, ...values: unknown[]) => {
+    $queryRaw: vi.fn((_strings: TemplateStringsArray, ...values: unknown[]) => {
       state.queryValues.push(values);
       const guess = values[0] as number;
       const counts = zeros();
@@ -130,21 +131,21 @@ function makePrisma(
  * every test below except the cached-row one exercises. Tests that care about
  * the call itself live in grade-analysis.service.spec.ts.
  */
-let ensureAnalysis: jest.Mock;
+let ensureAnalysis: Mock;
 
 /** Records every object key the service asked to have signed. */
-let presignGet: jest.Mock;
+let presignGet: Mock;
 /** Records every object key the service read bytes from for the vision call. */
-let getBytes: jest.Mock;
+let getBytes: Mock;
 
 function makeService(prisma: PrismaService): GradeService {
-  ensureAnalysis = jest.fn().mockResolvedValue(null);
-  presignGet = jest.fn((key: string) =>
+  ensureAnalysis = vi.fn().mockResolvedValue(null);
+  presignGet = vi.fn((key: string) =>
     Promise.resolve(
       `https://signed.example/${key}?X-Amz-Expires=3600&X-Amz-Signature=sig`,
     ),
   );
-  getBytes = jest.fn(() => Promise.resolve(Buffer.from('image-bytes')));
+  getBytes = vi.fn(() => Promise.resolve(Buffer.from('image-bytes')));
   return new GradeService(
     prisma,
     { ensureAnalysis } as unknown as GradeAnalysisService,
@@ -154,9 +155,9 @@ function makeService(prisma: PrismaService): GradeService {
 
 describe('GradeService', () => {
   beforeEach(() => {
-    jest.restoreAllMocks();
-    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    vi.restoreAllMocks();
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     process.env.GRADE_PHOTO_BUCKET = 'portfolio-grade-photos-test';
     process.env.AWS_REGION = 'us-east-2';
     delete process.env.GRADE_GAME_ENABLED;
@@ -298,7 +299,7 @@ describe('GradeService', () => {
 
     it('logs one line naming how many were excluded', async () => {
       process.env.GRADE_GAME_ENABLED = 'true';
-      const log = jest
+      const log = vi
         .spyOn(Logger.prototype, 'log')
         .mockImplementation(() => undefined);
       const { prisma } = makePrisma({ pool: [PHOTO, borrowed] });
@@ -316,7 +317,7 @@ describe('GradeService', () => {
       // computed at startup, where a photo toggled without a redeploy would
       // leave the count lying.
       process.env.GRADE_GAME_ENABLED = 'true';
-      const log = jest
+      const log = vi
         .spyOn(Logger.prototype, 'log')
         .mockImplementation(() => undefined);
       const { prisma } = makePrisma({ pool: [PHOTO, borrowed] });
@@ -331,7 +332,7 @@ describe('GradeService', () => {
 
     it('says nothing when the gate excluded nothing', async () => {
       process.env.GRADE_GAME_ENABLED = 'true';
-      const log = jest
+      const log = vi
         .spyOn(Logger.prototype, 'log')
         .mockImplementation(() => undefined);
       const { prisma } = makePrisma();
@@ -587,7 +588,7 @@ describe('GradeService', () => {
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
       // The interpolated values are [guess, photoId] in template order.
       expect(state.queryValues[0]).toEqual([6, 'seed-a']);
-      const sql = (prisma.$queryRaw as jest.Mock).mock.calls[0][0].join('?');
+      const sql = (prisma.$queryRaw as Mock).mock.calls[0][0].join('?');
       expect(sql).toContain('"plays" = "plays" + 1');
       expect(sql).toContain('UPDATE "GradeProblem"');
       expect(sql).toContain('WHERE "photoId"');
@@ -641,7 +642,7 @@ describe('GradeService', () => {
 
     it('rethrows an insert failure that is not a duplicate key', async () => {
       const { prisma } = makePrisma();
-      (prisma.gradeProblem.create as jest.Mock).mockRejectedValue(
+      (prisma.gradeProblem.create as Mock).mockRejectedValue(
         Object.assign(new Error('connection lost'), { code: 'P1001' }),
       );
 
@@ -652,7 +653,7 @@ describe('GradeService', () => {
 
     it('does not count a guess whose row could not be created', async () => {
       const { prisma } = makePrisma();
-      (prisma.gradeProblem.create as jest.Mock).mockRejectedValue(
+      (prisma.gradeProblem.create as Mock).mockRejectedValue(
         Object.assign(new Error('connection lost'), { code: 'P1001' }),
       );
 
@@ -664,7 +665,7 @@ describe('GradeService', () => {
 
     it('serves 503 if the row vanishes between the insert and the tally', async () => {
       const { prisma } = makePrisma();
-      (prisma.$queryRaw as jest.Mock).mockResolvedValue([]);
+      (prisma.$queryRaw as Mock).mockResolvedValue([]);
 
       await expect(
         makeService(prisma).submitGuess(1, PUBLIC_ID),

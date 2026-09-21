@@ -9,12 +9,12 @@ import type { AiProvider } from '../anthropic/ai-provider.interface.js';
 
 // Same reason as grade.service.spec.ts: the real PrismaService drags in the
 // generated client and the pg adapter, and these tests touch no database.
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
-jest.mock('./skill-loader', () => ({
-  loadGradeSkill: jest.fn(() => '# Grade Guesser grader\nstub prompt'),
+vi.mock('./skill-loader', () => ({
+  loadGradeSkill: vi.fn(() => '# Grade Guesser grader\nstub prompt'),
 }));
 
 /**
@@ -46,16 +46,16 @@ function goodPayload(overrides: Record<string, unknown> = {}) {
 }
 
 function makeHarness(options: { input?: unknown } = {}) {
-  const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+  const updateMany = vi.fn().mockResolvedValue({ count: 1 });
   const prisma = { gradeProblem: { updateMany } } as unknown as PrismaService;
 
-  const forceToolCall = jest.fn().mockResolvedValue({
+  const forceToolCall = vi.fn().mockResolvedValue({
     input: options.input ?? goodPayload(),
     inputTokens: 1500,
     outputTokens: 200,
   });
 
-  const classifyUpstreamError = jest.fn((error: unknown) => {
+  const classifyUpstreamError = vi.fn((error: unknown) => {
     const name = error instanceof Error ? error.name : 'UnknownError';
     if (name === 'InternalServerError') {
       return { name, status: 500, retryable: true };
@@ -69,7 +69,7 @@ function makeHarness(options: { input?: unknown } = {}) {
   const ai = {
     forceToolCall,
     classifyUpstreamError,
-    streamMessage: jest.fn(),
+    streamMessage: vi.fn(),
   } as unknown as AiProvider;
 
   return {
@@ -88,12 +88,12 @@ describe('GradeAnalysisService', () => {
   let logged: string[];
 
   beforeEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     logged = [];
-    jest.spyOn(Logger.prototype, 'log').mockImplementation((message) => {
+    vi.spyOn(Logger.prototype, 'log').mockImplementation((message) => {
       logged.push(String(message));
     });
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
 
   describe('provider routing (AC-15, AC-16)', () => {
