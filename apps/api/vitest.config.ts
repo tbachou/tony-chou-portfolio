@@ -21,6 +21,10 @@ export default defineConfig({
         target: 'es2023',
         parser: { syntax: 'typescript', decorators: true },
         transform: { legacyDecorator: true, decoratorMetadata: true },
+        // Mirrors apps/api/.swcrc. unplugin-swc does not read that file, so the
+        // two are kept deliberately identical; `new Logger(SomeService.name)`
+        // in a dozen services depends on this one.
+        keepClassNames: true,
       },
     }),
   ],
