@@ -138,19 +138,6 @@ export class ConversationService implements OnModuleInit {
   }
 
   /**
-   * Rebuilds a conversation from its persisted rows rather than trusting a
-   * client-echoed transcript (spec 0012 phase one, AC-3). Nothing a visitor
-   * types reaches a prompt: the request carries only a topic slug and a uuid.
-   *
-   * One query answers all three questions the caller has — what was said, what
-   * topic it was said about, and which slot is next — so there is exactly one
-   * definition of "the rows of this conversation" rather than two reads that
-   * can disagree.
-   *
-   * An unknown conversationId yields no rows, which prepareTurn treats as a
-   * new conversation.
-   */
-  /**
    * The second layer (spec 0013). Runs only on answers the deterministic guard
    * has already passed AND the prefilter has matched.
    *
@@ -209,6 +196,19 @@ export class ConversationService implements OnModuleInit {
     }
   }
 
+  /**
+   * Rebuilds a conversation from its persisted rows rather than trusting a
+   * client-echoed transcript (spec 0012 phase one, AC-3). Nothing a visitor
+   * types reaches a prompt: the request carries only a topic slug and a uuid.
+   *
+   * One query answers all three questions the caller has — what was said, what
+   * topic it was said about, and which slot is next — so there is exactly one
+   * definition of "the rows of this conversation" rather than two reads that
+   * can disagree.
+   *
+   * An unknown conversationId yields no rows, which prepareTurn treats as a
+   * new conversation.
+   */
   async loadConversation(conversationId?: string): Promise<LoadedConversation> {
     if (!conversationId) return emptyConversation();
     const rows = await this.prisma.conversationTurn.findMany({
