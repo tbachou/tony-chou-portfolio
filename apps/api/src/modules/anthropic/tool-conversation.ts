@@ -2,7 +2,7 @@ import {
   totalInputTokens,
   type RunToolConversationParams,
   type RunToolConversationResult,
-} from './ai-provider.interface';
+} from './ai-provider.interface.js';
 
 /**
  * The tool loop both providers run (spec 0012 phase three, AC-4).

@@ -1,5 +1,5 @@
 import { GRADE_MAX, GRADE_MIN } from '@portfolio/shared';
-import type { ProviderName } from '../anthropic/ai-provider.interface';
+import type { ProviderName } from '../anthropic/ai-provider.interface.js';
 
 /** The V scale, as far as this game goes. Both bounds are inclusive. */
 // Bounds live in @portfolio/shared, next to the schemas that enforce them,

@@ -3,19 +3,19 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { BetaUsageService } from './beta-usage.service';
+import { BetaUsageService } from './beta-usage.service.js';
 import {
   BETA_GLOBAL_DAILY_CAP,
   BETA_IP_DAILY_CAP,
   DEMO_BUDGET_MESSAGE,
   IP_LIMIT_MESSAGE,
-} from './beta.constants';
-import type { PrismaService } from '../prisma/prisma.service';
+} from './beta.constants.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
 
 // The real PrismaService pulls in the generated client and the pg adapter;
 // these tests must never touch a database, so the module is stubbed and the
 // service gets a hand-rolled prisma double instead.
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -27,13 +27,13 @@ const TODAY = new Date(Date.UTC(2026, 7, 18));
 function makePrisma() {
   return {
     betaDailyUsageCounter: {
-      findUnique: jest.fn(),
-      upsert: jest.fn(),
-      updateMany: jest.fn(),
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
     },
     betaIpDailyCount: {
-      findUnique: jest.fn(),
-      upsert: jest.fn(),
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
     },
   };
 }
@@ -52,12 +52,12 @@ describe('BetaUsageService', () => {
   let service: BetaUsageService;
 
   beforeAll(() => {
-    jest.useFakeTimers({ now: NOW });
+    vi.useFakeTimers({ now: NOW });
     Logger.overrideLogger(false);
   });
 
   afterAll(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   beforeEach(() => {

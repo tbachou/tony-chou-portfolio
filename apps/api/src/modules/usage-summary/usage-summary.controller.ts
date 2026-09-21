@@ -2,7 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import {
   UsageSummaryResponse,
   UsageSummaryService,
-} from './usage-summary.service';
+} from './usage-summary.service.js';
 
 // Deliberately no @AllowAnonymous(): protected by the global auth guard
 // (AuthModule.forRoot in app.module.ts) by default. Any valid better-auth

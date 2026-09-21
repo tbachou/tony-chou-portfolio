@@ -7,9 +7,9 @@
  * here is presentation: no fact reaches this file that is not already in the
  * document.
  */
-import type { OpenApiDocument } from './document';
-import { tagFor } from './document';
-import type { JsonSchema } from './types';
+import type { OpenApiDocument } from './document.js';
+import { tagFor } from './document.js';
+import type { JsonSchema } from './types.js';
 
 const METHOD_ORDER = ['get', 'post', 'patch', 'put', 'delete'];
 

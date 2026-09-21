@@ -9,13 +9,13 @@
  */
 import { resolve } from 'node:path';
 import * as shared from '@portfolio/shared';
-import { buildDocument, pathPlaceholders, tagFor } from './document';
-import { registeredControllers, routeKey, scanControllers } from './controller-scan';
-import { ROUTES } from './route-registry';
-import type { RouteEntry } from './types';
+import { buildDocument, pathPlaceholders, tagFor } from './document.js';
+import { registeredControllers, routeKey, scanControllers } from './controller-scan.js';
+import { ROUTES } from './route-registry.js';
+import type { RouteEntry } from './types.js';
 
-const SOURCE_DIR = resolve(__dirname, '..');
-const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
+const SOURCE_DIR = resolve(import.meta.dirname, '..');
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..', '..');
 
 const scan = scanControllers(SOURCE_DIR, REPO_ROOT);
 const registered = registeredControllers(SOURCE_DIR);

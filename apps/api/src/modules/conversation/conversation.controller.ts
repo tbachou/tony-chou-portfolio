@@ -2,7 +2,7 @@ import {
   conversationTurnRequestSchema,
   type ConversationTurnRequest,
 } from '@portfolio/shared';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import {
   BadRequestException,
   Body,
@@ -14,16 +14,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard';
+import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard.js';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import type { Request, Response } from 'express';
-import { ConversationService } from './conversation.service';
+import { ConversationService } from './conversation.service.js';
 import {
   hashIp,
   rateLimitIdentity,
   resolveClientIp,
-} from '../../common/utils/ip-hash.util';
-import { writeSseEvent } from './sse.util';
+} from '../../common/utils/ip-hash.util.js';
+import { writeSseEvent } from './sse.util.js';
 
 @Controller('conversation')
 @AllowAnonymous()

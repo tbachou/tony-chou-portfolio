@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { STATUS_ARGS } from './dirty-tree';
+import { STATUS_ARGS } from './dirty-tree.js';
 
 /**
  * These run real git against a throwaway repository on purpose. The thing

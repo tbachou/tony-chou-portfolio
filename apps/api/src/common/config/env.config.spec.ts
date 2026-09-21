@@ -3,7 +3,7 @@ import {
   readNumericEnv,
   validateEnv,
   type NumericEnvName,
-} from './env.config';
+} from './env.config.js';
 
 const NAMES = Object.keys(NUMERIC_ENV_DEFAULTS) as NumericEnvName[];
 

@@ -23,9 +23,9 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import * as path from 'node:path';
-import { collectCorpus, hashCorpus } from '../src/modules/conversation/retrieval/corpus';
+import { collectCorpus, hashCorpus } from '../src/modules/conversation/retrieval/corpus.js';
 
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const MANIFEST_PATH = path.join(REPO_ROOT, 'docs', 'evals', 'interview', 'corpus.json');
 const REMEDY = 'Re embed and commit the manifest: npm run embed:corpus --workspace=apps/api';
 

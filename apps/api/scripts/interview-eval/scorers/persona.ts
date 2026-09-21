@@ -3,8 +3,8 @@
  * read as a candid first person interview answer of sensible length with no
  * AI mannerisms; the interviewer turn should ask one clear relevant question.
  */
-import type { DimensionResult } from '../../../src/modules/conversation/eval/eval-types';
-import { judge, type JudgeUsage } from './judge-client';
+import type { DimensionResult } from '../../../src/modules/conversation/eval/eval-types.js';
+import { judge, type JudgeUsage } from './judge-client.js';
 
 const PERSONA_JUDGE_SYSTEM = `You are an evaluator for a portfolio site's simulated interview between an "Interviewer" and "Tony", a software engineer answering questions about his own work.
 

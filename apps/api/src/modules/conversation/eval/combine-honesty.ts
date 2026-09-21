@@ -1,4 +1,4 @@
-import type { DimensionResult } from './eval-types';
+import type { DimensionResult } from './eval-types.js';
 
 /**
  * The honesty layer combination rule (AC-3): the case's honesty score is the

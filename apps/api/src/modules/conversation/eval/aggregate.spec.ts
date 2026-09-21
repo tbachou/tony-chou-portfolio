@@ -1,5 +1,5 @@
-import { aggregate } from './aggregate';
-import { judgeError, makeCase, scored } from './test-fixtures';
+import { aggregate } from './aggregate.js';
+import { judgeError, makeCase, scored } from './test-fixtures.js';
 
 describe('aggregate', () => {
   it('computes the unweighted mean per dimension', () => {

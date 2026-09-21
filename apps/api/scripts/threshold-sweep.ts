@@ -30,17 +30,17 @@ import { config as loadEnv } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-loadEnv({ path: path.resolve(__dirname, '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
 import {
   MINIMUM_SIMILARITY,
   openReadOnly,
   isRetrievalConfigured,
-} from '../src/modules/conversation/retrieval/vector-store';
-import { checkIndexPopulation } from '../src/modules/conversation/retrieval/index-health';
-import { POSITIVES, NEGATIVES, type LabelledQuery } from './threshold-sweep.queries';
+} from '../src/modules/conversation/retrieval/vector-store.js';
+import { checkIndexPopulation } from '../src/modules/conversation/retrieval/index-health.js';
+import { POSITIVES, NEGATIVES, type LabelledQuery } from './threshold-sweep.queries.js';
 
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const MANIFEST_PATH = path.join(REPO_ROOT, 'docs', 'evals', 'interview', 'corpus.json');
 
 /** The thresholds the report walks, so the table is comparable to the one

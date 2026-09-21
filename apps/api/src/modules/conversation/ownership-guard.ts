@@ -1,5 +1,5 @@
-import { StoryOwnership } from '../../generated/prisma/enums';
-import type { StoryModel } from '../../generated/prisma/models';
+import { StoryOwnership } from '../../generated/prisma/enums.js';
+import type { StoryModel } from '../../generated/prisma/models.js';
 
 export const HEDGE_PHRASES = [
   'contributed to',

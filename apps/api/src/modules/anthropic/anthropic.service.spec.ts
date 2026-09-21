@@ -1,6 +1,7 @@
+import type { Mock } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
-import { AnthropicService } from './anthropic.service';
-import { totalInputTokens } from './ai-provider.interface';
+import { AnthropicService } from './anthropic.service.js';
+import { totalInputTokens } from './ai-provider.interface.js';
 
 /**
  * The real APIError/APIConnectionError constructors demand a fetch Headers
@@ -88,7 +89,7 @@ describe('AnthropicService.forceToolCall image handling', () => {
     else process.env.ANTHROPIC_API_KEY = originalKey;
   });
 
-  function stubbed(create: jest.Mock) {
+  function stubbed(create: Mock) {
     const service = new AnthropicService();
     (service as unknown as { client: unknown }).client = {
       messages: { create },
@@ -97,7 +98,7 @@ describe('AnthropicService.forceToolCall image handling', () => {
   }
 
   function okResponse() {
-    return jest.fn().mockResolvedValue({
+    return vi.fn().mockResolvedValue({
       content: [{ type: 'tool_use', input: { grade: 5 } }],
       usage: { input_tokens: 10, output_tokens: 20 },
     });

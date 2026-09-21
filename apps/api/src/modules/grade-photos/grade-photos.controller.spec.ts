@@ -3,19 +3,19 @@ import 'reflect-metadata';
 // The controller imports GradePhotosService as a value (Nest needs the class
 // for DI), which transitively pulls in PrismaService and the generated client.
 // Stub it at the test boundary, the same way every other spec here does.
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
 import { BadRequestException } from '@nestjs/common';
-import { GradePhotosController } from './grade-photos.controller';
-import type { GradePhotosService } from './grade-photos.service';
+import { GradePhotosController } from './grade-photos.controller.js';
+import type { GradePhotosService } from './grade-photos.service.js';
 
 function makeController() {
   const service = {
-    list: jest.fn(() => Promise.resolve([])),
-    create: jest.fn(() => Promise.resolve({ id: 'x' })),
-    setActive: jest.fn(() => Promise.resolve({ id: 'x', active: false })),
+    list: vi.fn(() => Promise.resolve([])),
+    create: vi.fn(() => Promise.resolve({ id: 'x' })),
+    setActive: vi.fn(() => Promise.resolve({ id: 'x', active: false })),
   };
   const controller = new GradePhotosController(
     service as unknown as GradePhotosService,

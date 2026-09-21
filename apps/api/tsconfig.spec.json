@@ -1,5 +1,5 @@
 {
-  "$comment": "TS 6 requires rootDir to be explicit (TS5011). ts-jest compiles one file at a time, so it infers the spec file directory and errors. Setting it here rather than in tsconfig.json keeps the build output at dist/main.js instead of dist/src/main.js.",
+  "$comment": "Typecheck config for the spec files. rootDir stays HERE and not in tsconfig.json: TS 6 requires it explicit (TS5011), and setting it in the build config moves the output to dist/src/main.js and breaks start:prod on Render. The globals (describe/it/expect/vi) come from vitest/globals in the base config, since vitest.config.ts sets test.globals.",
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": "./"

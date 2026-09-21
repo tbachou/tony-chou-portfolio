@@ -1,5 +1,5 @@
 import { Index } from '@upstash/vector';
-import type { Chunk } from './chunk';
+import type { Chunk } from './chunk.js';
 
 /**
  * The read and write paths to the Upstash Vector index (spec 0012 phase

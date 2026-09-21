@@ -1,7 +1,7 @@
 {
-  "corpusHash": "bb2167a7a40faec2e2e0e1c951445b2990c8024e2f7d3f0f8f3acebad707ae8f",
-  "chunkCount": 664,
-  "embeddedAt": "2026-09-20T16:16:14.138Z",
+  "corpusHash": "a2fc2a1d24ee6c9025650199d63eab32267d877949fd6bf9d185ef7829a5b00b",
+  "chunkCount": 665,
+  "embeddedAt": "2026-09-21T02:20:01.081Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
@@ -169,11 +169,11 @@
     },
     {
       "path": "docs/specs/_root/0015-nestjs-12-esm-migration/index.md",
-      "hash": "faf3ed27c2925893bf2fe75ee648446aca580b3b0c2a9811f9a6c48335eaee66"
+      "hash": "f010625fa92f18c6ef98c94a7b43049a3d3ff0c892d97915c1787e68536e0389"
     },
     {
       "path": "docs/specs/_root/0016-openapi-document-generation/index.md",
-      "hash": "1c990388d921d9473fedc98af0eeb2dcfef072ee29a274c3603df7de0d6a4250"
+      "hash": "bb795dcf055d9684e35b33ff5120162889ee3c7aa3dfef85c9cb155f792193b7"
     },
     {
       "path": "docs/specs/_root/0016-openapi-document-generation/verify.md",

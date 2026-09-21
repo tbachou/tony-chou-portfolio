@@ -68,6 +68,13 @@ const KNOWN_BETTER_AUTH_DECORATORS = new Set([
 const PIPE_CLASS = 'ZodValidationPipe';
 /** The pipe is identified by where it comes from, not only by what it is called. */
 const PIPE_MODULE_SUFFIX = 'zod-validation.pipe';
+/**
+ * ESM specifiers carry a `.js` extension that points at a `.ts` source file,
+ * so the suffix match has to ignore it. Without this the scanner silently
+ * reports every validated binding as unvalidated, which would publish a false
+ * "no validation" claim in `docs/api/` rather than fail loudly.
+ */
+const withoutJsExtension = (module: string): string => module.replace(/\.js$/, '');
 
 export type ScannedBinding = {
   kind: string;
@@ -255,7 +262,7 @@ function bindingsOf(
           const constructor = imports.get(argument.expression.text);
           const isRealPipe = constructor
             ? constructor.original === PIPE_CLASS &&
-              constructor.module.endsWith(PIPE_MODULE_SUFFIX)
+              withoutJsExtension(constructor.module).endsWith(PIPE_MODULE_SUFFIX)
             : argument.expression.text === PIPE_CLASS;
           if (!isRealPipe) continue;
           validated = true;

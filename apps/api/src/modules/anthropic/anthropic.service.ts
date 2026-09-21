@@ -11,11 +11,11 @@ import {
   type StreamMessageResult,
   totalInputTokens,
   type UpstreamErrorClassification,
-} from './ai-provider.interface';
+} from './ai-provider.interface.js';
 import {
   runToolConversation,
   type ProviderMessage,
-} from './tool-conversation';
+} from './tool-conversation.js';
 
 // Re-exported for existing call sites (`import type { StreamMessageParams } from
 // './anthropic.service'`); the canonical definitions now live in

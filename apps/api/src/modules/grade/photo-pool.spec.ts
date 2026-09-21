@@ -6,8 +6,8 @@ import {
   PUBLIC_ID_PATTERN,
   type GradePhoto,
   type GradePhotoSource,
-} from './photo-pool';
-import { newObjectKey } from '../grade-photos/photo-storage.service';
+} from './photo-pool.js';
+import { newObjectKey } from '../grade-photos/photo-storage.service.js';
 
 function photo(id: string, overrides: Partial<GradePhoto> = {}): GradePhoto {
   return {

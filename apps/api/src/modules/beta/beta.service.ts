@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { AnthropicService } from '../anthropic/anthropic.service';
-import { BetaUsageService } from './beta-usage.service';
-import { loadBetaSkill } from './skill-loader';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { AnthropicService } from '../anthropic/anthropic.service.js';
+import { BetaUsageService } from './beta-usage.service.js';
+import { loadBetaSkill } from './skill-loader.js';
 import type { BetaPlanRequest } from '@portfolio/shared';
 import {
   AGENT_CALL_TIMEOUT_MS,
@@ -25,7 +25,7 @@ import {
   namePrescribesCrimping,
   normalizeForMatch,
   type RedFlagCategory,
-} from './beta.constants';
+} from './beta.constants.js';
 import {
   evaluateCoachOutput,
   evaluatePlanContent,
@@ -35,11 +35,11 @@ import {
   type DoseSpec,
   type DraftPlan,
   type PlanStage,
-} from './beta-output-guard';
+} from './beta-output-guard.js';
 // Second consumer of the conversation module's chunker, as the ownership
 // guard's call site already does: text the guard has finished deciding on
 // still has to arrive as a series of SSE events.
-import { splitIntoChunks } from '../conversation/ownership-guard';
+import { splitIntoChunks } from '../conversation/ownership-guard.js';
 
 export type EmitFn = (event: string, data: unknown) => void;
 

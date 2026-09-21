@@ -1,4 +1,4 @@
-import { estimateCostUsd, PRICE_TABLE } from './pricing';
+import { estimateCostUsd, PRICE_TABLE } from './pricing.js';
 
 describe('estimateCostUsd', () => {
   it('prices tokens per model from the table', () => {

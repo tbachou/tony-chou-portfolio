@@ -6,13 +6,13 @@ Public no-auth API on Render (**Starter plan, $7/month** — not the free tier, 
 
 ## Stack
 
-NestJS 11 (swc build) · Prisma 7 with driver adapter `@prisma/adapter-pg` (client generated into `src/generated/prisma`, gitignored territory — never edit or lint it) · Prisma Postgres (hosted) · `@anthropic-ai/sdk` · `@nestjs/throttler` · better-auth via `@thallesp/nestjs-better-auth` (global guard; public routes need `@AllowAnonymous()`) · `@aws-sdk/client-s3` + `s3-request-presigner` and `sharp` (Grade Guesser photo storage; `sharp` ships platform-specific native binaries, so a clean install on Render's linux x64 is not implied by one working locally) · Jest.
+NestJS 12, ESM (`"type": "module"`, swc build via `.swcrc`) · Prisma 7 with driver adapter `@prisma/adapter-pg` (client generated into `src/generated/prisma`, gitignored territory — never edit or lint it) · Prisma Postgres (hosted) · `@anthropic-ai/sdk` · `@nestjs/throttler` · better-auth via `@thallesp/nestjs-better-auth` (global guard; public routes need `@AllowAnonymous()`) · `@aws-sdk/client-s3` + `s3-request-presigner` and `sharp` (Grade Guesser photo storage; `sharp` ships platform-specific native binaries, so a clean install on Render's linux x64 is not implied by one working locally) · Vitest.
 
 ## Commands
 
 ```bash
 npm run start:dev --workspace=apps/api      # dev server :3001 (Node 22+!)
-npm test --workspace=apps/api               # Jest, colocated .spec.ts, all mocked
+npm test --workspace=apps/api               # Vitest, colocated .spec.ts, all mocked
 cd apps/api && npx prisma generate          # regenerate client after schema edits
 
 # MIGRATIONS. `.env`'s DATABASE_URL points at a DEV database (since 2026-08-21);
@@ -59,7 +59,7 @@ Two paths worth knowing, both easy to lose by grep alone. `file.ts:function` thr
 - `anthropic/ai-provider.interface.ts` — `streamMessage`, `forceToolCall`, `runToolConversation`, implemented by the direct and Bedrock services. `tool-conversation.ts` imports NO SDK because the Bedrock SDK bundles its own `@anthropic-ai/sdk` at a different version and the two `MessageParam` types are incompatible.
 - Protocol vs policy: the tool loop knows the wire format, the executor knows the rules. That split is why the loop has no idea retrieval exists.
 
-**Four files in `src/` exist only because jest's `rootDir` is `src` and will not collect `scripts/`**: `eval/run-outcome.ts`, `eval/grounding-prompt.ts`, `retrieval/index-health.ts`, `anthropic/harness-replay.ts`. Each has exactly one caller, in `scripts/`. If you go looking for eval preflight logic and it is not next to the preflight, that is why.
+**Four files in `src/` exist only because the test runner's root is `src` and will not collect `scripts/`**: `eval/run-outcome.ts`, `eval/grounding-prompt.ts`, `retrieval/index-health.ts`, `anthropic/harness-replay.ts`. Each has exactly one caller, in `scripts/`. If you go looking for eval preflight logic and it is not next to the preflight, that is why.
 
 ## Conventions
 
@@ -75,7 +75,7 @@ Two paths worth knowing, both easy to lose by grep alone. `file.ts:function` thr
 - **Rate-limit identity**: use `rateLimitIdentity()` (common/utils/ip-hash.util.ts) for any new per-IP feature — it collapses IPv6 to /64. `trust proxy = 1` assumes exactly Render's single proxy hop; adding a CDN in front breaks it (bump to 2). The same proxy-topology fact also lives in apps/api/src/lib/auth.ts as better-auth's `advanced.ipAddress.trustedProxies` — a CDN change must update BOTH (bump trust proxy to 2 AND add the CDN's egress ranges to trustedProxies) or better-auth silently collapses visitors into one rate bucket.
 - **Beta module invariants (spec 0004, audited)**: checked red-flag symptoms block in code before any model call; the global cap is an atomic reserve/refund (`reserveGlobalSlot`); planCount increments on success only; the outcome/abuse tally columns (errorCount, redFlagCount, refusalCount, throttledCount, ipCappedCount, globalCappedCount) increment on their respective non-success events; no visitor content is ever written or logged. Do not weaken these.
 - The in-memory throttle resets on every deploy; the persisted daily caps are the real limits.
-- better-auth is ESM-only: Node 20 crashes at boot (ERR_REQUIRE_ESM); Jest needs the `jest.mock('@thallesp/nestjs-better-auth', ...)` stub (see app.controller.spec.ts).
+- better-auth is ESM-only: Node 20 crashes at boot (ERR_REQUIRE_ESM). The suite stubs it with `vi.mock('@thallesp/nestjs-better-auth', ...)` (see app.controller.spec.ts). Use `vi.*`, never `jest.*` — the runner is Vitest.
 
 ## Agent skills
 
@@ -85,7 +85,7 @@ Installed globally, not committed here (spec 0014); `skills-lock.json` at the re
 - `prisma-database-setup`: `prisma/skills`, provider configuration
 - `prisma-postgres`: `prisma/skills`, hosted Postgres operations
 - `better-auth-best-practices`: `better-auth/skills`, auth server/client config
-- `javascript-typescript-jest`: `github/awesome-copilot`, Jest testing patterns
+- `javascript-typescript-jest`: `github/awesome-copilot`, Jest testing patterns — NOTE: `apps/api` is on Vitest since spec 0015, so this skill's Jest specifics no longer apply here; `apps/streamflow` and the Lambda are still Jest
 
 ## Related specs
 

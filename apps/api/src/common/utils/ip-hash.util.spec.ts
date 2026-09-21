@@ -1,4 +1,4 @@
-import { hashIp, rateLimitIdentity } from './ip-hash.util';
+import { hashIp, rateLimitIdentity } from './ip-hash.util.js';
 
 describe('rateLimitIdentity', () => {
   it('passes a plain IPv4 address through unchanged', () => {

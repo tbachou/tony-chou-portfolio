@@ -7,13 +7,13 @@ import {
   CLINICAL_RULES,
   everyRuleIdKnown,
   findClinicalRule,
-} from './clinical-rules';
+} from './clinical-rules.js';
 
 // The real prompt file, not a fixture and not the mocked skill loader. The
 // whole point of this spec is that the registry and the prompt cannot drift,
 // and a fixture would let them drift together.
 const DRAFTER_MD = readFileSync(
-  join(__dirname, 'skills', 'drafter.md'),
+  join(import.meta.dirname, 'skills', 'drafter.md'),
   'utf8',
 );
 

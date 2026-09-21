@@ -3,7 +3,7 @@
 ## Stack
 
 - **Language / Runtime**: TypeScript, Node >= 22 (hard requirement: Node 20 dies with ERR_REQUIRE_ESM via better-auth)
-- **Monorepo**: npm workspaces — `apps/web` (Next.js 15, React 19, Tailwind, React Three Fiber), `apps/api` (NestJS 11, Prisma 7 on Prisma Postgres, Anthropic SDK), `apps/streamflow` (forecast pipeline, Prisma 7 on its own Postgres, jest; builds to `dist/`, which web imports), `packages/shared` (zod request schemas + shared types; builds to `dist/`)
+- **Monorepo**: npm workspaces — `apps/web` (Next.js 16, React 19, Tailwind), `apps/api` (NestJS 12, ESM, Prisma 7 on Prisma Postgres, Anthropic SDK), `apps/streamflow` (forecast pipeline, Prisma 7 on its own Postgres, jest; builds to `dist/`, which web imports), `packages/shared` (zod request schemas + shared types; builds to `dist/`)
 - **Package manager**: npm
 - Mirrors the architecture specs: [0001](docs/specs/_root/0001-backend-ai-stack/index.md) (backend/AI stack) and [0003](docs/specs/_root/0003-frontend-deployment-platform.md) (frontend/deploy)
 
@@ -20,13 +20,13 @@ npm run dev:web                              # Next.js on :3000 (or launch.json 
 npm run lint                                 # ESLint flat config, whole repo
 npx tsc --noEmit -p apps/api/tsconfig.json   # typecheck api (same for apps/web)
 npm test                                     # ALL four suites: api, streamflow, web, feedback-classifier
-npm test --workspace=apps/api                # Jest (all mocked, no DB/network)
+npm test --workspace=apps/api                # Vitest (all mocked, no DB/network)
 npm run check:evals                          # validate docs/evals/interview/published.json
 npm run check:corpus --workspace=apps/api    # docs/specs changed? the retrieval manifest must match
 cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotchas first)
 ```
 
-**Run `npm test` at the root, not one workspace.** Four workspaces have tests and they use two runners: `apps/api` and `apps/streamflow` and `infra/lambda/feedback-classifier` on jest, `apps/web` on vitest. `npm test --workspaces --if-present` runs all of them, does not stop at the first failing workspace, and exits non zero if any failed. Until 2026-09-01 there was no root script, and a whole review of a branch ran `npm test --workspace=apps/api` throughout and reported that count as though it were the suite; CI caught a web failure the review never saw. CI runs the four explicitly, so a NEW workspace with tests is picked up by the root script automatically but must still be added to `ci.yml` by hand.
+**Run `npm test` at the root, not one workspace.** Four workspaces have tests and they use two runners: `apps/streamflow` and `infra/lambda/feedback-classifier` on jest, `apps/api` and `apps/web` on vitest (apps/api moved with the NestJS 12 / ESM migration, spec 0015). `npm test --workspaces --if-present` runs all of them, does not stop at the first failing workspace, and exits non zero if any failed. Until 2026-09-01 there was no root script, and a whole review of a branch ran `npm test --workspace=apps/api` throughout and reported that count as though it were the suite; CI caught a web failure the review never saw. CI runs the four explicitly, so a NEW workspace with tests is picked up by the root script automatically but must still be added to `ci.yml` by hand.
 
 ## Git
 

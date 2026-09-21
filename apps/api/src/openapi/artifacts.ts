@@ -6,8 +6,8 @@
  * compares are produced by the same code that wrote them. A formatting choice
  * that lived in only one of the two scripts would make every check fail.
  */
-import { buildDocument } from './document';
-import { renderMarkdown } from './markdown';
+import { buildDocument } from './document.js';
+import { renderMarkdown } from './markdown.js';
 
 export const ARTIFACT_DIR = 'docs/api';
 export const JSON_ARTIFACT = `${ARTIFACT_DIR}/openapi.json`;

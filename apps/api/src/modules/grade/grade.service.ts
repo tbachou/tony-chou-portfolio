@@ -5,21 +5,21 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { PhotoStorageService } from '../grade-photos/photo-storage.service';
-import { GradeAnalysisService } from './grade-analysis.service';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { PhotoStorageService } from '../grade-photos/photo-storage.service.js';
+import { GradeAnalysisService } from './grade-analysis.service.js';
 import {
   GRADE_SLOTS,
   gradeGameEnabled,
   type GradeConfidence,
-} from './grade.constants';
+} from './grade.constants.js';
 import {
   objectKeyFor,
   partitionPool,
   publicIdFor,
   UNLICENSED_TEST,
   type GradePhoto,
-} from './photo-pool';
+} from './photo-pool.js';
 
 /**
  * One problem as the pre-guess list names it (AC-22, AC-23).

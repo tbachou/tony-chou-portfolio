@@ -7,7 +7,7 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { MAX_UPLOAD_BYTES } from './grade-photos.constants';
+import { MAX_UPLOAD_BYTES } from './grade-photos.constants.js';
 
 /**
  * Turn multer's size abort into the 413 the spec's error table promises.

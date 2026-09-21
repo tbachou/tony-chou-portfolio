@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
-import { AnthropicService } from './anthropic.service';
+import { AnthropicService } from './anthropic.service.js';
 import {
   assertBedrockCredentialsConfigured,
   BedrockAnthropicService,
-} from './bedrock-anthropic.service';
+} from './bedrock-anthropic.service.js';
 import {
   AI_PROVIDER,
   resolveConfiguredProvider,
   type AiProvider,
-} from './ai-provider.interface';
+} from './ai-provider.interface.js';
 
 /**
  * Chooses the `AiProvider` implementation from `AI_PROVIDER` ('anthropic'

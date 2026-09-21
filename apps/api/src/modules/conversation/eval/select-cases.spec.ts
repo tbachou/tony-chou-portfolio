@@ -1,4 +1,4 @@
-import { selectCases } from './select-cases';
+import { selectCases } from './select-cases.js';
 
 type Item = { id: string; difficulty: string };
 

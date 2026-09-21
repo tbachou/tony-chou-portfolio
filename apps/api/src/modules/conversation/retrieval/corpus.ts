@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import * as path from 'node:path';
-import { hashDataset } from '../eval/dataset-hash';
+import { hashDataset } from '../eval/dataset-hash.js';
 
 /**
  * Which committed documents the retrieval corpus contains, and how its

@@ -12,13 +12,13 @@
  * real guard and captured a wrong verdict, across seven rounds. They are the
  * specification: each one is a failure this guard actually had.
  */
-import { StoryOwnership } from '../../generated/prisma/enums';
-import type { StoryModel } from '../../generated/prisma/models';
+import { StoryOwnership } from '../../generated/prisma/enums.js';
+import type { StoryModel } from '../../generated/prisma/models.js';
 import {
   CREDENTIAL_GUARD_FALLBACK,
   GENERIC_GUARD_FALLBACK,
   evaluateTonyResponse,
-} from './ownership-guard';
+} from './ownership-guard.js';
 
 const soloStory = {
   id: 'story-1',

@@ -1,6 +1,6 @@
-import { renderScoreboard } from './scoreboard';
-import { judgeError, makeCase, makeRun, scored } from './test-fixtures';
-import type { BaselineFile } from './eval-types';
+import { renderScoreboard } from './scoreboard.js';
+import { judgeError, makeCase, makeRun, scored } from './test-fixtures.js';
+import type { BaselineFile } from './eval-types.js';
 
 describe('renderScoreboard', () => {
   const run = makeRun([

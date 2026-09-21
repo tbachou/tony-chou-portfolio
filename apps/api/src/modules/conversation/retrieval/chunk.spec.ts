@@ -1,4 +1,4 @@
-import { CHUNK_CHARACTER_CAP, chunkMarkdown, oversizedChunks } from './chunk';
+import { CHUNK_CHARACTER_CAP, chunkMarkdown, oversizedChunks } from './chunk.js';
 
 const doc = (body: string) => chunkMarkdown(body, 'docs/specs/_root/0012-agent/index.md');
 

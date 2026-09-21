@@ -1,8 +1,8 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '../../generated/prisma/client';
-import { utcDateOnly } from '../../common/utils/date.util';
-import { readNumericEnv } from '../../common/config/env.config';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import { utcDateOnly } from '../../common/utils/date.util.js';
+import { readNumericEnv } from '../../common/config/env.config.js';
 
 @Injectable()
 export class DailyUsageService {

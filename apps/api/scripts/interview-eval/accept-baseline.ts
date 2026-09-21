@@ -14,11 +14,11 @@ import path from 'node:path';
 import type {
   BaselineFile,
   RunResults,
-} from '../../src/modules/conversation/eval/eval-types';
-import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
+} from '../../src/modules/conversation/eval/eval-types.js';
+import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard.js';
 
 const EVALS = path.resolve(
-  __dirname,
+  import.meta.dirname,
   '..',
   '..',
   '..',

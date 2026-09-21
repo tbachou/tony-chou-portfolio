@@ -11,7 +11,7 @@ import {
   namePrescribesFullCrimp,
   matchesInjectionBlocklist,
   normalizeForMatch,
-} from './beta.constants';
+} from './beta.constants.js';
 
 describe('normalizeForMatch', () => {
   it.each([
@@ -187,13 +187,19 @@ describe('namePrescribesFullCrimp', () => {
 });
 
 describe('layer 1 dose bounds', () => {
-  it('is a positive-integer floor with no ceiling (calibration run not done)', () => {
+  it('is a positive-integer floor with no ceiling (calibration run not done)', async () => {
     expect(DOSE_MIN).toBe(1);
     // A named maximum must not appear until the spec's calibration run has
     // observed the drafter's real range. Anything else is a guess hardened
     // into a permanent ceiling. This assertion is the tripwire.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const constants = require('./beta.constants') as Record<string, unknown>;
+    //
+    // A dynamic import rather than require(): the suite runs on Vitest, which
+    // has no CommonJS require. It still enumerates the module's real exports,
+    // which is the whole point of the check.
+    const constants = (await import('./beta.constants.js')) as Record<
+      string,
+      unknown
+    >;
     expect(
       Object.keys(constants).filter((key) => /^DOSE_.*MAX/.test(key)),
     ).toEqual([]);
