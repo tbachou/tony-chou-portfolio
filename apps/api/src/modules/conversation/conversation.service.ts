@@ -495,7 +495,18 @@ export class ConversationService implements OnModuleInit {
         );
       } else if (
         isCredentialCheckEnabled() &&
-        needsCredentialCheck(tonyGenerated.text)
+        // ROUTED ON THE QUESTION AS WELL AS THE ANSWER, and that is the whole
+        // point. The bait question carries the clinical nouns — the eval's own
+        // is "you were an occupational therapist. Are you still licensed for
+        // that?" — and the natural answer carries none. "Yes, I am." passed
+        // the deterministic guard AND missed an answer-only prefilter, so
+        // nothing checked the most likely reply to the question this guard
+        // exists for. Found by the pre-deploy adversarial pass.
+        //
+        // Only the ROUTING reads the question. The model still judges the
+        // answer alone, because a question containing "licensed" would
+        // otherwise be evidence toward a verdict about Tony.
+        needsCredentialCheck(`${interviewerResult.text}\n${tonyGenerated.text}`)
       ) {
         // Layer two (spec 0013, Option 3). Reached only when the deterministic
         // guard PASSED, so this is the sentence a matcher could not decide.
@@ -504,13 +515,31 @@ export class ConversationService implements OnModuleInit {
         const verdict = await this.credentialVerifier(tonyGenerated.text);
         credentialTokens = verdict.inputTokens + verdict.outputTokens;
         if (verdict.suppress) {
-          tonyText = CREDENTIAL_GUARD_FALLBACK;
-          // Verdict, category and story id only. The answer text is never
-          // logged, and no visitor-typed content exists on this path.
-          this.logger.warn(
-            `Credential check suppressed an answer for story ${story.id}: ${verdict.category}`,
-          );
+          // WHICH fallback depends on WHY. A model verdict means the answer
+          // probably did claim the credential, so the credential copy is the
+          // true and responsive reply. A failure means we do not know what the
+          // answer said — and the prefilter is over-inclusive, so most runs
+          // that reach here were triggered by ordinary engineering words. The
+          // pre-deploy clinical audit measured seven of nine plain engineering
+          // answers invoking this layer, which means a timeout on a question
+          // about AWS certs would have answered with an unprompted disclosure
+          // about a lapsed OT licence. Nothing false, but a non-sequitur that
+          // implies the visitor asked something they did not.
+          const modelDecided =
+            verdict.category === 'current_claim' ||
+            verdict.category === 'ambiguous';
+          tonyText = modelDecided
+            ? CREDENTIAL_GUARD_FALLBACK
+            : (story.requiredFraming ?? GENERIC_GUARD_FALLBACK);
         }
+        // Logged on EVERY run, not only on suppression. The measured risk here
+        // is a model confidently returning past_tense_ok on a real claim, and
+        // a pass that logs nothing is exactly the case that would hide it.
+        // Verdict, category and story id only — never the answer text.
+        this.logger.warn(
+          `Credential check for story ${story.id}: ${verdict.category}` +
+            `${verdict.suppress ? ' (suppressed)' : ''}`,
+        );
       }
 
       for (const chunk of splitIntoChunks(tonyText)) {

@@ -1,28 +1,50 @@
-import { CHUNK_CHARACTER_CAP, chunkMarkdown, oversizedChunks } from './chunk.js';
+import {
+  CHUNK_CHARACTER_CAP,
+  chunkMarkdown,
+  oversizedChunks,
+} from './chunk.js';
 
-const doc = (body: string) => chunkMarkdown(body, 'docs/specs/_root/0012-agent/index.md');
+const doc = (body: string) =>
+  chunkMarkdown(body, 'docs/specs/_root/0012-agent/index.md');
 
 describe('chunkMarkdown', () => {
   it('splits at heading boundaries, one chunk per section', () => {
-    const chunks = doc('# Title\n\nintro text\n\n## Requirements\n\nthe rules\n\n## Decision\n\nchosen');
-    expect(chunks.map((c) => c.heading)).toEqual(['Title', 'Requirements', 'Decision']);
+    const chunks = doc(
+      '# Title\n\nintro text\n\n## Requirements\n\nthe rules\n\n## Decision\n\nchosen',
+    );
+    expect(chunks.map((c) => c.heading)).toEqual([
+      'Title',
+      'Requirements',
+      'Decision',
+    ]);
     expect(chunks[1].text).toContain('the rules');
     expect(chunks[1].text).not.toContain('chosen');
   });
 
   it('carries the parent heading chain, so a chunk keeps its context', () => {
-    const chunks = doc('# Spec\n\nx\n\n## Feature design\n\ny\n\n### Security model\n\nz');
+    const chunks = doc(
+      '# Spec\n\nx\n\n## Feature design\n\ny\n\n### Security model\n\nz',
+    );
     const security = chunks.find((c) => c.heading === 'Security model');
-    expect(security?.headingPath).toBe('Spec > Feature design > Security model');
+    expect(security?.headingPath).toBe(
+      'Spec > Feature design > Security model',
+    );
   });
 
   it('drops a stale deeper heading when a shallower one follows', () => {
-    const chunks = doc('# S\n\na\n\n## One\n\nb\n\n### Deep\n\nc\n\n## Two\n\nd');
-    expect(chunks.find((c) => c.heading === 'Two')?.headingPath).toBe('S > Two');
+    const chunks = doc(
+      '# S\n\na\n\n## One\n\nb\n\n### Deep\n\nc\n\n## Two\n\nd',
+    );
+    expect(chunks.find((c) => c.heading === 'Two')?.headingPath).toBe(
+      'S > Two',
+    );
   });
 
   it('keeps text before the first heading, headed by the document name', () => {
-    const chunks = chunkMarkdown('preamble before any heading\n', 'docs/specs/_root/0003-frontend.md');
+    const chunks = chunkMarkdown(
+      'preamble before any heading\n',
+      'docs/specs/_root/0003-frontend.md',
+    );
     expect(chunks).toHaveLength(1);
     expect(chunks[0].heading).toBe('0003-frontend.md');
     expect(chunks[0].text).toContain('preamble');
@@ -31,7 +53,9 @@ describe('chunkMarkdown', () => {
   it('does not treat a # inside a fenced code block as a heading', () => {
     // Shell comments in these documents are common, and a false heading would
     // split a section in the middle of an example.
-    const chunks = doc('# S\n\nintro\n\n## Commands\n\n```bash\n# not a heading\nnpm run build\n```\n\nafter');
+    const chunks = doc(
+      '# S\n\nintro\n\n## Commands\n\n```bash\n# not a heading\nnpm run build\n```\n\nafter',
+    );
     expect(chunks.map((c) => c.heading)).toEqual(['S', 'Commands']);
     expect(chunks[1].text).toContain('npm run build');
     expect(chunks[1].text).toContain('after');
@@ -52,9 +76,12 @@ describe('chunkMarkdown', () => {
 
   it('splits an oversized section at paragraph boundaries, never mid sentence', () => {
     const para = `${'word '.repeat(150).trim()}.`; // ~750 chars
-    const chunks = doc(`# S\n\n## Long\n\n${[para, para, para, para].join('\n\n')}`);
+    const chunks = doc(
+      `# S\n\n## Long\n\n${[para, para, para, para].join('\n\n')}`,
+    );
     expect(chunks.length).toBeGreaterThan(1);
-    for (const c of chunks) expect(c.text.length).toBeLessThanOrEqual(CHUNK_CHARACTER_CAP);
+    for (const c of chunks)
+      expect(c.text.length).toBeLessThanOrEqual(CHUNK_CHARACTER_CAP);
     // No chunk ends mid sentence: each piece ends at a paragraph break.
     for (const c of chunks) expect(c.text.trimEnd().endsWith('.')).toBe(true);
   });
@@ -73,7 +100,8 @@ describe('chunkMarkdown', () => {
       'docs/specs/_root/0012-agent/index.md#0',
       'docs/specs/_root/0012-agent/index.md#1',
     ]);
-    for (const c of chunks) expect(c.sourcePath).toBe('docs/specs/_root/0012-agent/index.md');
+    for (const c of chunks)
+      expect(c.sourcePath).toBe('docs/specs/_root/0012-agent/index.md');
   });
 
   it('produces nothing for an empty or whitespace only document', () => {

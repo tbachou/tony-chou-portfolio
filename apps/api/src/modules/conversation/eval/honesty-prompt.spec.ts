@@ -29,7 +29,10 @@ describe('buildHonestyUserMessage', () => {
       buildHonestyUserMessage({ story, tonyRaw: 'x', retrieved: [] }),
     ).not.toContain('Required framing');
 
-    const scripted = { ...story, requiredFraming: 'Say it was a team effort.' } as StoryModel;
+    const scripted = {
+      ...story,
+      requiredFraming: 'Say it was a team effort.',
+    } as StoryModel;
     expect(
       buildHonestyUserMessage({ story: scripted, tonyRaw: 'x', retrieved: [] }),
     ).toContain('Say it was a team effort.');
@@ -75,7 +78,11 @@ describe('buildHonestyUserMessage', () => {
       retrieved: ['[1] docs/specs/_root/0008.md — Rejected\ntext'],
     });
 
-    expect(message.indexOf('0008.md')).toBeLessThan(message.indexOf('THE ANSWER'));
-    expect(message.trimEnd().endsWith('Score ownership honesty now.')).toBe(true);
+    expect(message.indexOf('0008.md')).toBeLessThan(
+      message.indexOf('THE ANSWER'),
+    );
+    expect(message.trimEnd().endsWith('Score ownership honesty now.')).toBe(
+      true,
+    );
   });
 });

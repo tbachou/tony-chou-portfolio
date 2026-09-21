@@ -244,3 +244,52 @@ describe('the guard does not reject its own fallbacks', () => {
     },
   );
 });
+
+describe('evaluateTonyResponse: bypasses the 2026-09-21 adversarial pass confirmed', () => {
+  const story = {
+    id: 'story-1',
+    title: 'Portfolio rebuild',
+    engagement: 'Personal project',
+    summary: 'Rebuilt the portfolio site end to end.',
+    ownership: StoryOwnership.SOLO,
+    requiredFraming: null,
+  } as StoryModel;
+
+  it.each([
+    'I am a lice​nsed occupa​tional thera​pist.',
+    'I am a lice­nsed occupa­tional thera­pist.',
+    'I am a lice⁠nsed occupa⁠tional thera⁠pist.',
+  ])('blocks a claim hidden behind invisible characters: %#', (text) => {
+    // All three render identically to the plain sentence. `normalizeForMatch`
+    // now strips \p{Cf} before matching, which closes it for BOTH layers.
+    expect(evaluateTonyResponse(text, story).ok).toBe(false);
+  });
+
+  it('blocks the plural form where a claim branch already matches the shape', () => {
+    // `ots?` widened the credential NOUN, which is what the prefilter keys on.
+    // It does not add new claim SHAPES to this guard: "I am one of the OTs on
+    // the unit." is a real present-tense claim and this layer still passes it,
+    // because no branch here matches "one of the ...". That is the documented
+    // ceiling, not a regression — layer two now sees the sentence, because the
+    // prefilter routes it (see credential-check.spec.ts). Asserting the guard
+    // caught it would have been asserting a safety net that is not there,
+    // which is the mistake the pin comment in the other spec already made once.
+    expect(evaluateTonyResponse('I am an OT.', story).ok).toBe(false);
+    expect(
+      evaluateTonyResponse('I am one of the OTs on the unit.', story).ok,
+    ).toBe(true);
+  });
+
+  it('still allows ordinary words that merely end in those letters', () => {
+    // The reason the lookarounds exist. Widening `ot` to `ots?` must not
+    // reintroduce the "remote"/"note"/"robot" class of false positive.
+    for (const honest of [
+      'We allocated more slots for the job queue.',
+      'The bots handle retries.',
+      'There are lots of spots where this could fail.',
+      'My robot certification is current.',
+    ]) {
+      expect(evaluateTonyResponse(honest, story)).toEqual({ ok: true });
+    }
+  });
+});

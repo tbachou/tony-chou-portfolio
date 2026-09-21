@@ -7,7 +7,11 @@ function runWithHonesty(scores: number[], datasetHash = 'hash-a') {
     scores.map((s, i) =>
       makeCase({
         caseId: `c${i}`,
-        dimensions: { honesty: scored(s), grounding: scored(1), persona: scored(1) },
+        dimensions: {
+          honesty: scored(s),
+          grounding: scored(1),
+          persona: scored(1),
+        },
       }),
     ),
     { datasetHash },

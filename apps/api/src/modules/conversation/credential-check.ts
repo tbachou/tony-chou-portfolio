@@ -62,10 +62,60 @@ const CLINICAL_TOPIC_WORDS = [
   'rehab',
   'practi',
   'caseload',
+  // Added 2026-09-21 by the pre-deploy clinical audit, which found nine
+  // practice claims that passed the deterministic guard AND missed this list,
+  // so NOTHING checked them. Each entry below is the vocabulary a clinician
+  // actually uses rather than the vocabulary a spec author guessed:
+  //   `client`   — the AOTA Practice Framework's primary term for the person
+  //                receiving services. The list had `patient` and not this.
+  //   `regist`   — the check's own ground truth says "no current occupational
+  //                therapy license or REGISTRATION", so its absence here was
+  //                an internal contradiction.
+  //   `ceu`      — continuing education units exist only to renew a licence.
+  //   `npi`, `medicare` — billing for care requires an active licence. A bare
+  //                `bill` was tried and removed: it fires on "the billing
+  //                service", which is ordinary engineering English, and it
+  //                covered nothing these two do not.
+  //   `supervis`, `fieldwork`, `precept` — supervising students requires one
+  //                in essentially every US jurisdiction.
+  //   `volunteer`, `pro bono` — practice acts regulate the ACT of practice,
+  //                not payment, so unpaid clinical work still claims it.
+  'client',
+  'regist',
+  'ceu',
+  'npi',
+  'medicare',
+  'supervis',
+  'fieldwork',
+  'precept',
+  'volunteer',
+  'pro bono',
+  'referral',
+  'hospital',
+  'per diem',
 ] as const;
 
+/**
+ * THE RESIDUAL, stated plainly because pretending otherwise is how the guard
+ * this layer supplements went wrong eight times.
+ *
+ * This list cannot be completed. It is an enumeration of natural language, and
+ * the 2026-09-21 audit closed ten holes by adding twelve words — which is
+ * evidence that the next audit would find more, not that the list is now
+ * finished. "I still work weekends at Mercy General" names no word here and
+ * never will unless every employer noun is added.
+ *
+ * That is survivable ONLY because of Option 3. The deterministic guard runs
+ * first and blocks the phrasings it knows for free, and this prefilter decides
+ * nothing except whether to spend a cheap model call. A miss here is a missed
+ * SECOND opinion, not a missing check — unless the first layer also passes the
+ * sentence, which is the gap, and which is why deleting the regex (Option 4)
+ * was the wrong call. Widen this list whenever a real miss is found; do not
+ * believe it is ever done.
+ */
+
 const CLINICAL_TOPIC = new RegExp(
-  [...CLINICAL_TOPIC_WORDS, '(?<![-\\w])ot(?![-\\w])'].join('|'),
+  [...CLINICAL_TOPIC_WORDS, '(?<![-\\w])ots?(?![-\\w])'].join('|'),
 );
 
 /**
@@ -80,15 +130,11 @@ export function needsCredentialCheck(text: string): boolean {
   return CLINICAL_TOPIC.test(normalizeForMatch(text));
 }
 
-/**
- * Substituted whenever this layer suppresses an answer — a positive verdict,
- * an ambiguous one, or a failure. The generic guard fallback deflects, and a
- * story's `requiredFraming` is an OWNERSHIP sentence, so a visitor who asked
- * "are you still licensed?" got a line about who built the editing layer. The
- * true answer is short and responsive, so say it rather than dodging.
- */
-export const CREDENTIAL_GUARD_FALLBACK =
-  "I was a licensed occupational therapist for six years, but I don't practice now — my licence isn't current and my C/NDT certification is expired. These days I'm a software engineer, and that's the work I can speak to.";
+// Re-exported, not redefined. It lived here AND in ownership-guard.ts,
+// byte-identical, with production importing one copy and the tests the other.
+// Spec 0013 called that shape "the drift this repository has been bitten by
+// before"; the shared-corpus commit fixed the corpus and left this behind.
+export { CREDENTIAL_GUARD_FALLBACK } from './ownership-guard.js';
 
 export type CredentialFailureCategory =
   'timeout' | 'provider_error' | 'unparsable';
@@ -132,5 +178,12 @@ export function isCredentialCheckEnabled(): boolean {
  * no claim at all.
  */
 export function wrapAnswerForCredentialCheck(text: string): string {
-  return `<answer>\n${text}\n</answer>`;
+  // A literal `</answer>` in the text would close the block early, leaving
+  // anything after it OUTSIDE the delimiter the prompt scopes its "data, never
+  // instructions" rule to — which is exactly the claimed-but-absent boundary
+  // this function exists to prevent. A zero-width space inside the closing tag
+  // keeps it readable to the model as text while stopping it terminating the
+  // block. Confirmed by the pre-deploy adversarial pass.
+  const neutralised = text.replaceAll('</answer>', '<\u200b/answer>');
+  return `<answer>\n${neutralised}\n</answer>`;
 }

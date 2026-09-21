@@ -134,7 +134,7 @@ function isRejectedFigure(lower: string, index: number): boolean {
 /** A clinical credential noun. `ot` needs both boundaries: without the
  *  lookbehind it matches inside "remote", "note", "robot", "screenshot". */
 const CLINICAL =
-  '(?:occupational therap(?:y|ist)|occupational therapy practitioner|(?<![-\\w])otr(?:/l)?(?![-\\w])|(?<![-\\w])o[./]?t(?![-\\w])|c/ndt|nbcot)';
+  '(?:occupational therap(?:y|ist)|occupational therapy practitioner|(?<![-\\w])otr(?:/l)?(?![-\\w])|(?<![-\\w])o[./]?ts?(?![-\\w])|c/ndt|nbcot)';
 
 /** Characters a window may span, stopping at a sentence end or any marker that
  *  makes the sentence past tense or a denial. This is what keeps "I have not
@@ -226,10 +226,20 @@ export function isBlankResponse(text: string): boolean {
  * shifts under it.
  */
 export function normalizeForMatch(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[\u2018\u2019\u02bc\u00b4\u2032\uff07`]/g, "'")
-    .replace(/\s+/g, ' ');
+  return (
+    text
+      .toLowerCase()
+      .replace(/[\u2018\u2019\u02bc\u00b4\u2032\uff07`]/g, "'")
+      // Invisible format characters, stripped BEFORE the whitespace collapse.
+      // JS `\s` does not include U+200B, U+00AD or U+2060, so without this a
+      // zero-width space mid-word renders identically to the plain sentence in
+      // a browser and defeats every branch below AND the second layer's
+      // prefilter, which shares this function. Found by the pre-deploy
+      // adversarial pass: "I am a lice\u200bnsed occupa\u200btional
+      // thera\u200bpist." passed both layers.
+      .replace(/[\p{Cf}\u00ad]/gu, '')
+      .replace(/\s+/g, ' ')
+  );
 }
 
 export function evaluateTonyResponse(

@@ -1022,7 +1022,12 @@ describe('the credential check, spec 0013 layer two', () => {
       inputTokens: 5,
       outputTokens: 2,
     });
-    expect(await runWith(h, CLINICAL)).toBe(CREDENTIAL_GUARD_FALLBACK);
+    // Suppressed, but with the GENERIC copy: an unparsable verdict means we do
+    // not know what the answer said, and the credential copy would assert a
+    // subject the visitor may never have raised.
+    const streamed = await runWith(h, CLINICAL);
+    expect(streamed).not.toContain('then came the pipeline rebuild');
+    expect(streamed).not.toBe(CREDENTIAL_GUARD_FALLBACK);
   });
 
   it('fails CLOSED on a provider error, and does not emit turn_error (AC-3)', async () => {
@@ -1031,7 +1036,11 @@ describe('the credential check, spec 0013 layer two', () => {
       new Error('upstream exploded'),
     );
     const streamed = await runWith(h, CLINICAL);
-    expect(streamed).toBe(CREDENTIAL_GUARD_FALLBACK);
+    // Still suppressed — that is the fail-closed property — but the copy is
+    // the generic one, because a provider error is not evidence the answer
+    // claimed anything.
+    expect(streamed).not.toContain('then came the pipeline rebuild');
+    expect(streamed).not.toBe(CREDENTIAL_GUARD_FALLBACK);
     // A throw escaping the check would be caught by generateTurnPair's handler,
     // which deletes the reserved turn and emits turn_error instead of the
     // fallback — so the check would not fail closed at all.
