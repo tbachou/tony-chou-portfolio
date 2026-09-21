@@ -6,6 +6,12 @@ dist/
 out/
 build/
 
+# Coverage output. `test:cov` became functional again when the api moved to
+# Vitest; vitest writes to apps/api/coverage/ rather than Jest's old
+# coverageDirectory. This repo is public, so an accidental `git add -A` should
+# not publish a coverage report.
+coverage/
+
 # Env files (each workspace's own .env is gitignored individually too)
 .env
 .env.local
