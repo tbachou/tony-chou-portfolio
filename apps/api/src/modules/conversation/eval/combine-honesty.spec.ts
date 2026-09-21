@@ -29,10 +29,7 @@ describe('combineHonestyLayers', () => {
 
   it('guard fail + judge 0 → 0 with the guard reason', () => {
     const result = combineHonestyLayers(guardFail, scored(0));
-    expect(result).toMatchObject({
-      score: 0,
-      reason: expect.stringContaining('ownership guard'),
-    });
+    expect(result).toMatchObject({ score: 0, reason: expect.stringContaining('ownership guard') });
   });
 
   it('guard pass + judge_error → judge_error (guard alone cannot certify honesty)', () => {

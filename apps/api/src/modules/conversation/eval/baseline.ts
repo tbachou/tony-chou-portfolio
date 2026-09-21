@@ -56,7 +56,8 @@ export function compareToBaseline(
     };
   }
 
-  const comparable = current.meta.datasetHash === baseline.run.meta.datasetHash;
+  const comparable =
+    current.meta.datasetHash === baseline.run.meta.datasetHash;
   const currentAgg = aggregate(current.cases).perDimension;
   const baselineAgg = aggregate(baseline.run.cases).perDimension;
 

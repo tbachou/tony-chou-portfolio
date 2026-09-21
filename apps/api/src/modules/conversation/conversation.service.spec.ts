@@ -104,6 +104,9 @@ function makeHarness() {
   // to a passing verdict so the many tests that never trip the prefilter do
   // not each have to stub it.
   const credentialCheck = {
+    // Configured by default: the startup guard is exercised explicitly below,
+    // and every other test would otherwise have to opt out of it.
+    isConfigured: vi.fn().mockReturnValue(true),
     classifyUpstreamError: vi.fn().mockReturnValue(null),
     forceToolCall: vi.fn().mockResolvedValue({
       input: { category: 'no_credential_mentioned', reasoning: 'n/a' },
@@ -1075,5 +1078,32 @@ describe('the credential check, spec 0013 layer two', () => {
     expect(lines.some((l) => l.includes('occupational therapist'))).toBe(false);
     expect(lines.some((l) => l.includes('claims a live licence'))).toBe(false);
     warn.mockRestore();
+  });
+});
+
+describe('the credential check startup guard, spec 0013 AC-10', () => {
+  afterEach(() => {
+    delete process.env.CREDENTIAL_CHECK_ENABLED;
+  });
+
+  it('refuses to start when the check is enabled and the key is absent', () => {
+    const h = makeHarness();
+    h.credentialCheck.isConfigured.mockReturnValue(false);
+    // The failure this prevents is silent and total: the check fails closed,
+    // so booting would replace EVERY clinical answer with the fallback, and
+    // the only symptom would be a persona that will not discuss its own past.
+    expect(() => h.service.onModuleInit()).toThrow(/ANTHROPIC_API_KEY/);
+  });
+
+  it('starts when the key is absent but the check is switched off', () => {
+    process.env.CREDENTIAL_CHECK_ENABLED = 'false';
+    const h = makeHarness();
+    h.credentialCheck.isConfigured.mockReturnValue(false);
+    expect(() => h.service.onModuleInit()).not.toThrow();
+  });
+
+  it('starts normally when the key is present', () => {
+    const h = makeHarness();
+    expect(() => h.service.onModuleInit()).not.toThrow();
   });
 });

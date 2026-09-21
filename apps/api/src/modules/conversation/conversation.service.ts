@@ -1,4 +1,10 @@
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { readNumericEnv } from '../../common/config/env.config.js';
@@ -82,8 +88,34 @@ export type PreparedTurn = {
 };
 
 @Injectable()
-export class ConversationService {
+export class ConversationService implements OnModuleInit {
   private readonly logger = new Logger(ConversationService.name);
+
+  /**
+   * AC-10. A deployment must not be able to serve canned replies because a key
+   * is absent.
+   *
+   * The second layer fails closed, which is right at request time and wrong at
+   * boot: with the check enabled and no direct Anthropic path, EVERY answer
+   * that mentions the clinical subject would be replaced by the fallback, and
+   * the only symptom would be a persona that suddenly refuses to discuss its
+   * own history. That is a silent, total degradation of the surface. Refusing
+   * to start turns it into an obvious one.
+   *
+   * Throws rather than logging: Nest aborts bootstrap on a rejected
+   * onModuleInit, which is the whole point.
+   */
+  onModuleInit(): void {
+    if (isCredentialCheckEnabled() && !this.anthropicDirect.isConfigured()) {
+      throw new Error(
+        'ANTHROPIC_API_KEY is not configured, and the credential check is ' +
+          'enabled. The check fails closed, so starting would replace every ' +
+          'clinical answer with the scripted fallback and report nothing. ' +
+          'Set the key, or set CREDENTIAL_CHECK_ENABLED=false to start ' +
+          'without the second layer.',
+      );
+    }
+  }
 
   constructor(
     private readonly prisma: PrismaService,

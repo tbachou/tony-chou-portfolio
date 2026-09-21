@@ -7,11 +7,7 @@ describe('renderScoreboard', () => {
     makeCase({
       caseId: 'a',
       difficulty: 'simple',
-      dimensions: {
-        honesty: scored(1),
-        grounding: scored(0.5),
-        persona: scored(1),
-      },
+      dimensions: { honesty: scored(1), grounding: scored(0.5), persona: scored(1) },
     }),
     makeCase({
       caseId: 'b',
@@ -21,11 +17,7 @@ describe('renderScoreboard', () => {
         guard: { ok: false, reason: 'unhedged sole credit verb' },
         judge: scored(0),
       },
-      dimensions: {
-        honesty: scored(0),
-        grounding: judgeError(),
-        persona: scored(1),
-      },
+      dimensions: { honesty: scored(0), grounding: judgeError(), persona: scored(1) },
     }),
   ]);
 
@@ -50,11 +42,7 @@ describe('renderScoreboard', () => {
       run: makeRun([
         makeCase({
           caseId: 'a',
-          dimensions: {
-            honesty: scored(1),
-            grounding: scored(1),
-            persona: scored(1),
-          },
+          dimensions: { honesty: scored(1), grounding: scored(1), persona: scored(1) },
         }),
       ]),
     };

@@ -86,12 +86,8 @@ export function hashDocumentBytes(bytes: Buffer): string {
  * a second hash pipeline: two inputs to one comparability decision should not
  * be computed two different ways.
  */
-export function hashCorpus(
-  documents: { path: string; hash: string }[],
-): string {
-  const sorted = [...documents].sort((a, b) =>
-    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
-  );
+export function hashCorpus(documents: { path: string; hash: string }[]): string {
+  const sorted = [...documents].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return hashDataset(sorted.map(({ path: p, hash }) => ({ path: p, hash })));
 }
 
@@ -115,10 +111,7 @@ export function collectCorpus(repoRoot: string): CorpusDocument[] {
     }
     for (const entry of entries.sort()) {
       const absolute = path.join(absoluteDir, entry);
-      const relative = path
-        .relative(repoRoot, absolute)
-        .split(path.sep)
-        .join('/');
+      const relative = path.relative(repoRoot, absolute).split(path.sep).join('/');
       if (statSync(absolute).isDirectory()) {
         walk(absolute);
         continue;
@@ -135,16 +128,10 @@ export function collectCorpus(repoRoot: string): CorpusDocument[] {
           { cause },
         );
       }
-      documents.push({
-        path: relative,
-        text: bytes.toString('utf8'),
-        hash: hashDocumentBytes(bytes),
-      });
+      documents.push({ path: relative, text: bytes.toString('utf8'), hash: hashDocumentBytes(bytes) });
     }
   };
 
   for (const dir of INCLUDED_DIRECTORIES) walk(path.join(repoRoot, dir));
-  return documents.sort((a, b) =>
-    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
-  );
+  return documents.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
