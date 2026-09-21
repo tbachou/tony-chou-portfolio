@@ -33,6 +33,15 @@ import {
   splitIntoChunks,
 } from './ownership-guard.js';
 import { DailyUsageService } from '../daily-usage/daily-usage.service.js';
+import { AnthropicService } from '../anthropic/anthropic.service.js';
+import {
+  CredentialVerdict,
+  CREDENTIAL_CHECK_MODEL,
+  CREDENTIAL_VERDICT_SCHEMA,
+  isCredentialCheckEnabled,
+  needsCredentialCheck,
+  type CredentialVerifierResult,
+} from './credential-check.js';
 
 export type HistoryTurn = {
   role: 'interviewer' | 'tony';
@@ -80,6 +89,12 @@ export class ConversationService {
     private readonly prisma: PrismaService,
     @Inject(AI_PROVIDER) private readonly anthropic: AiProvider,
     private readonly dailyUsage: DailyUsageService,
+    // The CONCRETE service, not the AI_PROVIDER token, and deliberately so
+    // (spec 0013 AC-9). This account cannot invoke every model on Bedrock, and
+    // a check that fails closed must not have its provider move with a
+    // configuration flag: if it did, `AI_PROVIDER=bedrock` could silently turn
+    // every clinical answer into a canned reply.
+    private readonly anthropicDirect: AnthropicService,
   ) {}
 
   async resolveTopic(topicId: string): Promise<TopicWithStories | null> {
@@ -102,6 +117,65 @@ export class ConversationService {
    * An unknown conversationId yields no rows, which prepareTurn treats as a
    * new conversation.
    */
+  /**
+   * The second layer (spec 0013). Runs only on answers the deterministic guard
+   * has already passed AND the prefilter has matched.
+   *
+   * NEVER THROWS. A throw here would be caught by generateTurnPair's handler,
+   * which deletes the reserved turn and emits `turn_error` — so a throwing
+   * check would not fail closed at all. Every failure path returns a
+   * suppressing verdict instead, which is why the field is named for the
+   * ACTION rather than the finding.
+   */
+  async credentialVerifier(text: string): Promise<CredentialVerifierResult> {
+    try {
+      const { input, inputTokens, outputTokens } =
+        await this.anthropicDirect.forceToolCall({
+          model: CREDENTIAL_CHECK_MODEL,
+          system: loadConversationSkill('credential-check'),
+          userMessage: text,
+          maxTokens: 200,
+          toolName: 'report_credential_verdict',
+          toolDescription:
+            'Report the credential claim result with reasoning behind it',
+          inputSchema: CREDENTIAL_VERDICT_SCHEMA,
+          // No retry: the timeout is the whole wall-clock budget on a path that
+          // sits in front of the first streamed token and fails closed.
+          timeoutMs: 3000,
+          maxRetries: 0,
+        });
+
+      const parsed = CredentialVerdict.safeParse(input);
+      if (!parsed.success) {
+        this.logger.warn('Credential check: unparsable verdict');
+        return {
+          suppress: true,
+          category: 'unparsable',
+          inputTokens,
+          outputTokens,
+        };
+      }
+      const { category, reasoning } = parsed.data;
+      return {
+        suppress: category === 'current_claim' || category === 'ambiguous',
+        category,
+        reasoning,
+        inputTokens,
+        outputTokens,
+      };
+    } catch (error) {
+      const timedOut =
+        this.anthropicDirect.classifyUpstreamError(error)?.name ===
+        'APIConnectionTimeoutError';
+      return {
+        suppress: true,
+        category: timedOut ? 'timeout' : 'provider_error',
+        inputTokens: 0,
+        outputTokens: 0,
+      };
+    }
+  }
+
   async loadConversation(conversationId?: string): Promise<LoadedConversation> {
     if (!conversationId) return emptyConversation();
     const rows = await this.prisma.conversationTurn.findMany({
@@ -372,6 +446,7 @@ export class ConversationService {
 
       const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
       let tonyText = tonyGenerated.text;
+      let credentialTokens = 0;
       if (!guardResult.ok) {
         // A credential rejection has a true, responsive answer; every other
         // rejection falls back to the story's scripted ownership framing.
@@ -385,6 +460,24 @@ export class ConversationService {
                 'answered with the fallback. This is a token budget problem, not a guard failure.'
             : `Ownership guard fired for story ${story.id} (${story.title}): ${guardResult.reason}`,
         );
+      } else if (
+        isCredentialCheckEnabled() &&
+        needsCredentialCheck(tonyGenerated.text)
+      ) {
+        // Layer two (spec 0013, Option 3). Reached only when the deterministic
+        // guard PASSED, so this is the sentence a matcher could not decide.
+        // The prefilter is over-inclusive on purpose: a false positive costs
+        // one cheap call, a miss skips the safety check silently.
+        const verdict = await this.credentialVerifier(tonyGenerated.text);
+        credentialTokens = verdict.inputTokens + verdict.outputTokens;
+        if (verdict.suppress) {
+          tonyText = CREDENTIAL_GUARD_FALLBACK;
+          // Verdict, category and story id only. The answer text is never
+          // logged, and no visitor-typed content exists on this path.
+          this.logger.warn(
+            `Credential check suppressed an answer for story ${story.id}: ${verdict.category}`,
+          );
+        }
       }
 
       for (const chunk of splitIntoChunks(tonyText)) {
@@ -417,7 +510,13 @@ export class ConversationService {
         // Running counter incremented per persisted ConversationTurn row (one
         // interviewer + one Tony row this pair), not recomputed by aggregation,
         // so the AC-11 backstop check stays a single fast read.
-        this.dailyUsage.incrementOp(2, interviewerTokenCount + tonyTokenCount),
+        // Op count stays 2 — it counts persisted rows, and the credential
+        // check persists none. Its tokens are still spend, so they are billed
+        // here rather than added to ConversationTurn.tokenCount.
+        this.dailyUsage.incrementOp(
+          2,
+          interviewerTokenCount + tonyTokenCount + credentialTokens,
+        ),
       ]);
 
       committed = true;

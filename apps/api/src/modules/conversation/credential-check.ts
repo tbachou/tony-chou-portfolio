@@ -21,7 +21,12 @@ export const CredentialVerdict = z.object({
     .describe('The single verdict category for this answer'),
 });
 
-const { $schema, ...schema } = z.toJSONSchema(CredentialVerdict);
+// `$schema` is stripped rather than destructured away: the destructured form
+// binds a name nothing reads, which is a lint error, and silencing that with a
+// disable comment hides the reason the key is dropped. Anthropic's tool schema
+// rejects the extra property.
+const schema = z.toJSONSchema(CredentialVerdict) as Record<string, unknown>;
+delete schema.$schema;
 
 export const CREDENTIAL_VERDICT_SCHEMA = schema;
 
@@ -99,3 +104,16 @@ export type CredentialVerifierResult = {
   inputTokens: number;
   outputTokens: number;
 };
+
+/**
+ * AC-5. `CREDENTIAL_CHECK_ENABLED=false` disables the second layer; anything
+ * else, including unset, leaves it on, so a fresh environment is safe by
+ * default and the rollback is an env change rather than a deploy.
+ *
+ * Read at call time rather than captured at construction, so flipping it on
+ * Render takes effect on the next request (that restarts the service anyway,
+ * but nothing here should depend on that).
+ */
+export function isCredentialCheckEnabled(): boolean {
+  return process.env.CREDENTIAL_CHECK_ENABLED !== 'false';
+}
