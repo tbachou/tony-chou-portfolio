@@ -40,7 +40,6 @@
     "@aws-sdk/client-sns": "^3.1113.0",
     "@aws-sdk/s3-request-presigner": "^3.1115.0",
     "@nestjs/common": "^11.0.1",
-    "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/throttler": "^6.5.0",

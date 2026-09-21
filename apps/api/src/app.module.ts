@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from '@thallesp/nestjs-better-auth';
@@ -34,7 +33,6 @@ const gradeGameEnabled = process.env.GRADE_GAME_ENABLED === 'true';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot({
       throttlers: [
         { name: 'short', ttl: 60_000, limit: 5 },
