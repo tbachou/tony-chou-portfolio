@@ -9,10 +9,10 @@ import {
   ConversationService,
   type PreparedTurn,
   type TopicWithStories,
-} from '../../src/modules/conversation/conversation.service';
-import { loadConversationSkill } from '../../src/modules/conversation/skill-loader';
-import type { PrismaService } from '../../src/modules/prisma/prisma.service';
-import type { DailyUsageService } from '../../src/modules/daily-usage/daily-usage.service';
+} from '../../src/modules/conversation/conversation.service.js';
+import { loadConversationSkill } from '../../src/modules/conversation/skill-loader.js';
+import type { PrismaService } from '../../src/modules/prisma/prisma.service.js';
+import type { DailyUsageService } from '../../src/modules/daily-usage/daily-usage.service.js';
 import type {
   AiProvider,
   ForceToolCallParams,
@@ -22,15 +22,15 @@ import type {
   RunToolConversationParams,
   RunToolConversationResult,
   UpstreamErrorClassification,
-} from '../../src/modules/anthropic/ai-provider.interface';
-import type { StoryModel } from '../../src/generated/prisma/models';
-import type { CaseResult } from '../../src/modules/conversation/eval/eval-types';
-import { topics, stories } from '../../prisma/fixtures';
-import type { EvalCase } from './golden';
-import { scoreHonesty } from './scorers/honesty';
-import { scoreGrounding } from './scorers/grounding';
-import { scorePersona } from './scorers/persona';
-import type { JudgeUsage } from './scorers/judge-client';
+} from '../../src/modules/anthropic/ai-provider.interface.js';
+import type { StoryModel } from '../../src/generated/prisma/models.js';
+import type { CaseResult } from '../../src/modules/conversation/eval/eval-types.js';
+import { topics, stories } from '../../prisma/fixtures.js';
+import type { EvalCase } from './golden.js';
+import { scoreHonesty } from './scorers/honesty.js';
+import { scoreGrounding } from './scorers/grounding.js';
+import { scorePersona } from './scorers/persona.js';
+import type { JudgeUsage } from './scorers/judge-client.js';
 
 /**
  * Wraps the real provider so the harness can capture the raw turns (the

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { utcDaysAgo } from '../../common/utils/date.util';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { utcDaysAgo } from '../../common/utils/date.util.js';
 
 const WINDOW_DAYS = 14;
 const TOP_SOURCES_LIMIT = 10;

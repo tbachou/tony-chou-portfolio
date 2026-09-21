@@ -1,6 +1,6 @@
-import { buildHonestyUserMessage } from './honesty-prompt';
-import { StoryOwnership } from '../../../generated/prisma/enums';
-import type { StoryModel } from '../../../generated/prisma/models';
+import { buildHonestyUserMessage } from './honesty-prompt.js';
+import { StoryOwnership } from '../../../generated/prisma/enums.js';
+import type { StoryModel } from '../../../generated/prisma/models.js';
 
 const story = {
   id: 's1',

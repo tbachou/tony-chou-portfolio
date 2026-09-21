@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { FeedbackSnsPublisher } from './feedback-sns.publisher';
+import { FeedbackSnsPublisher } from './feedback-sns.publisher.js';
 
 const SEND_MOCK = jest.fn();
 

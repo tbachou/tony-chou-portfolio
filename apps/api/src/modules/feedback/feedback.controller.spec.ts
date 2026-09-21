@@ -16,9 +16,9 @@ jest.mock('../prisma/prisma.service', () => ({
 }));
 
 import type { Request } from 'express';
-import { FeedbackController } from './feedback.controller';
-import type { FeedbackService } from './feedback.service';
-import { hashIp, rateLimitIdentity, resolveClientIp } from '../../common/utils/ip-hash.util';
+import { FeedbackController } from './feedback.controller.js';
+import type { FeedbackService } from './feedback.service.js';
+import { hashIp, rateLimitIdentity, resolveClientIp } from '../../common/utils/ip-hash.util.js';
 
 describe('FeedbackController', () => {
   const ORIGINAL_SALT = process.env.IP_HASH_SALT;

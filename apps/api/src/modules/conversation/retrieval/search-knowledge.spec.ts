@@ -9,10 +9,10 @@ import {
   NO_QUERY_RESULT,
   RETRIEVAL_STRICT_ENV,
   retrievalStrictFromEnv,
-} from './search-knowledge';
-import { search } from './vector-store';
-import { StoryOwnership } from '../../../generated/prisma/enums';
-import type { StoryModel } from '../../../generated/prisma/models';
+} from './search-knowledge.js';
+import { search } from './vector-store.js';
+import { StoryOwnership } from '../../../generated/prisma/enums.js';
+import type { StoryModel } from '../../../generated/prisma/models.js';
 
 jest.mock('./vector-store', () => ({
   search: jest.fn(),

@@ -1,8 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { AppModule } from './app.module';
-import { resolveAllowedOrigins } from './common/utils/allowed-origins.util';
-import { validateEnv } from './common/config/env.config';
+import { AppModule } from './app.module.js';
+import { resolveAllowedOrigins } from './common/utils/allowed-origins.util.js';
+import { validateEnv } from './common/config/env.config.js';
 
 // Fatal on failure, before the Nest app is created and before the server
 // listens. These variables bound the Anthropic bill, and the old

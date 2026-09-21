@@ -3,8 +3,8 @@ import {
   ThrottlerException,
   type ThrottlerLimitDetail,
 } from '@nestjs/throttler';
-import { BetaThrottlerGuard } from './beta-throttler.guard';
-import { rateLimitIdentity } from '../../common/utils/ip-hash.util';
+import { BetaThrottlerGuard } from './beta-throttler.guard.js';
+import { rateLimitIdentity } from '../../common/utils/ip-hash.util.js';
 
 // The guard's BetaUsageService injection pulls in PrismaService, whose real
 // module drags in the generated Prisma client and the pg adapter; these

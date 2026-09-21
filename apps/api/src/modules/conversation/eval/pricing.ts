@@ -1,4 +1,4 @@
-import type { TokenTotals } from './eval-types';
+import type { TokenTotals } from './eval-types.js';
 
 /**
  * USD per 1M tokens, from the Anthropic first party price list as of

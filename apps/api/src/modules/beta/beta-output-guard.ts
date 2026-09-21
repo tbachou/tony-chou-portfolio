@@ -13,7 +13,7 @@
  * valid. Each rule below names its source line.
  */
 
-import { namePrescribesFullCrimp, normalizeForMatch } from './beta.constants';
+import { namePrescribesFullCrimp, normalizeForMatch } from './beta.constants.js';
 
 // ---------------------------------------------------------------------------
 // The plan shape the drafter produces, and how code (never the model) turns

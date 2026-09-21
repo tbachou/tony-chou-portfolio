@@ -4,11 +4,11 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { GradeService, normalizeHistogram } from './grade.service';
-import type { PrismaService } from '../prisma/prisma.service';
-import type { GradeAnalysisService } from './grade-analysis.service';
-import type { PhotoStorageService } from '../grade-photos/photo-storage.service';
-import { publicIdFor, type GradePhoto } from './photo-pool';
+import { GradeService, normalizeHistogram } from './grade.service.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
+import type { GradeAnalysisService } from './grade-analysis.service.js';
+import type { PhotoStorageService } from '../grade-photos/photo-storage.service.js';
+import { publicIdFor, type GradePhoto } from './photo-pool.js';
 
 // The real PrismaService pulls in the generated client and the pg adapter;
 // these tests must never touch a database, so the module is stubbed and the

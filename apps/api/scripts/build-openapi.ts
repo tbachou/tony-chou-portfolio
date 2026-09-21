@@ -15,7 +15,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { renderArtifacts } from '../src/openapi/artifacts';
+import { renderArtifacts } from '../src/openapi/artifacts.js';
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..');
 

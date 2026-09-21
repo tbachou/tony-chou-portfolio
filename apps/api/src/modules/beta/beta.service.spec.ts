@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
-import { BetaService, parseDraftPlan, __testing } from './beta.service';
-import { renderPlanFallback } from './beta-output-guard';
+import { BetaService, parseDraftPlan, __testing } from './beta.service.js';
+import { renderPlanFallback } from './beta-output-guard.js';
 import type { BetaPlanRequest } from '@portfolio/shared';
 import {
   CONSTANT_REST_PAIN_MESSAGE,
@@ -13,14 +13,14 @@ import {
   REFUSAL_MESSAGE,
   MANDATORY_REST_PAIN_CAUTION,
   SCREENER_MODEL,
-} from './beta.constants';
-import type { PrismaService } from '../prisma/prisma.service';
+} from './beta.constants.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
 import type {
   AnthropicService,
   StreamMessageParams,
-} from '../anthropic/anthropic.service';
-import type { UpstreamErrorClassification } from '../anthropic/ai-provider.interface';
-import type { BetaUsageService } from './beta-usage.service';
+} from '../anthropic/anthropic.service.js';
+import type { UpstreamErrorClassification } from '../anthropic/ai-provider.interface.js';
+import type { BetaUsageService } from './beta-usage.service.js';
 
 // The agent prompts are markdown files read from disk relative to
 // process.cwd(); these tests lock pipeline behavior, not prompt contents,

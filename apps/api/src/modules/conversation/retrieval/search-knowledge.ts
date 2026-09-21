@@ -1,8 +1,8 @@
 import type { Index } from '@upstash/vector';
-import type { ToolDefinition, ToolExecutor } from '../../anthropic/ai-provider.interface';
-import type { StoryModel } from '../../../generated/prisma/models';
-import { evaluateTonyResponse } from '../ownership-guard';
-import { search, type RetrievedChunk } from './vector-store';
+import type { ToolDefinition, ToolExecutor } from '../../anthropic/ai-provider.interface.js';
+import type { StoryModel } from '../../../generated/prisma/models.js';
+import { evaluateTonyResponse } from '../ownership-guard.js';
+import { search, type RetrievedChunk } from './vector-store.js';
 
 /**
  * The `searchKnowledge` tool the Tony persona may call (spec 0012 phase three,

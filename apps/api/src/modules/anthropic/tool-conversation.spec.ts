@@ -4,8 +4,8 @@ import {
   type CreateMessage,
   type ProviderMessage,
   type ToolLoopRequest,
-} from './tool-conversation';
-import type { ToolDefinition } from './ai-provider.interface';
+} from './tool-conversation.js';
+import type { ToolDefinition } from './ai-provider.interface.js';
 
 const TOOL: ToolDefinition = {
   name: 'searchKnowledge',

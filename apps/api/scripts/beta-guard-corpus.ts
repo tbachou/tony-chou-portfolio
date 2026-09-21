@@ -39,11 +39,11 @@ loadEnv({ path: path.resolve(__dirname, '..', '.env') });
 // substitute copy on a live model call.
 process.env.BETA_OUTPUT_GUARD_MODE = 'shadow';
 
-import { BetaService } from '../src/modules/beta/beta.service';
-import { AnthropicService } from '../src/modules/anthropic/anthropic.service';
-import type { PrismaService } from '../src/modules/prisma/prisma.service';
-import type { BetaUsageService } from '../src/modules/beta/beta-usage.service';
-import { DRAFTER_MODEL } from '../src/modules/beta/beta.constants';
+import { BetaService } from '../src/modules/beta/beta.service.js';
+import { AnthropicService } from '../src/modules/anthropic/anthropic.service.js';
+import type { PrismaService } from '../src/modules/prisma/prisma.service.js';
+import type { BetaUsageService } from '../src/modules/beta/beta-usage.service.js';
+import { DRAFTER_MODEL } from '../src/modules/beta/beta.constants.js';
 import type {
   AiProvider,
   ForceToolCallParams,
@@ -53,9 +53,9 @@ import type {
   RunToolConversationParams,
   RunToolConversationResult,
   UpstreamErrorClassification,
-} from '../src/modules/anthropic/ai-provider.interface';
-import { CORPUS, type CorpusProfile } from './beta-guard-corpus.profiles';
-import { toolLoopRefusalReason } from '../src/modules/anthropic/harness-replay';
+} from '../src/modules/anthropic/ai-provider.interface.js';
+import { CORPUS, type CorpusProfile } from './beta-guard-corpus.profiles.js';
+import { toolLoopRefusalReason } from '../src/modules/anthropic/harness-replay.js';
 
 /**
  * Wraps the real provider so the screener and drafter can be recorded once

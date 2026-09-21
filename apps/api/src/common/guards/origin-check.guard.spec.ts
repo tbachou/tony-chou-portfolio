@@ -1,5 +1,5 @@
 import { ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
-import { OriginCheckGuard } from './origin-check.guard';
+import { OriginCheckGuard } from './origin-check.guard.js';
 
 /**
  * A minimal ExecutionContext. Only `getType` and the http request are read, so

@@ -1,5 +1,5 @@
-import { canSaveBaseline, evaluateRunOutcome } from './run-outcome';
-import { checkIndexPopulation } from '../retrieval/index-health';
+import { canSaveBaseline, evaluateRunOutcome } from './run-outcome.js';
+import { checkIndexPopulation } from '../retrieval/index-health.js';
 
 describe('evaluateRunOutcome (AC-9, the mid-run half)', () => {
   it('fails the run when retrieval was strict and a case failed to generate', () => {

@@ -3,7 +3,7 @@ import {
   Logger,
   type ArgumentsHost,
 } from '@nestjs/common';
-import { isFileTooLarge, MulterErrorFilter } from './multer-error.filter';
+import { isFileTooLarge, MulterErrorFilter } from './multer-error.filter.js';
 
 function makeHost() {
   const response = {

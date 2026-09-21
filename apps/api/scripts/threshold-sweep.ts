@@ -36,9 +36,9 @@ import {
   MINIMUM_SIMILARITY,
   openReadOnly,
   isRetrievalConfigured,
-} from '../src/modules/conversation/retrieval/vector-store';
-import { checkIndexPopulation } from '../src/modules/conversation/retrieval/index-health';
-import { POSITIVES, NEGATIVES, type LabelledQuery } from './threshold-sweep.queries';
+} from '../src/modules/conversation/retrieval/vector-store.js';
+import { checkIndexPopulation } from '../src/modules/conversation/retrieval/index-health.js';
+import { POSITIVES, NEGATIVES, type LabelledQuery } from './threshold-sweep.queries.js';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const MANIFEST_PATH = path.join(REPO_ROOT, 'docs', 'evals', 'interview', 'corpus.json');

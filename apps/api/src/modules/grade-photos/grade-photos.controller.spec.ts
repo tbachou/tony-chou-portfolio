@@ -8,8 +8,8 @@ jest.mock('../prisma/prisma.service', () => ({
 }));
 
 import { BadRequestException } from '@nestjs/common';
-import { GradePhotosController } from './grade-photos.controller';
-import type { GradePhotosService } from './grade-photos.service';
+import { GradePhotosController } from './grade-photos.controller.js';
+import type { GradePhotosService } from './grade-photos.service.js';
 
 function makeController() {
   const service = {

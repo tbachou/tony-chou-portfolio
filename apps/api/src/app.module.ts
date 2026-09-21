@@ -3,21 +3,21 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from '@thallesp/nestjs-better-auth';
-import { auth } from './lib/auth';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
-import { OriginCheckGuard } from './common/guards/origin-check.guard';
-import { HealthModule } from './modules/health/health.module';
-import { PrismaModule } from './modules/prisma/prisma.module';
-import { StoriesModule } from './modules/stories/stories.module';
-import { TopicsModule } from './modules/topics/topics.module';
-import { ConversationModule } from './modules/conversation/conversation.module';
-import { UsageSummaryModule } from './modules/usage-summary/usage-summary.module';
-import { BetaModule } from './modules/beta/beta.module';
-import { FeedbackModule } from './modules/feedback/feedback.module';
-import { GradeModule } from './modules/grade/grade.module';
-import { GradePhotosModule } from './modules/grade-photos/grade-photos.module';
+import { auth } from './lib/auth.js';
+import { AppController } from './app.controller.js';
+import { AppService } from './app.service.js';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor.js';
+import { OriginCheckGuard } from './common/guards/origin-check.guard.js';
+import { HealthModule } from './modules/health/health.module.js';
+import { PrismaModule } from './modules/prisma/prisma.module.js';
+import { StoriesModule } from './modules/stories/stories.module.js';
+import { TopicsModule } from './modules/topics/topics.module.js';
+import { ConversationModule } from './modules/conversation/conversation.module.js';
+import { UsageSummaryModule } from './modules/usage-summary/usage-summary.module.js';
+import { BetaModule } from './modules/beta/beta.module.js';
+import { FeedbackModule } from './modules/feedback/feedback.module.js';
+import { GradeModule } from './modules/grade/grade.module.js';
+import { GradePhotosModule } from './modules/grade-photos/grade-photos.module.js';
 
 /**
  * Grade Guesser is behind a flag until it is released (spec 0006 is built

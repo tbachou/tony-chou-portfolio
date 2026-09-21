@@ -4,7 +4,7 @@ import {
   type Difficulty,
   type DimensionResult,
   type RunResults,
-} from './eval-types';
+} from './eval-types.js';
 
 export function scored(score: number): DimensionResult {
   return { status: 'scored', score, reason: 'test' };

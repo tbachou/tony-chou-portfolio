@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { AnthropicService } from './anthropic.service';
-import { totalInputTokens } from './ai-provider.interface';
+import { AnthropicService } from './anthropic.service.js';
+import { totalInputTokens } from './ai-provider.interface.js';
 
 /**
  * The real APIError/APIConnectionError constructors demand a fetch Headers

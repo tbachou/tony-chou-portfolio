@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { GradePhotosController } from './grade-photos.controller';
-import { GradePhotosService } from './grade-photos.service';
-import { PhotoStorageService } from './photo-storage.service';
+import { GradePhotosController } from './grade-photos.controller.js';
+import { GradePhotosService } from './grade-photos.service.js';
+import { PhotoStorageService } from './photo-storage.service.js';
 
 /**
  * Grade Guesser's photo pool admin (spec 0006 R3).

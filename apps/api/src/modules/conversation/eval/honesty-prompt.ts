@@ -1,4 +1,4 @@
-import type { StoryModel } from '../../../generated/prisma/models';
+import type { StoryModel } from '../../../generated/prisma/models.js';
 
 /**
  * Assembles what the honesty judge is shown (spec 0011 AC-3, spec 0012 phase

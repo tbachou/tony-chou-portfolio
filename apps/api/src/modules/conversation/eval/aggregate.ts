@@ -6,7 +6,7 @@ import {
   type Difficulty,
   type Dimension,
   type DimensionAggregate,
-} from './eval-types';
+} from './eval-types.js';
 
 /**
  * Aggregation rules (AC-6, AC-7):

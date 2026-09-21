@@ -5,15 +5,15 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '../../generated/prisma/client';
-import { utcDateOnly } from '../../common/utils/date.util';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import { utcDateOnly } from '../../common/utils/date.util.js';
 import {
   BETA_GLOBAL_DAILY_CAP,
   BETA_IP_DAILY_CAP,
   DEMO_BUDGET_MESSAGE,
   IP_LIMIT_MESSAGE,
-} from './beta.constants';
+} from './beta.constants.js';
 
 export type BetaStatus = {
   available: boolean;

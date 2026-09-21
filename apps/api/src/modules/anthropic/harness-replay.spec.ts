@@ -1,4 +1,4 @@
-import { toolLoopRefusalReason } from './harness-replay';
+import { toolLoopRefusalReason } from './harness-replay.js';
 
 describe('toolLoopRefusalReason', () => {
   it('refuses replay, where a live call would contradict the run', () => {

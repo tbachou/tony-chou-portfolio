@@ -4,17 +4,17 @@ import {
   type GradeGuessRequest,
   type GradeProblemIdParam,
 } from '@portfolio/shared';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
-import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard';
+import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard.js';
 import {
   GradeService,
   type GradeProblemImage,
   type GradeProblemList,
   type GradeReveal,
-} from './grade.service';
+} from './grade.service.js';
 
 /**
  * Grade Guesser, the climbing-grade game (spec 0006).

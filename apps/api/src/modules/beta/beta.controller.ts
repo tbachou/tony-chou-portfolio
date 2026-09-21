@@ -1,5 +1,5 @@
 import { betaPlanRequestSchema, type BetaPlanRequest } from '@portfolio/shared';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import {
   Body,
   Controller,
@@ -17,11 +17,11 @@ import {
   hashIp,
   rateLimitIdentity,
   resolveClientIp,
-} from '../../common/utils/ip-hash.util';
-import { writeSseEvent } from '../conversation/sse.util';
-import { BetaThrottlerGuard } from './beta-throttler.guard';
-import { BetaService } from './beta.service';
-import { BetaUsageService, type BetaStatus } from './beta-usage.service';
+} from '../../common/utils/ip-hash.util.js';
+import { writeSseEvent } from '../conversation/sse.util.js';
+import { BetaThrottlerGuard } from './beta-throttler.guard.js';
+import { BetaService } from './beta.service.js';
+import { BetaUsageService, type BetaStatus } from './beta-usage.service.js';
 
 @Controller('beta')
 @AllowAnonymous()

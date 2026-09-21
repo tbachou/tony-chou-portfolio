@@ -12,11 +12,11 @@ import {
   type RunToolConversationResult,
   totalInputTokens,
   type UpstreamErrorClassification,
-} from './ai-provider.interface';
+} from './ai-provider.interface.js';
 import {
   runToolConversation,
   type ProviderMessage,
-} from './tool-conversation';
+} from './tool-conversation.js';
 
 /**
  * Bedrock implementation of `AiProvider` (spec 0005 provider-swap child):

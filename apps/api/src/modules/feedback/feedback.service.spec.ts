@@ -1,8 +1,8 @@
 import { HttpException, Logger } from '@nestjs/common';
-import { FeedbackService } from './feedback.service';
-import { FEEDBACK_IP_DAILY_CAP, FEEDBACK_RATE_LIMIT_MESSAGE } from './feedback.constants';
-import type { PrismaService } from '../prisma/prisma.service';
-import type { FeedbackSnsPublisher } from './feedback-sns.publisher';
+import { FeedbackService } from './feedback.service.js';
+import { FEEDBACK_IP_DAILY_CAP, FEEDBACK_RATE_LIMIT_MESSAGE } from './feedback.constants.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
+import type { FeedbackSnsPublisher } from './feedback-sns.publisher.js';
 import type { CreateFeedback } from '@portfolio/shared';
 
 // The real PrismaService pulls in the generated client and the pg adapter;

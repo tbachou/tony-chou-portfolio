@@ -1,7 +1,7 @@
 import {
   DEFAULT_ALLOWED_ORIGIN,
   resolveAllowedOrigins,
-} from './allowed-origins.util';
+} from './allowed-origins.util.js';
 
 describe('resolveAllowedOrigins', () => {
   const original = process.env.CORS_ORIGIN;

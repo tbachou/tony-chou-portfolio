@@ -15,7 +15,7 @@
 import {
   OBJECT_KEY_PREFIX,
   STORED_EXTENSION,
-} from '../grade-photos/grade-photos.constants';
+} from '../grade-photos/grade-photos.constants.js';
 
 /**
  * The fields the game needs from a `GradePhoto` row.

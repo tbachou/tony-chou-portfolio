@@ -1,4 +1,4 @@
-import { aggregate } from './aggregate';
+import { aggregate } from './aggregate.js';
 import {
   DIMENSIONS,
   type BaselineComparison,
@@ -6,7 +6,7 @@ import {
   type Dimension,
   type DimensionDelta,
   type RunResults,
-} from './eval-types';
+} from './eval-types.js';
 
 /**
  * The noise band (AC-9): the per dimension absolute spread observed between

@@ -1,11 +1,11 @@
 import { Logger } from '@nestjs/common';
-import { GradeAnalysisService, parseAnalysis } from './grade-analysis.service';
+import { GradeAnalysisService, parseAnalysis } from './grade-analysis.service.js';
 import {
   GRADER_MODEL_ANTHROPIC,
   GRADER_MODEL_BEDROCK,
-} from './grade.constants';
-import type { PrismaService } from '../prisma/prisma.service';
-import type { AiProvider } from '../anthropic/ai-provider.interface';
+} from './grade.constants.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
+import type { AiProvider } from '../anthropic/ai-provider.interface.js';
 
 // Same reason as grade.service.spec.ts: the real PrismaService drags in the
 // generated client and the pg adapter, and these tests touch no database.

@@ -7,7 +7,7 @@ import {
   CLINICAL_RULES,
   everyRuleIdKnown,
   findClinicalRule,
-} from './clinical-rules';
+} from './clinical-rules.js';
 
 // The real prompt file, not a fixture and not the mocked skill loader. The
 // whole point of this spec is that the registry and the prompt cannot drift,

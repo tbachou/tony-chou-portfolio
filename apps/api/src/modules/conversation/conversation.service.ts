@@ -1,29 +1,29 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
-import { readNumericEnv } from '../../common/config/env.config';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { readNumericEnv } from '../../common/config/env.config.js';
 import {
   AI_PROVIDER,
   resolveConfiguredProvider,
   type AiProvider,
-} from '../anthropic/ai-provider.interface';
-import { usageFromError } from '../anthropic/tool-conversation';
-import { ConversationRole } from '../../generated/prisma/enums';
-import { Prisma } from '../../generated/prisma/client';
-import type { StoryModel, TopicModel } from '../../generated/prisma/models';
-import { loadConversationSkill } from './skill-loader';
-import { TURN_ERROR_MESSAGE } from './conversation.constants';
+} from '../anthropic/ai-provider.interface.js';
+import { usageFromError } from '../anthropic/tool-conversation.js';
+import { ConversationRole } from '../../generated/prisma/enums.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import type { StoryModel, TopicModel } from '../../generated/prisma/models.js';
+import { loadConversationSkill } from './skill-loader.js';
+import { TURN_ERROR_MESSAGE } from './conversation.constants.js';
 import {
   createSearchKnowledgeExecutor,
   MAX_TOOL_ITERATIONS,
   retrievalStrictFromEnv,
   SEARCH_KNOWLEDGE_TOOL,
   type RetrievalStats,
-} from './retrieval/search-knowledge';
+} from './retrieval/search-knowledge.js';
 import {
   isRetrievalConfigured,
   openReadOnly,
-} from './retrieval/vector-store';
+} from './retrieval/vector-store.js';
 import {
   CREDENTIAL_GUARD_FALLBACK,
   CREDENTIAL_GUARD_REASON,
@@ -31,8 +31,8 @@ import {
   GENERIC_GUARD_FALLBACK,
   isBlankResponse,
   splitIntoChunks,
-} from './ownership-guard';
-import { DailyUsageService } from '../daily-usage/daily-usage.service';
+} from './ownership-guard.js';
+import { DailyUsageService } from '../daily-usage/daily-usage.service.js';
 
 export type HistoryTurn = {
   role: 'interviewer' | 'tony';

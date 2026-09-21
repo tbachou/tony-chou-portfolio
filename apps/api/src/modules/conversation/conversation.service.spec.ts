@@ -1,15 +1,15 @@
 import { Logger } from '@nestjs/common';
-import { ConversationService } from './conversation.service';
-import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums';
-import type { PrismaService } from '../prisma/prisma.service';
-import type { AiProvider } from '../anthropic/ai-provider.interface';
-import { TURN_ERROR_MESSAGE } from './conversation.constants';
-import { runToolConversation } from '../anthropic/tool-conversation';
-import type { DailyUsageService } from '../daily-usage/daily-usage.service';
+import { ConversationService } from './conversation.service.js';
+import { ConversationRole, StoryOwnership } from '../../generated/prisma/enums.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
+import type { AiProvider } from '../anthropic/ai-provider.interface.js';
+import { TURN_ERROR_MESSAGE } from './conversation.constants.js';
+import { runToolConversation } from '../anthropic/tool-conversation.js';
+import type { DailyUsageService } from '../daily-usage/daily-usage.service.js';
 import type {
   HistoryTurn,
   TopicWithStories,
-} from './conversation.service';
+} from './conversation.service.js';
 
 // PrismaService is only referenced through constructor injection; the real
 // module drags in the generated Prisma client, which no test may touch.

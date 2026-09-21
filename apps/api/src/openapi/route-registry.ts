@@ -35,7 +35,7 @@ import {
   gradeProblemIdParamSchema,
   setPhotoActiveSchema,
 } from '@portfolio/shared';
-import type { JsonSchema, ResponseSpec, RouteEntry } from './types';
+import type { JsonSchema, ResponseSpec, RouteEntry } from './types.js';
 
 const JSON_TYPE = 'application/json';
 const SSE_TYPE = 'text/event-stream';

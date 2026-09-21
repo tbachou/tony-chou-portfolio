@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { DailyUsageService } from './daily-usage.service';
-import type { PrismaService } from '../prisma/prisma.service';
+import { DailyUsageService } from './daily-usage.service.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
 
 // The real PrismaService pulls in the generated client and the pg adapter;
 // these tests must never touch a database, so the module is stubbed and the

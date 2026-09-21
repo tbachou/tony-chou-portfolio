@@ -32,16 +32,16 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as shared from '@portfolio/shared';
-import { renderArtifacts } from '../src/openapi/artifacts';
+import { renderArtifacts } from '../src/openapi/artifacts.js';
 import {
   registeredControllers,
   routeKey,
   scanControllers,
   type ScanResult,
   type ScannedRoute,
-} from '../src/openapi/controller-scan';
-import { ROUTES } from '../src/openapi/route-registry';
-import type { RouteEntry } from '../src/openapi/types';
+} from '../src/openapi/controller-scan.js';
+import { ROUTES } from '../src/openapi/route-registry.js';
+import type { RouteEntry } from '../src/openapi/types.js';
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..');
 const SOURCE_DIR = resolve(__dirname, '..', 'src');

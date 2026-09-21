@@ -1,4 +1,4 @@
-import { hashDataset } from './dataset-hash';
+import { hashDataset } from './dataset-hash.js';
 
 describe('hashDataset', () => {
   it('is stable across object key order', () => {

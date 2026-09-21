@@ -11,7 +11,7 @@ import {
   OBJECT_KEY_PREFIX,
   OBJECT_KEY_RANDOM_BYTES,
   PRESIGN_TTL_SECONDS,
-} from './grade-photos.constants';
+} from './grade-photos.constants.js';
 
 /**
  * The private bucket holding photo objects (spec 0006 R1).

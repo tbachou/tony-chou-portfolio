@@ -1,6 +1,6 @@
-import { compareToBaseline, computeNoiseBand } from './baseline';
-import { makeCase, makeRun, scored } from './test-fixtures';
-import type { BaselineFile } from './eval-types';
+import { compareToBaseline, computeNoiseBand } from './baseline.js';
+import { makeCase, makeRun, scored } from './test-fixtures.js';
+import type { BaselineFile } from './eval-types.js';
 
 function runWithHonesty(scores: number[], datasetHash = 'hash-a') {
   return makeRun(

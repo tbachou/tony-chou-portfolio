@@ -1,11 +1,11 @@
-import { aggregate } from './aggregate';
-import { compareToBaseline } from './baseline';
+import { aggregate } from './aggregate.js';
+import { compareToBaseline } from './baseline.js';
 import {
   DIFFICULTIES,
   DIMENSIONS,
   type BaselineFile,
   type RunResults,
-} from './eval-types';
+} from './eval-types.js';
 
 /**
  * Renders `docs/evals/interview/scoreboard.md`: a pure projection of the

@@ -4,7 +4,7 @@ import {
   STORED_CONTENT_TYPE,
   STORED_EXTENSION,
   STORED_QUALITY,
-} from './grade-photos.constants';
+} from './grade-photos.constants.js';
 
 export type ProcessedImage = {
   buffer: Buffer;

@@ -23,7 +23,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import * as path from 'node:path';
-import { collectCorpus, hashCorpus } from '../src/modules/conversation/retrieval/corpus';
+import { collectCorpus, hashCorpus } from '../src/modules/conversation/retrieval/corpus.js';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const MANIFEST_PATH = path.join(REPO_ROOT, 'docs', 'evals', 'interview', 'corpus.json');

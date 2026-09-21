@@ -5,7 +5,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { resolveAllowedOrigins } from '../utils/allowed-origins.util';
+import { resolveAllowedOrigins } from '../utils/allowed-origins.util.js';
 
 /** The methods that change state, and so are worth forging. */
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

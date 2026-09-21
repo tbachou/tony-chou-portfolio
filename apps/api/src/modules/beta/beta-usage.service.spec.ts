@@ -3,14 +3,14 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { BetaUsageService } from './beta-usage.service';
+import { BetaUsageService } from './beta-usage.service.js';
 import {
   BETA_GLOBAL_DAILY_CAP,
   BETA_IP_DAILY_CAP,
   DEMO_BUDGET_MESSAGE,
   IP_LIMIT_MESSAGE,
-} from './beta.constants';
-import type { PrismaService } from '../prisma/prisma.service';
+} from './beta.constants.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
 
 // The real PrismaService pulls in the generated client and the pg adapter;
 // these tests must never touch a database, so the module is stubbed and the

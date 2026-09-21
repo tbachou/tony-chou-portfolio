@@ -13,8 +13,8 @@
  */
 import { toJSONSchema } from 'zod';
 import type { ZodType } from 'zod';
-import { ROUTES } from './route-registry';
-import type { JsonSchema, RouteEntry } from './types';
+import { ROUTES } from './route-registry.js';
+import type { JsonSchema, RouteEntry } from './types.js';
 
 /**
  * Bumped by hand. It is not read from `apps/api/package.json`, which still

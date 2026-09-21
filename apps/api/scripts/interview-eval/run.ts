@@ -23,50 +23,50 @@ import { execFileSync, execSync } from 'node:child_process';
 
 loadEnv({ path: path.resolve(__dirname, '..', '..', '.env') });
 
-import { AnthropicService } from '../../src/modules/anthropic/anthropic.service';
-import { BedrockAnthropicService } from '../../src/modules/anthropic/bedrock-anthropic.service';
+import { AnthropicService } from '../../src/modules/anthropic/anthropic.service.js';
+import { BedrockAnthropicService } from '../../src/modules/anthropic/bedrock-anthropic.service.js';
 import {
   resolveConfiguredProvider,
   type AiProvider,
-} from '../../src/modules/anthropic/ai-provider.interface';
-import { hashDataset } from '../../src/modules/conversation/eval/dataset-hash';
+} from '../../src/modules/anthropic/ai-provider.interface.js';
+import { hashDataset } from '../../src/modules/conversation/eval/dataset-hash.js';
 import {
   estimateCostUsd,
   PRICE_TABLE,
-} from '../../src/modules/conversation/eval/pricing';
-import { aggregate } from '../../src/modules/conversation/eval/aggregate';
-import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
-import { STATUS_ARGS } from '../../src/modules/conversation/eval/dirty-tree';
-import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
+} from '../../src/modules/conversation/eval/pricing.js';
+import { aggregate } from '../../src/modules/conversation/eval/aggregate.js';
+import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline.js';
+import { STATUS_ARGS } from '../../src/modules/conversation/eval/dirty-tree.js';
+import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard.js';
 import {
   RESULTS_PROVENANCE,
   type BaselineFile,
   type CaseResult,
   type RunResults,
   type TokenTotals,
-} from '../../src/modules/conversation/eval/eval-types';
-import { selectCases } from '../../src/modules/conversation/eval/select-cases';
-import { GOLDEN_CASES, type EvalCase } from './golden';
-import { datasetHashPayload, runCase } from './harness';
+} from '../../src/modules/conversation/eval/eval-types.js';
+import { selectCases } from '../../src/modules/conversation/eval/select-cases.js';
+import { GOLDEN_CASES, type EvalCase } from './golden.js';
+import { datasetHashPayload, runCase } from './harness.js';
 import {
   collectCorpus,
   hashCorpus,
   type CorpusManifest,
-} from '../../src/modules/conversation/retrieval/corpus';
+} from '../../src/modules/conversation/retrieval/corpus.js';
 import {
   RETRIEVAL_STRICT_ENV,
   retrievalStrictFromEnv,
-} from '../../src/modules/conversation/retrieval/search-knowledge';
+} from '../../src/modules/conversation/retrieval/search-knowledge.js';
 import {
   openReadOnly,
   search as searchIndex,
-} from '../../src/modules/conversation/retrieval/vector-store';
-import { checkIndexPopulation } from '../../src/modules/conversation/retrieval/index-health';
+} from '../../src/modules/conversation/retrieval/vector-store.js';
+import { checkIndexPopulation } from '../../src/modules/conversation/retrieval/index-health.js';
 import {
   canSaveBaseline,
   evaluateRunOutcome,
-} from '../../src/modules/conversation/eval/run-outcome';
-import { JUDGE_MODEL } from './scorers/judge-client';
+} from '../../src/modules/conversation/eval/run-outcome.js';
+import { JUDGE_MODEL } from './scorers/judge-client.js';
 
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);

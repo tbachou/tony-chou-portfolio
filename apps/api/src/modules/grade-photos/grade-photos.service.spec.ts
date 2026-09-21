@@ -5,9 +5,9 @@ import {
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import sharp from 'sharp';
-import type { PrismaService } from '../prisma/prisma.service';
-import { GradePhotosService, isRecordNotFound } from './grade-photos.service';
-import type { PhotoStorageService } from './photo-storage.service';
+import type { PrismaService } from '../prisma/prisma.service.js';
+import { GradePhotosService, isRecordNotFound } from './grade-photos.service.js';
+import type { PhotoStorageService } from './photo-storage.service.js';
 import type { CreateGradePhoto } from '@portfolio/shared';
 
 jest.mock('../prisma/prisma.service', () => ({

@@ -2,7 +2,7 @@ import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import {
   assertBedrockCredentialsConfigured,
   BedrockAnthropicService,
-} from './bedrock-anthropic.service';
+} from './bedrock-anthropic.service.js';
 
 /** Same prototypal-construction technique as anthropic.service.spec.ts, against the Bedrock SDK's own error classes. */
 function fakeBedrockApiError(

@@ -11,7 +11,7 @@ import {
   namePrescribesFullCrimp,
   matchesInjectionBlocklist,
   normalizeForMatch,
-} from './beta.constants';
+} from './beta.constants.js';
 
 describe('normalizeForMatch', () => {
   it.each([
