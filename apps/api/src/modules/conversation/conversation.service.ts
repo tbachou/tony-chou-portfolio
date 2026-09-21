@@ -46,6 +46,7 @@ import {
   CREDENTIAL_VERDICT_SCHEMA,
   isCredentialCheckEnabled,
   needsCredentialCheck,
+  wrapAnswerForCredentialCheck,
   type CredentialVerifierResult,
 } from './credential-check.js';
 
@@ -165,7 +166,7 @@ export class ConversationService implements OnModuleInit {
         await this.anthropicDirect.forceToolCall({
           model: CREDENTIAL_CHECK_MODEL,
           system: loadConversationSkill('credential-check'),
-          userMessage: text,
+          userMessage: wrapAnswerForCredentialCheck(text),
           maxTokens: 200,
           toolName: 'report_credential_verdict',
           toolDescription:

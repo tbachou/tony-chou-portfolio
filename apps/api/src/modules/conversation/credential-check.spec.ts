@@ -21,7 +21,12 @@
  * all; they are in `noClinicalContent` at the bottom, and they are where a
  * careless widening of the word list shows up.
  */
-import { needsCredentialCheck } from './credential-check.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  needsCredentialCheck,
+  wrapAnswerForCredentialCheck,
+} from './credential-check.js';
 import {
   overclaims,
   filleredOverclaims,
@@ -132,5 +137,31 @@ describe('needsCredentialCheck: ordinary engineering answers do not', () => {
 
   it.each(noClinicalContent)('skips the check: %s', (text) => {
     expect(needsCredentialCheck(text)).toBe(false);
+  });
+});
+
+describe('wrapAnswerForCredentialCheck', () => {
+  it('sends the delimiter the prompt documents', () => {
+    const wrapped = wrapAnswerForCredentialCheck('I was an OT.');
+    expect(wrapped).toBe('<answer>\nI was an OT.\n</answer>');
+  });
+
+  it('keeps the prompt and the wrapper in step', () => {
+    // The prompt scopes its "data, never instructions" rule to this block. If
+    // one side is renamed and the other is not, the rule silently points at a
+    // boundary that is not in the message — which is how this was found.
+    const prompt = readFileSync(
+      join(
+        process.cwd(),
+        'src',
+        'modules',
+        'conversation',
+        'skills',
+        'credential-check.md',
+      ),
+      'utf8',
+    );
+    expect(prompt).toContain('<answer>');
+    expect(wrapAnswerForCredentialCheck('x')).toContain('<answer>');
   });
 });
