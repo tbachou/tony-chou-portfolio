@@ -14,8 +14,8 @@ import { registeredControllers, routeKey, scanControllers } from './controller-s
 import { ROUTES } from './route-registry.js';
 import type { RouteEntry } from './types.js';
 
-const SOURCE_DIR = resolve(__dirname, '..');
-const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
+const SOURCE_DIR = resolve(import.meta.dirname, '..');
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..', '..');
 
 const scan = scanControllers(SOURCE_DIR, REPO_ROOT);
 const registered = registeredControllers(SOURCE_DIR);

@@ -5,7 +5,7 @@
  * at module load). This file must stay side effect free: types, enums, and
  * plain arrays only.
  */
-import { StoryOwnership } from '../src/generated/prisma/enums';
+import { StoryOwnership } from '../src/generated/prisma/enums.js';
 
 export type TopicSeed = {
   slug: string;

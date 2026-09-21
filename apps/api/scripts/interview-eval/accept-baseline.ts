@@ -18,7 +18,7 @@ import type {
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard.js';
 
 const EVALS = path.resolve(
-  __dirname,
+  import.meta.dirname,
   '..',
   '..',
   '..',

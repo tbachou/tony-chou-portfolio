@@ -21,7 +21,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 
-loadEnv({ path: path.resolve(__dirname, '..', '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '..', '.env') });
 
 import { AnthropicService } from '../../src/modules/anthropic/anthropic.service.js';
 import { BedrockAnthropicService } from '../../src/modules/anthropic/bedrock-anthropic.service.js';
@@ -359,7 +359,7 @@ async function main(): Promise<void> {
   const concurrency = Math.max(1, numFlag('concurrency', 2));
   const maxCostUsd = numFlag('max-cost', 2);
   const outDir = path.resolve(
-    arg('out') ?? path.resolve(__dirname, '..', '..', '..', '..', 'docs', 'evals', 'interview'),
+    arg('out') ?? path.resolve(import.meta.dirname, '..', '..', '..', '..', 'docs', 'evals', 'interview'),
   );
 
   const cases: EvalCase[] = selectCases(GOLDEN_CASES, caseCap);
@@ -511,7 +511,7 @@ async function main(): Promise<void> {
       // either the cwd or the repo root.
       const candidates = [
         path.resolve(noiseFrom),
-        path.resolve(__dirname, '..', '..', '..', '..', noiseFrom),
+        path.resolve(import.meta.dirname, '..', '..', '..', '..', noiseFrom),
       ];
       const noisePath = candidates.find((p) => fs.existsSync(p));
       if (!noisePath) {

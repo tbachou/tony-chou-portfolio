@@ -34,7 +34,7 @@ import { config as loadEnv } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-loadEnv({ path: path.resolve(__dirname, '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
 import { AnthropicService } from '../src/modules/anthropic/anthropic.service.js';
 import { loadBetaSkill } from '../src/modules/beta/skill-loader.js';

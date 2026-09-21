@@ -13,7 +13,7 @@ import { config as loadEnv } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-loadEnv({ path: path.resolve(__dirname, '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
 import { chunkMarkdown, oversizedChunks, type Chunk } from '../src/modules/conversation/retrieval/chunk.js';
 import {
@@ -23,7 +23,7 @@ import {
 } from '../src/modules/conversation/retrieval/corpus.js';
 import { openForWriting, replaceAll } from '../src/modules/conversation/retrieval/vector-store.js';
 
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const MANIFEST_PATH = path.join(REPO_ROOT, 'docs', 'evals', 'interview', 'corpus.json');
 
 function readManifest(): CorpusManifest | null {

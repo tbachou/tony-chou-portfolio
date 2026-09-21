@@ -43,8 +43,8 @@ import {
 import { ROUTES } from '../src/openapi/route-registry.js';
 import type { RouteEntry } from '../src/openapi/types.js';
 
-const REPO_ROOT = resolve(__dirname, '..', '..', '..');
-const SOURCE_DIR = resolve(__dirname, '..', 'src');
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
+const SOURCE_DIR = resolve(import.meta.dirname, '..', 'src');
 
 /** Which registry field a binding of each kind must agree with. */
 const SCHEMA_FIELD = {

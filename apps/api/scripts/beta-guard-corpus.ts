@@ -31,7 +31,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-loadEnv({ path: path.resolve(__dirname, '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
 // Shadow, always. Set before BetaService is imported so there is no window in
 // which a stray read sees the ambient value, and hard-coded rather than
@@ -371,7 +371,7 @@ async function main(): Promise<void> {
     // thousand words of model prose per profile, and a default that wrote into
     // the repo is one `git add -A` away from committing all of it. Pass --out
     // explicitly to place an artifact you actually mean to keep.
-    path.resolve(__dirname, '..', '.corpus', 'ac-g9-corpus-run.json');
+    path.resolve(import.meta.dirname, '..', '.corpus', 'ac-g9-corpus-run.json');
 
   let profiles = CORPUS;
   if (only) profiles = profiles.filter((p) => p.id === only);

@@ -1,9 +1,9 @@
-import { prisma } from '../src/lib/prisma';
-import { auth } from '../src/lib/auth';
+import { prisma } from '../src/lib/prisma.js';
+import { auth } from '../src/lib/auth.js';
 // The seed arrays live in fixtures.ts (side effect free) so the interview
 // eval harness (spec 0011) can import them without pulling in the Prisma
 // client or better-auth at module load.
-import { topics, stories } from './fixtures';
+import { topics, stories } from './fixtures.js';
 
 async function main() {
   await prisma.conversationTurn.deleteMany();
