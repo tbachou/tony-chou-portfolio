@@ -6,7 +6,7 @@ The public portfolio on Vercel: a terminal-themed single-page site (interview si
 
 ## Stack
 
-Next.js 15 (App Router) · React 19 · Tailwind 3.4 mapped to CSS custom properties · React Three Fiber + drei (the opt-in 3D desk scene) · IBM Plex Mono via next/font · better-auth client for the internal admin.
+Next.js 16 (App Router) · React 19.3 · Tailwind 3.4 mapped to CSS custom properties · IBM Plex Mono via next/font · better-auth client for the internal admin.
 
 ## Commands
 
