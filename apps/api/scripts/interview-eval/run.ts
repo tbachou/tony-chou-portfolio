@@ -57,6 +57,7 @@ import {
   RETRIEVAL_STRICT_ENV,
   retrievalStrictFromEnv,
 } from '../../src/modules/conversation/retrieval/search-knowledge.js';
+import { RETRIEVAL_RERANK_MODE_ENV } from '../../src/modules/conversation/retrieval/reranker.js';
 import {
   openReadOnly,
   search as searchIndex,
@@ -345,6 +346,12 @@ async function main(): Promise<void> {
   // From here on a retrieval failure aborts the case rather than degrading
   // quietly (AC-9). Production never sets this.
   process.env[RETRIEVAL_STRICT_ENV] = '1';
+  // Phase six AC-10: the eval runs the reranker rather than stubbing it, and
+  // is deliberately decoupled from whatever the deployment is running. The
+  // published scoreboard entry for this phase is only meaningful if the eval
+  // exercised what ships; left to the default (`off`) the harness would
+  // silently measure the path the phase exists to replace.
+  process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
   if (process.argv.includes('--preflight-only')) {
     console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
     return;

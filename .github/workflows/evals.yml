@@ -71,6 +71,16 @@ jobs:
       # failure rather than an expensive, silent one.
       UPSTASH_VECTOR_REST_URL: ${{ secrets.UPSTASH_VECTOR_REST_URL }}
       UPSTASH_VECTOR_REST_TOKEN: ${{ secrets.UPSTASH_VECTOR_REST_TOKEN }}
+      # Retrieval reranking (spec 0012 phase six). The harness forces
+      # `enforce` regardless of what the deployment runs, so the scoreboard
+      # entry this phase publishes measures what actually ships (AC-10).
+      #
+      # A missing key here does NOT fail the run: the reranker fails open to
+      # the cosine selection (AC-6), so the eval would score the pre phase six
+      # path while reporting as though it had reranked. That is the quiet
+      # mis-measurement the preflight above exists to prevent, so it is worth
+      # reading the rerank log lines on the first run after this lands.
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
