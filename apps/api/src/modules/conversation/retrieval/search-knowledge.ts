@@ -2,7 +2,17 @@ import type { Index } from '@upstash/vector';
 import type { ToolDefinition, ToolExecutor } from '../../anthropic/ai-provider.interface.js';
 import type { StoryModel } from '../../../generated/prisma/models.js';
 import { evaluateTonyResponse } from '../ownership-guard.js';
-import { search, type RetrievedChunk } from './vector-store.js';
+import {
+  cosineSelection,
+  search,
+  searchCandidates,
+  type RetrievedChunk,
+} from './vector-store.js';
+import {
+  rerankCandidates,
+  rerankModeFromEnv,
+  type RerankMode,
+} from './reranker.js';
 
 /**
  * The `searchKnowledge` tool the Tony persona may call (spec 0012 phase three,
@@ -113,6 +123,40 @@ export const NO_QUERY_RESULT =
   'That search had no query, so nothing was looked up. Answer from the story ' +
   'instead, and do not mention the search.';
 
+/**
+ * One line per search when reranking is on (spec 0012 phase six, AC-9).
+ *
+ * Counts and paths only. The query and the chunk text are never part of it,
+ * which holds because nothing here carries them rather than because the
+ * fields happen to be short.
+ */
+export type RerankLogEntry = {
+  mode: RerankMode;
+  /** Candidates that survived the guard filter and were offered to the model. */
+  candidates: number;
+  /** How many the reranker kept. Zero with `fellBack: false` means none cleared. */
+  kept: number;
+  durationMs: number;
+  fellBack: boolean;
+  /**
+   * AC-8: the reranker's token usage for this one search, recorded here and
+   * nowhere else. Deliberately NOT added to `dailyUsage.incrementOp`: that
+   * counter backs the Anthropic daily cap, and a second provider's tokens
+   * inside it would quietly change what that cap means. A recorded figure,
+   * not a persisted running total, so there is no table and no migration.
+   */
+  inputTokens: number;
+  outputTokens: number;
+  /** Present only when it fell back. Never provider message text. */
+  cause?: string;
+  /**
+   * Shadow only: the document paths each path would have chosen, so
+   * disagreement between the two is countable from the logs alone.
+   */
+  cosinePaths?: string[];
+  rerankedPaths?: string[];
+};
+
 export type RetrievalStats = {
   calls: number;
   /** Chunks dropped because quoting them would fail the ownership guard. */
@@ -133,6 +177,11 @@ export type RetrievalStats = {
   latenciesMs: number[];
   /** Results returned per successful search, for the log line (AC-13). */
   resultCounts: number[];
+  /** Phase six AC-8: reranker tokens this turn. Recorded, never persisted. */
+  rerankInputTokens: number;
+  rerankOutputTokens: number;
+  /** Searches where the reranker could not decide and cosine was used. */
+  rerankFallbacks: number;
 };
 
 /**
@@ -207,7 +256,19 @@ export function createSearchKnowledgeExecutor(params: {
   openIndex: () => Index;
   /** The story under discussion. The guard filter below is story aware. */
   story: StoryModel;
+  /**
+   * What the interviewer actually asked, threaded down from `generateTurnPair`
+   * for the reranker (phase six, AC-3).
+   *
+   * The persona's search query is its own paraphrase of this and can drift
+   * from it, so relevance is judged against both. Unused when reranking is
+   * off, which is why it is optional rather than a new required argument at
+   * every call site.
+   */
+  interviewerQuestion?: string;
   onFailure: (cause: string) => void;
+  /** Phase six AC-9. One entry per search, only when reranking is on. */
+  onRerank?: (entry: RerankLogEntry) => void;
   /**
    * AC-9. When true a retrieval failure throws instead of degrading, which
    * aborts the generation and fails the eval case loudly. Production leaves
@@ -226,6 +287,9 @@ export function createSearchKnowledgeExecutor(params: {
     sourcePaths: [],
     latenciesMs: [],
     resultCounts: [],
+    rerankInputTokens: 0,
+    rerankOutputTokens: 0,
+    rerankFallbacks: 0,
   };
   let index: Index | null = null;
 
@@ -270,10 +334,73 @@ export function createSearchKnowledgeExecutor(params: {
     const startedAt = Date.now();
     try {
       index ??= params.openIndex();
-      const found = await search(index, query);
-      // Filtered BEFORE anything is counted or logged, so the recorded source
-      // paths are the ones actually handed to the model.
-      const chunks = filterChunksForStory(found, params.story);
+      const mode = rerankModeFromEnv();
+
+      // `found` is what the cosine path saw before the guard filter, and
+      // `chunks` is what actually reaches the model. Both modes produce both,
+      // so everything below this block is shared and the two paths cannot
+      // drift in how they count or report.
+      let found: RetrievedChunk[];
+      let chunks: RetrievedChunk[];
+
+      if (mode === 'off') {
+        // AC-1: the widened query is never issued. This is the pre phase six
+        // read path, unchanged, reached by a deployment that has not opted in.
+        found = await search(index, query);
+        // Filtered BEFORE anything is counted or logged, so the recorded source
+        // paths are the ones actually handed to the model.
+        chunks = filterChunksForStory(found, params.story);
+      } else {
+        const wide = await searchCandidates(index, query);
+        // AC-2: the guard filter runs BEFORE reranking, so no judgement is
+        // spent on a chunk that could never reach a visitor anyway.
+        const candidates = filterChunksForStory(wide, params.story);
+        const cosine = cosineSelection(candidates);
+
+        const rerank =
+          candidates.length > 0
+            ? await rerankCandidates({
+                candidates,
+                interviewerQuestion: params.interviewerQuestion ?? '',
+                searchQuery: query,
+              })
+            : null;
+
+        if (rerank) {
+          stats.rerankInputTokens += rerank.inputTokens;
+          stats.rerankOutputTokens += rerank.outputTokens;
+          if (rerank.fellBack) stats.rerankFallbacks += 1;
+          params.onRerank?.({
+            mode,
+            candidates: candidates.length,
+            kept: rerank.kept.length,
+            durationMs: rerank.durationMs,
+            fellBack: rerank.fellBack,
+            inputTokens: rerank.inputTokens,
+            outputTokens: rerank.outputTokens,
+            ...(rerank.cause ? { cause: rerank.cause } : {}),
+            // AC-9: shadow logs both selections so disagreement is countable.
+            // Paths only, which are repo file names, never chunk text.
+            ...(mode === 'shadow'
+              ? {
+                  cosinePaths: cosine.map((chunk) => chunk.sourcePath),
+                  rerankedPaths: rerank.kept.map((chunk) => chunk.sourcePath),
+                }
+              : {}),
+          });
+        }
+
+        // AC-5: only `enforce` lets the reranker decide, and only when it
+        // actually decided. Shadow returns cosine, and so does every fall back.
+        const decided = mode === 'enforce' && rerank !== null && !rerank.fellBack;
+        chunks = decided ? rerank.kept : cosine;
+
+        // The cosine path's own "was there anything before the guard ran"
+        // question, asked of the widened set so the answer means the same
+        // thing it meant before phase six.
+        found = decided ? chunks : cosineSelection(wide);
+      }
+
       stats.suppressed += found.length - chunks.length;
       stats.latenciesMs.push(Date.now() - startedAt);
       stats.resultCounts.push(chunks.length);
@@ -281,6 +408,11 @@ export function createSearchKnowledgeExecutor(params: {
       if (chunks.length === 0) {
         // Nothing matched, versus everything matched and was withheld. Same
         // instruction to the model, different event in the log.
+        //
+        // AC-4: when the reranker decided and kept nothing, that is the
+        // "nothing to cite" case the persona already handles, so it gets
+        // NO_MATCH_RESULT rather than a fourth string. `found` is empty on
+        // that path, so the branch below reaches it without a special case.
         if (found.length > 0) {
           stats.allSuppressed += 1;
           return ALL_SUPPRESSED_RESULT;

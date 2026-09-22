@@ -11,15 +11,30 @@ import {
   RETRIEVAL_STRICT_ENV,
   retrievalStrictFromEnv,
 } from './search-knowledge.js';
-import { search } from './vector-store.js';
+import { search, searchCandidates, type ScoredChunk } from './vector-store.js';
+import { rerankCandidates, RETRIEVAL_RERANK_MODE_ENV } from './reranker.js';
 import { StoryOwnership } from '../../../generated/prisma/enums.js';
 import type { StoryModel } from '../../../generated/prisma/models.js';
 
-vi.mock('./vector-store', () => ({
+// The real module is kept for the pure helpers (`cosineSelection`, `TOP_K`,
+// `MINIMUM_SIMILARITY`): the cosine path is the thing the fall back promises
+// to reproduce, so a test that stubbed it would prove nothing.
+vi.mock('./vector-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./vector-store.js')>()),
   search: vi.fn(),
+  searchCandidates: vi.fn(),
+}));
+
+// `rerankModeFromEnv` stays real and is driven by the environment variable,
+// which is the thing under test in the mode cases below.
+vi.mock('./reranker', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./reranker.js')>()),
+  rerankCandidates: vi.fn(),
 }));
 
 const searchMock = search as MockedFunction<typeof search>;
+const searchCandidatesMock = searchCandidates as MockedFunction<typeof searchCandidates>;
+const rerankMock = rerankCandidates as MockedFunction<typeof rerankCandidates>;
 
 const chunk = (sourcePath: string, text = 'body', heading = 'Decision') => ({
   sourcePath,
@@ -482,5 +497,250 @@ describe('createSearchKnowledgeExecutor', () => {
       expect(typeof latency).toBe('number');
       expect(latency).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+/**
+ * Two stage retrieval (spec 0012 phase six).
+ *
+ * The mode is driven by the real `rerankModeFromEnv`, so these exercise the
+ * switch a deployment actually flips.
+ */
+describe('retrieval reranking', () => {
+  const scored = (sourcePath: string, score: number, text = 'body'): ScoredChunk => ({
+    sourcePath,
+    heading: 'Decision',
+    text,
+    score,
+  });
+
+  /** Two above the cosine floor, two only above the candidate floor. */
+  const wide: ScoredChunk[] = [
+    scored('top.md', 0.81),
+    scored('second.md', 0.7),
+    scored('below.md', 0.55),
+    scored('lowest.md', 0.44),
+  ];
+
+  const rerankResult = (kept: ScoredChunk[], over: Partial<Awaited<ReturnType<typeof rerankCandidates>>> = {}) => ({
+    kept,
+    fellBack: false,
+    inputTokens: 300,
+    outputTokens: 0,
+    durationMs: 42,
+    ...over,
+  });
+
+  function makeRerankExecutor(storyOverride: StoryModel = story) {
+    const onFailure = vi.fn();
+    const onRerank = vi.fn();
+    const { execute, stats } = createSearchKnowledgeExecutor({
+      openIndex: vi.fn(() => ({}) as never),
+      story: storyOverride,
+      interviewerQuestion: 'How do you decide between two approaches?',
+      onFailure,
+      onRerank,
+    });
+    return { execute, stats, onFailure, onRerank };
+  }
+
+  /**
+   * A first person present tense licensure claim, which the ownership guard
+   * rejects. Borrowed from the suppression test above rather than invented,
+   * because a chunk the guard does NOT actually reject would make every
+   * assertion below pass for the wrong reason.
+   */
+  const GUARD_TRIPPING =
+    'Note that "I\'m still a licensed OT" and "I\'m no longer a licensed OT" differ by one word.';
+
+  beforeEach(() => {
+    // The describe blocks above leave calls on the shared search mock, and
+    // these tests assert on call counts.
+    searchMock.mockClear();
+    searchCandidatesMock.mockClear();
+    rerankMock.mockClear();
+  });
+
+  afterEach(() => {
+    delete process.env[RETRIEVAL_RERANK_MODE_ENV];
+    rerankMock.mockReset();
+    searchCandidatesMock.mockReset();
+  });
+
+  it('off issues no widened query and returns exactly what it returned before (AC-1, AC-5)', async () => {
+    searchMock.mockResolvedValue([chunk('top.md'), chunk('second.md')]);
+    const { execute, stats, onRerank } = makeRerankExecutor();
+
+    const result = await execute(call());
+
+    expect(searchCandidatesMock).not.toHaveBeenCalled();
+    expect(searchMock).toHaveBeenCalledTimes(1);
+    expect(rerankMock).not.toHaveBeenCalled();
+    expect(onRerank).not.toHaveBeenCalled();
+    expect(result).toContain('top.md');
+    expect(result).toContain('second.md');
+    expect(stats.rerankInputTokens).toBe(0);
+  });
+
+  it('shadow returns the cosine selection while logging the reranked one (AC-5, AC-9)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+    searchCandidatesMock.mockResolvedValue(wide);
+    // The reranker prefers a chunk the cosine floor would have dropped.
+    rerankMock.mockResolvedValue(rerankResult([scored('below.md', 0.55)]));
+    const { execute, onRerank } = makeRerankExecutor();
+
+    const result = await execute(call());
+
+    // Shadow decides nothing: what reaches the model is the cosine selection.
+    expect(result).toContain('top.md');
+    expect(result).toContain('second.md');
+    expect(result).not.toContain('below.md');
+    // But the disagreement is countable from the log alone.
+    expect(onRerank).toHaveBeenCalledTimes(1);
+    expect(onRerank.mock.calls[0][0]).toMatchObject({
+      mode: 'shadow',
+      candidates: 4,
+      kept: 1,
+      fellBack: false,
+      cosinePaths: ['top.md', 'second.md'],
+      rerankedPaths: ['below.md'],
+    });
+  });
+
+  it('enforce returns the reranked selection (AC-4, AC-5)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+    searchCandidatesMock.mockResolvedValue(wide);
+    rerankMock.mockResolvedValue(
+      rerankResult([scored('below.md', 0.55), scored('top.md', 0.81)]),
+    );
+    const { execute, stats, onRerank } = makeRerankExecutor();
+
+    const result = await execute(call());
+
+    // In the reranker's order, not the index's.
+    expect(result.indexOf('below.md')).toBeLessThan(result.indexOf('top.md'));
+    expect(result).not.toContain('second.md');
+    expect(stats.sourcePaths).toEqual(['below.md', 'top.md']);
+    expect(stats.resultCounts).toEqual([2]);
+    // Enforce logs counts, not the two path lists: there is no second
+    // selection to disagree with once the reranker is deciding.
+    expect(onRerank.mock.calls[0][0]).toMatchObject({ mode: 'enforce', kept: 2 });
+    expect(onRerank.mock.calls[0][0]).not.toHaveProperty('cosinePaths');
+  });
+
+  it('never spends a judgement on a chunk the guard would reject (AC-2)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+    searchCandidatesMock.mockResolvedValue([
+      scored('guarded.md', 0.8, GUARD_TRIPPING),
+      scored('fine.md', 0.75, 'The decision was recorded in a spec.'),
+    ]);
+    rerankMock.mockResolvedValue(rerankResult([scored('fine.md', 0.75)]));
+    const { execute } = makeRerankExecutor();
+
+    await execute(call());
+
+    const passed = rerankMock.mock.calls[0][0].candidates;
+    expect(passed.map((c) => c.sourcePath)).toEqual(['fine.md']);
+  });
+
+  it('threads what was actually asked, not only the persona paraphrase (AC-3)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+    searchCandidatesMock.mockResolvedValue(wide);
+    rerankMock.mockResolvedValue(rerankResult([]));
+    const { execute } = makeRerankExecutor();
+
+    await execute(call('decision records'));
+
+    expect(rerankMock.mock.calls[0][0]).toMatchObject({
+      interviewerQuestion: 'How do you decide between two approaches?',
+      searchQuery: 'decision records',
+    });
+  });
+
+  it('falls back to the cosine selection without a second query (AC-6)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+    searchCandidatesMock.mockResolvedValue(wide);
+    rerankMock.mockResolvedValue(
+      rerankResult([], { fellBack: true, cause: 'APITimeoutError', inputTokens: 0 }),
+    );
+    const { execute, stats, onRerank } = makeRerankExecutor();
+
+    const result = await execute(call());
+
+    // The widened set is a superset of the narrow one, so the fall back costs
+    // no round trip: one query was issued, not two.
+    expect(searchCandidatesMock).toHaveBeenCalledTimes(1);
+    expect(searchMock).not.toHaveBeenCalled();
+    expect(result).toContain('top.md');
+    expect(result).toContain('second.md');
+    expect(stats.rerankFallbacks).toBe(1);
+    expect(stats.failures).toBe(0);
+    expect(onRerank.mock.calls[0][0]).toMatchObject({ fellBack: true, cause: 'APITimeoutError' });
+  });
+
+  it('tells the persona nothing matched when the reranker kept nothing (AC-4)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+    searchCandidatesMock.mockResolvedValue(wide);
+    rerankMock.mockResolvedValue(rerankResult([]));
+    const { execute, stats } = makeRerankExecutor();
+
+    // From the persona's side this is the "nothing to cite" case it already
+    // handles, not a fourth model facing string.
+    expect(await execute(call())).toBe(NO_MATCH_RESULT);
+    expect(stats.allSuppressed).toBe(0);
+  });
+
+  it('records reranker tokens on the log line and nowhere else (AC-8)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+    searchCandidatesMock.mockResolvedValue(wide);
+    rerankMock.mockResolvedValue(rerankResult([scored('top.md', 0.81)]));
+    const { execute, stats, onRerank } = makeRerankExecutor();
+
+    await execute(call());
+
+    expect(onRerank.mock.calls[0][0]).toMatchObject({ inputTokens: 300, outputTokens: 0 });
+    expect(stats.rerankInputTokens).toBe(300);
+    // Shadow decided nothing, so what reached the model is still the two
+    // chunk cosine selection rather than the reranker's single pick.
+    expect(stats.resultCounts).toEqual([2]);
+  });
+
+  it('keeps the query and the chunk text out of the log line (AC-9)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+    const secret = 'a distinctive sentence from a committed document';
+    searchCandidatesMock.mockResolvedValue([scored('top.md', 0.81, secret)]);
+    rerankMock.mockResolvedValue(rerankResult([scored('top.md', 0.81, secret)]));
+    const { execute, onRerank } = makeRerankExecutor();
+
+    await execute(call('a query naming the visitor topic'));
+
+    const line = JSON.stringify(onRerank.mock.calls[0][0]);
+    expect(line).not.toContain(secret);
+    expect(line).not.toContain('a query naming the visitor topic');
+  });
+
+  it('still separates nothing matched from everything withheld (AC-9)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+    // Cleared the cosine floor, then dropped by the guard.
+    searchCandidatesMock.mockResolvedValue([
+      scored('guarded.md', 0.8, GUARD_TRIPPING),
+    ]);
+    rerankMock.mockResolvedValue(rerankResult([]));
+    const { execute, stats } = makeRerankExecutor();
+
+    expect(await execute(call())).toBe(ALL_SUPPRESSED_RESULT);
+    expect(stats.allSuppressed).toBe(1);
+  });
+
+  it('does not call the reranker when the guard withheld everything', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+    searchCandidatesMock.mockResolvedValue([
+      scored('guarded.md', 0.8, GUARD_TRIPPING),
+    ]);
+    const { execute } = makeRerankExecutor();
+
+    await execute(call());
+
+    expect(rerankMock).not.toHaveBeenCalled();
   });
 });

@@ -416,6 +416,13 @@ export class ConversationService implements OnModuleInit {
         // three times; the rate in `stats.failures` is the thing to alert on.
         onFailure: (cause) =>
           this.logger.warn(`searchKnowledge failed: ${cause}`),
+        // Phase six AC-3: what was actually asked, judged alongside the
+        // persona's own paraphrase of it. Unused unless reranking is on.
+        interviewerQuestion: interviewerResult.text,
+        // Phase six AC-9: one line per search, counts and document paths
+        // only. Logged here rather than batched into the per turn line
+        // because a search that fell back is an event on its own.
+        onRerank: (entry) => this.logger.log(JSON.stringify({ rerank: entry })),
         // Production degrades (AC-8); the eval harness sets this and fails
         // loudly instead (AC-9), because a run that silently drops retrieval
         // still costs money and still reports scores.

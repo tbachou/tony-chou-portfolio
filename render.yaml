@@ -71,6 +71,19 @@ services:
         sync: false
       - key: UPSTASH_VECTOR_REST_TOKEN
         sync: false
+      # Retrieval reranking (spec 0012 phase six). Ships `off`, which is byte
+      # identical to the pre phase six read path and issues no widened query,
+      # so merging the code changes nothing for a visitor. The migration plan
+      # moves this to `shadow` to measure, then to `enforce` only once the
+      # reranked arm of `sweep:threshold` clears its exit bar.
+      #
+      # Rollback is this line back to `off`. Changing it restarts the service.
+      - key: RETRIEVAL_RERANK_MODE
+        value: 'off'
+      # The reranker's provider key. Absent means every search takes the
+      # cosine path, which is a fall back rather than a failure (AC-6).
+      - key: TYPESAFE_API_KEY
+        sync: false
       # Required by the boot guard whenever AI_PROVIDER=bedrock — the factory
       # fails startup if any is missing rather than failing at first request.
       # Declared as sync: false so the repo records that they exist; the values
