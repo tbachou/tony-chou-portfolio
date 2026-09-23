@@ -58,6 +58,7 @@ import {
   retrievalStrictFromEnv,
 } from '../../src/modules/conversation/retrieval/search-knowledge.js';
 import { RETRIEVAL_RERANK_MODE_ENV } from '../../src/modules/conversation/retrieval/reranker.js';
+import { rerankPreflight } from '../../src/modules/conversation/retrieval/rerank-preflight.js';
 import {
   openReadOnly,
   search as searchIndex,
@@ -352,6 +353,18 @@ async function main(): Promise<void> {
   // exercised what ships; left to the default (`off`) the harness would
   // silently measure the path the phase exists to replace.
   process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+  // Forcing enforce proves nothing on its own: the reranker fails open, so a
+  // missing or wrong key would score every case on the cosine path while the
+  // run reports as reranked. Refuse before anything is spent instead.
+  const rerank = await rerankPreflight();
+  if (!rerank.ok) {
+    console.error(`❌ Reranking preflight failed: ${rerank.reason}.`);
+    console.error(
+      '   The harness forces enforce (AC-10), so without a working reranker every search\n' +
+        '   would fall back to the cosine path and the run would be recorded as though it had reranked.',
+    );
+    process.exit(1);
+  }
   if (process.argv.includes('--preflight-only')) {
     console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
     return;
