@@ -1,7 +1,7 @@
 {
-  "corpusHash": "30d696599692a093011c89986d592e0d22911313596547ed1b496413b8d1ab68",
-  "chunkCount": 679,
-  "embeddedAt": "2026-09-21T13:30:57.124Z",
+  "corpusHash": "55b7fe302480666f185d1ba97add262dda68bda4526ff68a8eea072b29943942",
+  "chunkCount": 708,
+  "embeddedAt": "2026-09-23T23:37:34.872Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
@@ -140,6 +140,10 @@
       "hash": "1a6155157d605870502b1af430054961e4d27d4167d6453fd1abf19de30a519c"
     },
     {
+      "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-retrieval-reranking.md",
+      "hash": "aacaf460e5b9324b4e8b5cf1b9a39bf2307a2a1ccd3baa52443bc9ce4825db78"
+    },
+    {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-search-portfolio-retrieval.md",
       "hash": "805fced533ad833977bee470f7abcf6a80b3e141993b192f82537c618d8ae7ab"
     },
@@ -153,11 +157,11 @@
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/index.md",
-      "hash": "360f522387d57bf4ada350d03874b5560fec2a06464d94f6328f37e7ebace740"
+      "hash": "e32719bf7d3ff1fd9f2b5adc2e08747778dc314c4097733a307bf7dbef8bd5b3"
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/verify.md",
-      "hash": "881ce030f7be2e034d4a45659af7d14b4c120c221a0e3a02c50314bd45167740"
+      "hash": "d9d3e36d12cd48522e312000d9f293554b0c1bb7892e02ab59ef0f7ccec2eaa6"
     },
     {
       "path": "docs/specs/_root/0013-credential-check-second-layer.md",
