@@ -1,3 +1,4 @@
+import { createServer, type Server } from 'node:http';
 import { APITimeoutError } from '@typesafe-ai/sdk';
 import {
   RERANK_KEEP_THRESHOLD,
@@ -7,6 +8,7 @@ import {
   isRerankConfigured,
   rerankCandidates,
   rerankModeFromEnv,
+  setRerankClient,
   type SystemOneCaller,
 } from './reranker.js';
 import type { ScoredChunk } from './vector-store.js';
@@ -332,5 +334,116 @@ describe('rerankCandidates', () => {
         if (saved !== undefined) process.env.TYPESAFE_API_KEY = saved;
       }
     });
+  });
+});
+
+/**
+ * Confirmed failing inputs from the pre deploy gate's break it pass
+ * (2026-09-23). Each one was reproduced against the real code before the fix.
+ */
+describe('rerankCandidates, gate regressions', () => {
+  /** A caller whose answer for every candidate is whatever `answer` returns. */
+  function callerAnswering(answer: (i: number) => unknown, usage: unknown = { input_tokens: 10, output_tokens: 0 }) {
+    const systemOne = vi.fn((request: { questions: Record<string, unknown> }) =>
+      Promise.resolve({
+        model: RERANK_MODEL_ID,
+        answers: Object.fromEntries(Object.keys(request.questions).map((key, i) => [key, answer(i)])),
+        usage,
+      }),
+    );
+    return { systemOne } as unknown as SystemOneCaller;
+  }
+  const one = [candidate('a.md', 0.8), candidate('b.md', 0.7)];
+  const ask = (caller: SystemOneCaller, interviewerQuestion = 'q') =>
+    rerankCandidates({ candidates: one, interviewerQuestion, searchQuery: 's', caller });
+
+  it.each([
+    ['above one', { type: 'noul', noul: 1.7 }],
+    ['below zero', { type: 'noul', noul: -0.2 }],
+    ['huge', { type: 'noul', noul: 1e308 }],
+    ['a choice carrying a noul field', { type: 'choice', noul: 0.9 }],
+    ['a score carrying a noul field', { type: 'score', noul: 0.9 }],
+  ])('treats an answer that is %s as malformed and falls back (AC-6)', async (_label, answer) => {
+    const result = await ask(callerAnswering(() => answer));
+    // Accepting these either promoted a junk chunk above real judgements or,
+    // with every answer at -0.2, returned nothing while reporting a decision:
+    // fewer results than cosine, which AC-6 forbids.
+    expect(result.fellBack).toBe(true);
+    expect(result.kept).toEqual([]);
+  });
+
+  it('records usage that is not a non negative number as zero, never as provider text', async () => {
+    const result = await ask(
+      callerAnswering(() => ({ type: 'noul', noul: 0.9 }), {
+        input_tokens: 'echo: a query naming the visitor topic',
+        output_tokens: { echoed: 'a distinctive sentence from a committed document' },
+      }),
+    );
+    expect(result.inputTokens).toBe(0);
+    expect(result.outputTokens).toBe(0);
+  });
+
+  it('falls back rather than judging when there is no interviewer question', async () => {
+    const caller = callerAnswering(() => ({ type: 'noul', noul: 0.9 }));
+    const result = await ask(caller, '   ');
+    // Judging the paraphrase alone is the failure AC-3 exists to prevent, so a
+    // missing question is today's behaviour, logged, not a silent degradation.
+    expect(result.fellBack).toBe(true);
+    expect(result.cause).toBe('no interviewer question');
+    expect((caller as unknown as { systemOne: ReturnType<typeof vi.fn> }).systemOne).not.toHaveBeenCalled();
+  });
+
+  describe('a provider that stalls mid body', () => {
+    // Loopback only: a local server standing in for the provider, because the
+    // failure lives in how the SDK abandons a half read body, which a fake
+    // caller cannot reach. Nothing here leaves the machine.
+    let server: Server;
+    const saved = { key: process.env.TYPESAFE_API_KEY, url: process.env.TYPESAFE_BASE_URL };
+
+    beforeEach(async () => {
+      server = createServer((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.write('{"model":"jev-1.13.0","answers":{');
+        // ...and never finishes.
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+      const { port } = server.address() as { port: number };
+      process.env.TYPESAFE_API_KEY = 'test-key';
+      process.env.TYPESAFE_BASE_URL = `http://127.0.0.1:${port}`;
+      setRerankClient(null);
+    });
+
+    afterEach(async () => {
+      setRerankClient(null);
+      if (saved.key === undefined) delete process.env.TYPESAFE_API_KEY;
+      else process.env.TYPESAFE_API_KEY = saved.key;
+      if (saved.url === undefined) delete process.env.TYPESAFE_BASE_URL;
+      else process.env.TYPESAFE_BASE_URL = saved.url;
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it('falls back on the timeout without leaving an unhandled rejection behind', async () => {
+      const rejections: unknown[] = [];
+      const onRejection = (reason: unknown) => rejections.push(reason);
+      process.on('unhandledRejection', onRejection);
+      try {
+        const result = await rerankCandidates({
+          candidates: [candidate('a.md', 0.8)],
+          interviewerQuestion: 'q',
+          searchQuery: 's',
+        });
+        expect(result.fellBack).toBe(true);
+        expect(result.cause).toContain('APITimeoutError');
+        // The SDK cancels a cloned body reader when its timer fires, and the
+        // rejection that produces surfaced after the fallback had returned.
+        // In production nothing handles it, so Node exited: one slow provider
+        // response took the whole API down in shadow or enforce.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        expect(rejections).toEqual([]);
+      } finally {
+        process.off('unhandledRejection', onRejection);
+      }
+    }, 10_000);
   });
 });

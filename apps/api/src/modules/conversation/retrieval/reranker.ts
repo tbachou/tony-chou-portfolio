@@ -106,13 +106,53 @@ function getClient(): SystemOneCaller {
     // and the retrieved chunk text. AC-9 says neither is ever logged, so that
     // invariant cannot be left to an environment variable nobody reviews.
     logLevel: 'off',
+    fetch: bufferedFetch,
   });
   return client;
+}
+
+/** Statuses a `Response` may not carry a body for. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/**
+ * `fetch`, with the whole body read before the SDK sees the response.
+ *
+ * Found by the pre deploy gate's break it pass (2026-09-23), reproduced twice:
+ * when a provider sends headers and then stalls the body past the timeout, the
+ * SDK aborts, we fall back correctly, and then Node exits. The SDK cancels a
+ * cloned reader of the half read body when its timer fires, which leaves a
+ * rejected promise inside undici that nothing handles, and the default for an
+ * unhandled rejection is to end the process. In `shadow` or `enforce` one slow
+ * response would take the whole API down, which is the opposite of failing
+ * open.
+ *
+ * Reading the body here, under the same signal the SDK passes in, means the
+ * timeout rejects an `await` we own and the SDK only ever handles a complete,
+ * in memory body. Worth reporting upstream; this stays until the SDK is fixed.
+ */
+async function bufferedFetch(input: string, init?: RequestInit): Promise<Response> {
+  const response = await globalThis.fetch(input, init);
+  const body = NULL_BODY_STATUSES.has(response.status) ? null : await response.arrayBuffer();
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 /** Test only. Production builds the client once per process. */
 export function setRerankClient(fake: SystemOneCaller | null): void {
   client = fake;
+}
+
+/**
+ * A provider reported token figure, accepted only if it is actually a count.
+ *
+ * These land on the AC-9 log line. Passed through unchecked, a provider that
+ * echoed its input into `usage` would put query or chunk text in the log.
+ */
+function tokenCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 /** Question keys are for code and are never sent to the model. */
@@ -150,6 +190,20 @@ export async function rerankCandidates(params: {
   }
 
   try {
+    if (params.interviewerQuestion.trim().length === 0) {
+      // AC-3 judges against what was actually asked. Judging the persona's
+      // paraphrase alone is the gap that criterion exists to close, so a
+      // missing question gets today's behaviour, visibly, rather than a
+      // weaker judgement that reports itself as a decision.
+      return {
+        kept: [],
+        fellBack: true,
+        cause: 'no interviewer question',
+        ...empty,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
     if (!params.caller && !isRerankConfigured()) {
       // AC-6: a missing key is a fall back, not an error, and not a throw.
       return {
@@ -187,12 +241,21 @@ export async function rerankCandidates(params: {
 
     const scored: { chunk: ScoredChunk; relevance: number }[] = [];
     for (const [position, candidate] of params.candidates.entries()) {
-      const answer = result.answers?.[keyFor(position)];
+      const answer = result.answers?.[keyFor(position)] as { type?: unknown; noul?: unknown } | undefined;
       const relevance = answer?.noul;
-      if (typeof relevance !== 'number' || !Number.isFinite(relevance)) {
-        // A partial answer set is treated as a malformed response rather than
-        // silently dropping the candidates it missed: a selection built from
-        // half the judgements is not the selection this was asked for.
+      // A partial answer set is treated as a malformed response rather than
+      // silently dropping the candidates it missed: a selection built from
+      // half the judgements is not the selection this was asked for.
+      //
+      // So is anything that is not a probability. The type and the range were
+      // unchecked until the pre deploy gate: 1.7 promoted a chunk at cosine
+      // 0.41 above answers at 0.99, and every answer at -0.2 returned nothing
+      // while reporting a decision, which is fewer results than cosine (AC-6).
+      if (
+        answer?.type !== 'noul' ||
+        typeof relevance !== 'number' ||
+        !(relevance >= 0 && relevance <= 1)
+      ) {
         throw new Error(`missing or malformed answer for candidate ${position}`);
       }
       scored.push({ chunk: candidate, relevance });
@@ -210,8 +273,8 @@ export async function rerankCandidates(params: {
     return {
       kept,
       fellBack: false,
-      inputTokens: result.usage?.input_tokens ?? 0,
-      outputTokens: result.usage?.output_tokens ?? 0,
+      inputTokens: tokenCount(result.usage?.input_tokens),
+      outputTokens: tokenCount(result.usage?.output_tokens),
       durationMs: Date.now() - startedAt,
     };
   } catch (error) {
