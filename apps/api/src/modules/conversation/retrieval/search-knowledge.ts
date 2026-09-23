@@ -336,20 +336,31 @@ export function createSearchKnowledgeExecutor(params: {
       index ??= params.openIndex();
       const mode = rerankModeFromEnv();
 
-      // `found` is what the cosine path saw before the guard filter, and
-      // `chunks` is what actually reaches the model. Both modes produce both,
-      // so everything below this block is shared and the two paths cannot
-      // drift in how they count or report.
-      let found: RetrievedChunk[];
+      // Each mode produces the same four things, so everything below this
+      // block is shared and the paths cannot drift in how they count or
+      // report. `chunks` is what actually reaches the model. The two guard
+      // figures always describe what `off` would have fetched, the top three
+      // above MINIMUM_SIMILARITY, so the corpus health numbers on the log line
+      // mean one thing in every mode; the pre deploy gate found them reading
+      // zero whenever the reranker decided. `emptyResult` is what the model
+      // reads when nothing is returned.
       let chunks: RetrievedChunk[];
+      let guardDropped: number;
+      let guardWithheldAll: boolean;
+      let emptyResult: string;
 
       if (mode === 'off') {
         // AC-1: the widened query is never issued. This is the pre phase six
         // read path, unchanged, reached by a deployment that has not opted in.
-        found = await search(index, query);
+        const found = await search(index, query);
         // Filtered BEFORE anything is counted or logged, so the recorded source
         // paths are the ones actually handed to the model.
         chunks = filterChunksForStory(found, params.story);
+        guardDropped = found.length - chunks.length;
+        guardWithheldAll = found.length > 0 && chunks.length === 0;
+        // Nothing matched, versus everything matched and was withheld. Same
+        // instruction to the model, different event in the log.
+        emptyResult = guardWithheldAll ? ALL_SUPPRESSED_RESULT : NO_MATCH_RESULT;
       } else {
         const wide = await searchCandidates(index, query);
         // AC-2: the guard filter runs BEFORE reranking, so no judgement is
@@ -361,6 +372,8 @@ export function createSearchKnowledgeExecutor(params: {
           candidates.length > 0
             ? await rerankCandidates({
                 candidates,
+                // Blank when a caller did not thread it; the reranker falls back
+                // on that rather than judging the paraphrase alone (AC-3).
                 interviewerQuestion: params.interviewerQuestion ?? '',
                 searchQuery: query,
               })
@@ -378,7 +391,9 @@ export function createSearchKnowledgeExecutor(params: {
             fellBack: rerank.fellBack,
             inputTokens: rerank.inputTokens,
             outputTokens: rerank.outputTokens,
-            ...(rerank.cause ? { cause: rerank.cause } : {}),
+            // Bounded and flattened like every other externally derived
+            // string that reaches a log here: an error's name is not ours.
+            ...(rerank.cause ? { cause: flattenForLog(rerank.cause, 64) } : {}),
             // AC-9: shadow logs both selections so disagreement is countable.
             // Paths only, which are repo file names, never chunk text.
             ...(mode === 'shadow'
@@ -395,30 +410,28 @@ export function createSearchKnowledgeExecutor(params: {
         const decided = mode === 'enforce' && rerank !== null && !rerank.fellBack;
         chunks = decided ? rerank.kept : cosine;
 
-        // The cosine path's own "was there anything before the guard ran"
-        // question, asked of the widened set so the answer means the same
-        // thing it meant before phase six.
-        found = decided ? chunks : cosineSelection(wide);
+        // What off would have fetched, and how much of it the guard withheld.
+        // Membership rather than a second guard pass: `filterChunksForStory`
+        // returns the same objects it was given.
+        const narrow = cosineSelection(wide);
+        const passed = new Set(candidates);
+        guardDropped = narrow.filter((chunk) => !passed.has(chunk)).length;
+        guardWithheldAll = narrow.length > 0 && guardDropped === narrow.length;
+
+        // AC-4: when the reranker decided and kept nothing, that is the
+        // "nothing to cite" case the persona already handles, so it gets
+        // NO_MATCH_RESULT rather than a fourth string, even when the guard
+        // also withheld everything above the floor. The log still records
+        // that guard event through the two figures above.
+        emptyResult = !decided && guardWithheldAll ? ALL_SUPPRESSED_RESULT : NO_MATCH_RESULT;
       }
 
-      stats.suppressed += found.length - chunks.length;
+      stats.suppressed += guardDropped;
+      if (guardWithheldAll) stats.allSuppressed += 1;
       stats.latenciesMs.push(Date.now() - startedAt);
       stats.resultCounts.push(chunks.length);
       stats.sourcePaths.push(...chunks.map((chunk) => chunk.sourcePath));
-      if (chunks.length === 0) {
-        // Nothing matched, versus everything matched and was withheld. Same
-        // instruction to the model, different event in the log.
-        //
-        // AC-4: when the reranker decided and kept nothing, that is the
-        // "nothing to cite" case the persona already handles, so it gets
-        // NO_MATCH_RESULT rather than a fourth string. `found` is empty on
-        // that path, so the branch below reaches it without a special case.
-        if (found.length > 0) {
-          stats.allSuppressed += 1;
-          return ALL_SUPPRESSED_RESULT;
-        }
-        return NO_MATCH_RESULT;
-      }
+      if (chunks.length === 0) return emptyResult;
       return renderResults(chunks);
     } catch (error) {
       // Timed too, because a failure that took ten seconds and one that failed

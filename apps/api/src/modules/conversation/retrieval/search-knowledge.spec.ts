@@ -743,4 +743,74 @@ describe('retrieval reranking', () => {
 
     expect(rerankMock).not.toHaveBeenCalled();
   });
+  /**
+   * Confirmed failing inputs from the pre deploy gate (2026-09-23). The
+   * suppression counters are the corpus health signal on the retrieval log
+   * line, so they have to mean the same thing in every mode.
+   */
+  describe('suppression counts match off in every mode', () => {
+    const guardedTop: ScoredChunk[] = [
+      scored('guarded.md', 0.9, GUARD_TRIPPING),
+      scored('b.md', 0.85),
+      scored('c.md', 0.8),
+      scored('d.md', 0.75),
+    ];
+
+    it('counts the guard drop off would have counted, in enforce, when the reranker decided', async () => {
+      process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+      searchCandidatesMock.mockResolvedValue(guardedTop);
+      rerankMock.mockResolvedValue(rerankResult([scored('b.md', 0.85)]));
+      const { execute, stats } = makeRerankExecutor();
+
+      await execute(call());
+
+      // off fetches the top three (guarded, b, c) and drops one.
+      expect(stats.suppressed).toBe(1);
+      expect(stats.sourcePaths).toEqual(['b.md']);
+    });
+
+    it('counts the same drop in shadow', async () => {
+      process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+      searchCandidatesMock.mockResolvedValue(guardedTop);
+      rerankMock.mockResolvedValue(rerankResult([]));
+      const { execute, stats } = makeRerankExecutor();
+
+      await execute(call());
+
+      expect(stats.suppressed).toBe(1);
+    });
+
+    it('records a guard event when everything off would have shown was withheld, even though the reranker decided', async () => {
+      process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+      searchCandidatesMock.mockResolvedValue([
+        scored('g1.md', 0.9, GUARD_TRIPPING),
+        scored('g2.md', 0.88, GUARD_TRIPPING),
+        scored('low.md', 0.5),
+      ]);
+      rerankMock.mockResolvedValue(rerankResult([]));
+      const { execute, stats } = makeRerankExecutor();
+
+      // AC-4 still decides what the persona reads: the reranker kept nothing.
+      expect(await execute(call())).toBe(NO_MATCH_RESULT);
+      // But the log records what happened, as off would have: two guard drops,
+      // and a search where every hit above the floor was withheld.
+      expect(stats.suppressed).toBe(2);
+      expect(stats.allSuppressed).toBe(1);
+    });
+  });
+
+  it('bounds and flattens the fall back cause before it reaches the log line', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+    searchCandidatesMock.mockResolvedValue(wide);
+    const hostile = `Bad\nName\u001b[31m${'x'.repeat(10_000)}`;
+    rerankMock.mockResolvedValue(rerankResult([], { fellBack: true, cause: hostile }));
+    const { execute, onRerank } = makeRerankExecutor();
+
+    await execute(call());
+
+    const cause = onRerank.mock.calls[0][0].cause as string;
+    expect(cause.length).toBeLessThanOrEqual(64);
+    expect(cause).not.toContain('\n');
+    expect(cause).not.toContain('\u001b');
+  });
 });
