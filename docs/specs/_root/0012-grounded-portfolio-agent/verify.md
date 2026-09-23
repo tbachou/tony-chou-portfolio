@@ -44,40 +44,40 @@ _Steps derived from the [retrieval reranking](0012-retrieval-reranking.md) accep
 
 ## Commands
 
-- [ ] `npm test --workspace=apps/api` → the reranker, prompt loader and executor suites pass → AC-1 to AC-9
+- [x] `npm test --workspace=apps/api` → the reranker, prompt loader and executor suites pass → AC-1 to AC-9
 - [ ] `npm run check:corpus --workspace=apps/api` → passes. **Red until the corpus is re embedded**, because this phase added a spec document → blocks the PR
-- [ ] `npm run sweep:threshold --workspace=apps/api` with `TYPESAFE_API_KEY` set → prints the cosine and reranked arms side by side, then the three exit bar lines → AC-11
-- [ ] `npm run build --workspace=apps/api && node -e "import('./dist/modules/conversation/retrieval/rerank-prompt.js').then(m => console.log(m.loadRerankPrompt()))"` from `apps/api` → three non empty sections → AC-12
-- [ ] `grep -rn "$(sed -n '/^## Task/,/^## /p' apps/api/src/modules/conversation/retrieval/skills/rerank.md | sed -n '3p')" apps/api/src --include=*.ts` → no match, so no prompt text lives in TypeScript → AC-12
+- [x] `npm run sweep:threshold --workspace=apps/api` with `TYPESAFE_API_KEY` set → prints the cosine and reranked arms side by side, then the three exit bar lines → AC-11
+- [x] `npm run build --workspace=apps/api && node -e "import('./dist/modules/conversation/retrieval/rerank-prompt.js').then(m => console.log(m.loadRerankPrompt()))"` from `apps/api` → three non empty sections → AC-12
+- [x] `grep -rn "$(sed -n '/^## Task/,/^## /p' apps/api/src/modules/conversation/retrieval/skills/rerank.md | sed -n '3p')" apps/api/src --include=*.ts` → no match, so no prompt text lives in TypeScript → AC-12
 
 ## Staged rollout (the spec's migration plan, in order)
 
-- [ ] `RETRIEVAL_RERANK_MODE` unset → run a turn that searches → no `rerank` log line, and the Upstash request asks for `topK: 3` not `10` → AC-1, AC-5
-- [ ] Set `RETRIEVAL_RERANK_MODE=shadow` on Render → run a turn that searches → one `rerank` line per search carrying `cosinePaths` and `rerankedPaths`, and the answer still cites a cosine chosen document → AC-5, AC-9
-- [ ] Read a shadow `rerank` line → it carries no query text and no chunk text, only counts and repo file paths → AC-9
+- [x] `RETRIEVAL_RERANK_MODE` unset → run a turn that searches → no `rerank` log line, and the Upstash request asks for `topK: 3` not `10` → AC-1, AC-5
+- [x] Set `RETRIEVAL_RERANK_MODE=shadow` on Render → run a turn that searches → one `rerank` line per search carrying `cosinePaths` and `rerankedPaths`, and the answer still cites a cosine chosen document → AC-5, AC-9
+- [x] Read a shadow `rerank` line → it carries no query text and no chunk text, only counts and repo file paths → AC-9
 - [ ] Watch the shadow disagreement rate across a day → the two path lists differ often enough to be worth enforcing → migration step 2
-- [ ] Run the sweep's reranked arm → all three exit bar lines read PASS before going further → migration step 3
-- [ ] Set `RETRIEVAL_RERANK_MODE=enforce` → a turn returns the reranked selection in rerank order, capped at three, with no padding → AC-4, AC-5
+- [x] Run the sweep's reranked arm → all three exit bar lines read PASS before going further → migration step 3
+- [x] Set `RETRIEVAL_RERANK_MODE=enforce` → a turn returns the reranked selection in rerank order, capped at three, with no padding → AC-4, AC-5
 - [ ] Two full eval passes at the same commit → a noise band, then publish the phase entry with its delta → migration step 4
-- [ ] Rollback drill: set `RETRIEVAL_RERANK_MODE=off` → next turn behaves exactly as before the phase → migration rollback
+- [x] Rollback drill: set `RETRIEVAL_RERANK_MODE=off` → next turn behaves exactly as before the phase → migration rollback
 
 ## Failure paths (each must cost a weaker answer, never a turn)
 
-- [ ] Unset `TYPESAFE_API_KEY` with mode `enforce` → answers still cite documents, `rerank` line reads `fellBack: true, cause: "reranker not configured"` → AC-6
-- [ ] Point `TYPESAFE_BASE_URL` at an unroutable host → the search completes within ~1.5s and falls back, and the turn is not lost → AC-6
-- [ ] Confirm exactly one Upstash query is issued on a fall back, not two → the widened set is a superset, so the cosine selection needs no second round trip → AC-6
+- [x] Unset `TYPESAFE_API_KEY` with mode `enforce` → answers still cite documents, `rerank` line reads `fellBack: true, cause: "reranker not configured"` → AC-6
+- [x] Point `TYPESAFE_BASE_URL` at an unroutable host **before the first rerank call of the process** (the client is built once per process, so setting it later is ignored, which produced a false pass on 2026-09-23) → the search completes within ~1.5s and falls back, and the turn is not lost → AC-6
+- [x] Confirm exactly one Upstash query is issued on a fall back, not two → the widened set is a superset, so the cosine selection needs no second round trip → AC-6
 
 ## Value sourcing (one step per row of the spec's table)
 
-- [ ] mode: set `RETRIEVAL_RERANK_MODE` to `ENFORCE` (wrong case) and to `on` → both read as `off` rather than throwing → AC-5
-- [ ] provider configured: the key presence check alone decides, and a missing key never throws out of the executor → AC-6
-- [ ] candidate count and floor: with mode on, the Upstash request carries `topK: 10`; nothing scoring under `0.40` reaches the reranker → AC-1
+- [x] mode: set `RETRIEVAL_RERANK_MODE` to `ENFORCE` (wrong case) and to `on` → both read as `off` rather than throwing → AC-5
+- [x] provider configured: the key presence check alone decides, and a missing key never throws out of the executor → AC-6
+- [x] candidate count and floor: with mode on, the Upstash request carries `topK: 10`; nothing scoring under `0.40` reaches the reranker → AC-1
 - [ ] which chunks may be shown: a chunk the ownership guard rejects is never sent to the reranker, checked against a guard tripping section → AC-2
-- [ ] the shared state: it carries `interviewerQuestion` and `searchQuery` as separate named fields, and the question is what was actually asked rather than the persona's paraphrase → AC-3
+- [x] the shared state: it carries `interviewerQuestion` and `searchQuery` as separate named fields, and the question is what was actually asked rather than the persona's paraphrase → AC-3
 - [ ] the per candidate question: each candidate's section rides in its own question's instructions, never in the shared state → AC-3
-- [ ] the model: the request pins `jev-1.13.0`; setting `TYPESAFE_DEFAULT_MODEL` does not move it → AC-7
+- [x] the model: the request pins `jev-1.13.0`; setting `TYPESAFE_DEFAULT_MODEL` does not move it → AC-7
 - [ ] the cut: a candidate scoring exactly `0.5` is kept; `0.49` is not → AC-4
-- [ ] spend: reranker tokens appear on the `rerank` log line and the day's `dailyUsageCounter` token total is unchanged by them → AC-8
+- [x] spend: reranker tokens appear on the `rerank` log line and the day's `dailyUsageCounter` token total is unchanged by them → AC-8
 
 ## Acceptance-criteria coverage
 
