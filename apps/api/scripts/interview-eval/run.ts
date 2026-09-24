@@ -106,7 +106,12 @@ const RERANK_ARMS: readonly RerankArm[] = ['off', 'shadow', 'enforce'];
  * number about a system nobody ran.
  */
 function rerankArmFlag(): RerankArm {
-  const raw = arg('rerank');
+  // `--rerank=enforce` as well as `--rerank enforce`. `arg()` reads only the
+  // space form, so without this the equals form fell through to the default
+  // and silently measured `off`: the exact wrong arm this flag exists to rule
+  // out (caught running the preflight, 2026-09-24).
+  const equalsForm = process.argv.find((a) => a.startsWith('--rerank='));
+  const raw = equalsForm !== undefined ? equalsForm.slice('--rerank='.length) : arg('rerank');
   if (raw === undefined) {
     if (process.argv.includes('--rerank')) {
       console.error('❌ --rerank needs a value: off, shadow or enforce');
