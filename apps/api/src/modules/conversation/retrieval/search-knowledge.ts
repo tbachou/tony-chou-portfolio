@@ -9,6 +9,7 @@ import {
   type RetrievedChunk,
 } from './vector-store.js';
 import {
+  RERANK_MODEL_ID,
   rerankCandidates,
   rerankModeFromEnv,
   type RerankMode,
@@ -131,6 +132,13 @@ export const NO_QUERY_RESULT =
  * fields happen to be short.
  */
 export type RerankLogEntry = {
+  /**
+   * Which agent made the call and on which model (AC-9, and the repo wide
+   * rule of one JSON line per model call naming its agent and model), so a
+   * line from before a `RERANK_MODEL_ID` change can be told from one after.
+   */
+  agent: 'reranker';
+  model: string;
   mode: RerankMode;
   /** Candidates that survived the guard filter and were offered to the model. */
   candidates: number;
@@ -364,9 +372,21 @@ export function createSearchKnowledgeExecutor(params: {
       } else {
         const wide = await searchCandidates(index, query);
         // AC-2: the guard filter runs BEFORE reranking, so no judgement is
-        // spent on a chunk that could never reach a visitor anyway.
+        // spent on a chunk that could never reach a visitor anyway. This
+        // filtered set is the reranker's input and nothing else.
         const candidates = filterChunksForStory(wide, params.story);
-        const cosine = cosineSelection(candidates);
+        // AC-5, AC-6: what `off` would have returned, recomputed from the
+        // same results. The order is the point: take the top three above the
+        // floor BEFORE the guard filter, exactly as `off` fetches them, then
+        // keep the ones the guard passed. Filtering all ten first and taking
+        // three, as the first version did, promoted a guard passing chunk
+        // ranked fourth or lower that `off` never fetches, so shadow changed
+        // what a visitor saw (three independent audit passes, 2026-09-23).
+        // Membership rather than a second guard pass: `filterChunksForStory`
+        // returns the same objects it was given.
+        const narrow = cosineSelection(wide);
+        const passed = new Set(candidates);
+        const cosine = narrow.filter((chunk) => passed.has(chunk));
 
         const rerank =
           candidates.length > 0
@@ -384,6 +404,8 @@ export function createSearchKnowledgeExecutor(params: {
           stats.rerankOutputTokens += rerank.outputTokens;
           if (rerank.fellBack) stats.rerankFallbacks += 1;
           params.onRerank?.({
+            agent: 'reranker',
+            model: RERANK_MODEL_ID,
             mode,
             candidates: candidates.length,
             kept: rerank.kept.length,
@@ -410,12 +432,8 @@ export function createSearchKnowledgeExecutor(params: {
         const decided = mode === 'enforce' && rerank !== null && !rerank.fellBack;
         chunks = decided ? rerank.kept : cosine;
 
-        // What off would have fetched, and how much of it the guard withheld.
-        // Membership rather than a second guard pass: `filterChunksForStory`
-        // returns the same objects it was given.
-        const narrow = cosineSelection(wide);
-        const passed = new Set(candidates);
-        guardDropped = narrow.filter((chunk) => !passed.has(chunk)).length;
+        // How much of what off would have fetched the guard withheld.
+        guardDropped = narrow.length - cosine.length;
         guardWithheldAll = narrow.length > 0 && guardDropped === narrow.length;
 
         // AC-4: when the reranker decided and kept nothing, that is the

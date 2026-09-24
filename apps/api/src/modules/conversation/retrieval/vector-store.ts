@@ -238,14 +238,21 @@ export async function searchCandidates(
 }
 
 /**
- * Today's behaviour, recomputed from the widened candidate set.
+ * Today's cut, recomputed from the widened query's results.
  *
- * This is what `off` returns, what `shadow` returns, and what every reranker
- * failure falls back to (AC-6). It is a pure function of the candidates
- * because of the superset property above: applying `MINIMUM_SIMILARITY` and
- * `TOP_K` to the wide set gives exactly the rows the narrow query would have
- * produced, so "failing open costs nothing" is a property of the code rather
- * than a hope.
+ * Apply it to what `searchCandidates` returned, BEFORE the guard filter. Then
+ * it gives exactly the rows the narrow query would have produced: same index,
+ * same text, a lower floor and a larger k, so the top three above
+ * `MINIMUM_SIMILARITY` of the wide set are the narrow set. Running the guard
+ * filter over that result reproduces `off` (spec 0012 phase six, AC-5, AC-6).
+ *
+ * Applied to the guard FILTERED set instead, it can reach past a withheld
+ * chunk and promote one ranked fourth or lower, which `off` never fetches.
+ * That was this module's first definition, and three audit passes caught it.
+ *
+ * It rests on one assumption, that the index's top three out of ten equal its
+ * answer when asked for three. Under approximate nearest neighbour search that
+ * is likely but not guaranteed, so `sweep:threshold` measures it per query.
  *
  * The input is already in descending score order from the index, and the
  * filter preserves it, so no re-sort is needed or done.

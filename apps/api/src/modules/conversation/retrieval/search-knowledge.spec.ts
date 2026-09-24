@@ -12,7 +12,7 @@ import {
   retrievalStrictFromEnv,
 } from './search-knowledge.js';
 import { search, searchCandidates, type ScoredChunk } from './vector-store.js';
-import { rerankCandidates, RETRIEVAL_RERANK_MODE_ENV } from './reranker.js';
+import { RERANK_MODEL_ID, rerankCandidates, RETRIEVAL_RERANK_MODE_ENV } from './reranker.js';
 import { StoryOwnership } from '../../../generated/prisma/enums.js';
 import type { StoryModel } from '../../../generated/prisma/models.js';
 
@@ -797,6 +797,77 @@ describe('retrieval reranking', () => {
       expect(stats.suppressed).toBe(2);
       expect(stats.allSuppressed).toBe(1);
     });
+  });
+
+  /**
+   * Spec 0012 phase six, the 2026-09-24 update (AC-5, AC-6): shadow and every
+   * fall back return exactly what off returns. The two inputs are the ones
+   * the break it pass captured against the first version on 2026-09-23.
+   */
+  describe('shadow and the fall back reproduce off', () => {
+    const guardedTop: ScoredChunk[] = [
+      scored('guarded.md', 0.9, GUARD_TRIPPING),
+      scored('b.md', 0.85),
+      scored('c.md', 0.8),
+      scored('d.md', 0.75),
+    ];
+    /** What off returns for the same index results: top three, then the guard. */
+    const offWouldReturn = ['b.md', 'c.md'];
+
+    it('shadow does not promote a fourth chunk past a guard withheld one', async () => {
+      process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+      searchCandidatesMock.mockResolvedValue(guardedTop);
+      rerankMock.mockResolvedValue(rerankResult([scored('d.md', 0.75)]));
+      const { execute, stats, onRerank } = makeRerankExecutor();
+
+      await execute(call());
+
+      expect(stats.sourcePaths).toEqual(offWouldReturn);
+      // The shadow log's cosine side is the path production actually runs.
+      expect(onRerank.mock.calls[0][0].cosinePaths).toEqual(offWouldReturn);
+    });
+
+    it('an enforce search that falls back returns what off returns', async () => {
+      process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+      searchCandidatesMock.mockResolvedValue(guardedTop);
+      rerankMock.mockResolvedValue(rerankResult([], { fellBack: true, cause: 'APITimeoutError' }));
+      const { execute, stats } = makeRerankExecutor();
+
+      await execute(call());
+
+      expect(stats.sourcePaths).toEqual(offWouldReturn);
+    });
+
+    it('withholds everything, as off does, when the top three are all guarded', async () => {
+      process.env[RETRIEVAL_RERANK_MODE_ENV] = 'shadow';
+      searchCandidatesMock.mockResolvedValue([
+        scored('g1.md', 0.95, GUARD_TRIPPING),
+        scored('g2.md', 0.9, GUARD_TRIPPING),
+        scored('g3.md', 0.85, GUARD_TRIPPING),
+        scored('x.md', 0.8),
+        scored('y.md', 0.7),
+      ]);
+      rerankMock.mockResolvedValue(rerankResult([scored('x.md', 0.8)]));
+      const { execute, stats } = makeRerankExecutor();
+
+      // The first version quoted x.md and y.md here while off answered from
+      // the story: the visitor facing difference shadow promised not to make.
+      expect(await execute(call())).toBe(ALL_SUPPRESSED_RESULT);
+      expect(stats.sourcePaths).toEqual([]);
+      expect(stats.suppressed).toBe(3);
+      expect(stats.allSuppressed).toBe(1);
+    });
+  });
+
+  it('names its agent and model on every rerank log line (AC-9)', async () => {
+    process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+    searchCandidatesMock.mockResolvedValue(wide);
+    rerankMock.mockResolvedValue(rerankResult([scored('top.md', 0.81)]));
+    const { execute, onRerank } = makeRerankExecutor();
+
+    await execute(call());
+
+    expect(onRerank.mock.calls[0][0]).toMatchObject({ agent: 'reranker', model: RERANK_MODEL_ID });
   });
 
   it('bounds and flattens the fall back cause before it reaches the log line', async () => {
