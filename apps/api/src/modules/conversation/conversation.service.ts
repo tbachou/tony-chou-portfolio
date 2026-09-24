@@ -345,6 +345,12 @@ export class ConversationService implements OnModuleInit {
     emit: EmitFn;
     /** Aborted when the visitor disconnects; see the controller's close handler. */
     signal?: AbortSignal;
+    /**
+     * Spec 0012 phase six, AC-14: receives this turn's retrieval stats, so the
+     * eval harness can record how often the reranker fell back. Called once
+     * per turn, beside the retrieval log line. Production passes none.
+     */
+    onRetrievalStats?: (stats: RetrievalStats) => void;
   }): Promise<void> {
     const { topic, prepared, history, hashedIp, signal } = params;
 
@@ -483,6 +489,7 @@ export class ConversationService implements OnModuleInit {
         tonyGenerated.stoppedOnMaxTokens,
         tonyGenerated.recoveredWithoutTools,
       );
+      params.onRetrievalStats?.(retrieval.stats);
 
       const guardResult = evaluateTonyResponse(tonyGenerated.text, story);
       let tonyText = tonyGenerated.text;

@@ -206,6 +206,36 @@ describe('ConversationService.generateTurnPair', () => {
     expect(h.prisma.conversationTurn.delete).not.toHaveBeenCalled();
   });
 
+  it('hands the turn retrieval stats to an observer, once, beside the log line (phase six AC-14)', async () => {
+    const h = makeHarness();
+    h.anthropic.streamMessage.mockResolvedValueOnce({
+      text: 'What drove the rebuild?',
+      inputTokens: 20,
+      outputTokens: 10,
+    });
+    h.anthropic.runToolConversation.mockResolvedValueOnce({
+      text: 'Faster.',
+      inputTokens: 30,
+      outputTokens: 40,
+      toolCallCount: 0,
+      stoppedOnIterationCap: false,
+    });
+    const onRetrievalStats = vi.fn();
+
+    await h.service.generateTurnPair({
+      topic,
+      prepared,
+      history: [],
+      hashedIp: 'hashed-ip',
+      emit: h.emit,
+      onRetrievalStats,
+    });
+
+    // The eval harness reads the rerank fall back count from exactly this.
+    expect(onRetrievalStats).toHaveBeenCalledTimes(1);
+    expect(onRetrievalStats.mock.calls[0][0]).toMatchObject({ calls: 0, rerankFallbacks: 0 });
+  });
+
   describe('retrieval is offered only when it is configured', () => {
     const upstashEnv = {
       UPSTASH_VECTOR_REST_URL: 'https://example-vector.upstash.io',
