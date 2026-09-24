@@ -688,11 +688,13 @@ function checkRecordedDelta(
   ) {
     return;
   }
-  // Spec 0012 phase six, AC-14: runs of different rerank arms measure
-  // different systems, so a delta between them is not something to verify.
-  // A baseline recorded before phase six carries no arm and reads as `off`
-  // (see summarise), so an `off` run stays checkable against it.
-  if (baseline.rerankArm !== run.rerankArm) return;
+  // Deliberately NOT skipped when the rerank arms differ. The enforce against
+  // off delta at one commit is the number spec 0012 phase six publishes
+  // (migration step 6), so it is exactly the delta that has to be checked.
+  // The first version of the arm rule returned here, and the pre deploy gate
+  // (2026-09-24) showed a regressed enforce or shadow run could then publish
+  // a delta of 0 as "not significant". The arm is recorded so a comparison is
+  // named for what it is, not so it can go unchecked.
 
   for (const dimension of DIMENSIONS) {
     const runMean = run.perDimension[dimension].mean;

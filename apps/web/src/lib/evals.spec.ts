@@ -211,17 +211,43 @@ describe('loadPublished', () => {
       run: runFile({ datasetHash: 'hash-a', cases: [caseRow({ persona: scored(persona) })] })
     });
 
-    it('leaves a recorded delta alone when the run measured another arm than the baseline', () => {
-      // The run scores persona 1 against a baseline of 0 and the manifest
-      // records 0, which would be refused on one arm. Across arms there is no
-      // comparison to verify.
+    it('checks a recorded delta across arms whenever the hashes match (pre deploy gate, 2026-09-24)', () => {
+      // The enforce against off delta at one commit is the number phase six
+      // publishes, so it has to be checked. The first version of the arm rule
+      // skipped it, and a regressed run could publish 0 as "not significant".
+      // Rows are the break it pass's table: each records a delta of 0 for a
+      // run scoring 0 against a baseline scoring 1.
+      const regressed = [{ ...caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) }), rerankFallbacks: 0 }];
+      const offBaseline = (arm?: 'off') => ({
+        noiseBand: { honesty: 0, grounding: 0, persona: 0 },
+        run: runFile({ datasetHash: 'hash-a', ...(arm && { rerankArm: arm }), cases: [caseRow({})] })
+      });
+      for (const [runArm, baseline] of [
+        ['enforce', offBaseline('off')],
+        ['enforce', offBaseline()],
+        ['shadow', offBaseline('off')],
+        ['off', offBaseline('off')]
+      ] as const) {
+        const dir = fixture({
+          results: runFile({ datasetHash: 'hash-a', rerankArm: runArm, cases: regressed }),
+          baseline
+        });
+        expect(() => loadPublished(dir), `${runArm} run`).toThrow(/recorded delta for honesty is 0.*recomputed.*is -1/s);
+      }
+    });
+
+    it('accepts the correct cross-arm delta', () => {
       const dir = fixture({
+        manifest: {
+          publishedRuns: [{ ...measuredEntry, delta: { honesty: -1, grounding: -1, persona: -1 } }, unmeasuredEntry],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
         results: runFile({
           datasetHash: 'hash-a',
           rerankArm: 'enforce',
-          cases: [{ ...caseRow({ persona: scored(1) }), rerankFallbacks: 0 }]
+          cases: [{ ...caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) }), rerankFallbacks: 0 }]
         }),
-        baseline: baselineAt(0)
+        baseline: { noiseBand: { honesty: 0, grounding: 0, persona: 0 }, run: runFile({ datasetHash: 'hash-a', rerankArm: 'off' }) }
       });
       expect(() => loadPublished(dir)).not.toThrow();
     });
