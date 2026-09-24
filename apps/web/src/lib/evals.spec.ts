@@ -216,7 +216,11 @@ describe('loadPublished', () => {
       // records 0, which would be refused on one arm. Across arms there is no
       // comparison to verify.
       const dir = fixture({
-        results: runFile({ datasetHash: 'hash-a', rerankArm: 'enforce', cases: [caseRow({ persona: scored(1) })] }),
+        results: runFile({
+          datasetHash: 'hash-a',
+          rerankArm: 'enforce',
+          cases: [{ ...caseRow({ persona: scored(1) }), rerankFallbacks: 0 }]
+        }),
         baseline: baselineAt(0)
       });
       expect(() => loadPublished(dir)).not.toThrow();
@@ -238,6 +242,18 @@ describe('loadPublished', () => {
         })
       });
       expect(() => loadPublished(dir)).toThrow(/fell back on 2 search\(es\).*not eligible as a phase entry/s);
+    });
+
+    it('refuses an enforce run whose scored cases do not all record a fall back count', () => {
+      // Reading a missing count as zero would pass a run whose eligibility
+      // cannot be known (both passes of the 2026-09-24 gate found this).
+      const dir = fixture({
+        results: runFile({
+          rerankArm: 'enforce',
+          cases: [{ ...caseRow({}), rerankFallbacks: 0 }, caseRow({})]
+        })
+      });
+      expect(() => loadPublished(dir)).toThrow(/1 scored case\(s\) record no rerank fall back count/);
     });
 
     it('accepts an enforce run with no fall back, and a shadow run with some', () => {
@@ -384,17 +400,39 @@ describe('loadPublished', () => {
       expect(() => loadPublished(dir)).toThrow(/scored the SAME dataset/);
     });
 
-    it('accepts a claim naming a run of another rerank arm on the same hashes (phase six AC-14)', () => {
-      // Same dataset, same corpus, different arm: a different system was
-      // measured, so "cannot be compared" is true rather than a hiding place.
-      const dir = fixture({
-        manifest: { publishedRuns: [claiming('results/twin.json')], baselineHistory: history },
-        results: runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME', rerankArm: 'enforce' }),
-        extraResults: {
-          'twin.json': runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' })
-        }
-      });
-      expect(() => loadPublished(dir)).not.toThrow();
+    it('refuses a claim naming the other rerank arm on the same hashes (pre deploy gate, 2026-09-24)', () => {
+      // The original exploit again, across arms. Phase six's own migration
+      // plan computes exactly this enforce against off delta at one commit and
+      // says to publish it, so "no delta was computable" is false. The first
+      // version of the arm rule accepted it: a regressed enforce run could be
+      // published as prose with no results file edited. A different arm alone
+      // does not make a delta impossible to compute.
+      for (const [runArm, twinArm] of [
+        ['enforce', undefined],
+        ['enforce', 'off'],
+        ['shadow', 'off'],
+        ['off', 'shadow']
+      ] as const) {
+        const dir = fixture({
+          manifest: { publishedRuns: [claiming('results/twin.json')], baselineHistory: history },
+          results: runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            rerankArm: runArm,
+            cases: [{ ...caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) }), rerankFallbacks: 0 }]
+          }),
+          extraResults: {
+            'twin.json': runFile({
+              datasetHash: 'hash-SAME',
+              corpusHash: 'corpus-SAME',
+              ...(twinArm !== undefined && { rerankArm: twinArm })
+            })
+          }
+        });
+        expect(() => loadPublished(dir), `${runArm} naming a ${twinArm ?? 'no arm'} twin`).toThrow(
+          /scored the SAME dataset/
+        );
+      }
     });
 
     it('is not silenced by appending a later measured phase', () => {

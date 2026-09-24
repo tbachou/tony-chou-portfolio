@@ -521,6 +521,22 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
       );
     }
     const summary = summarise(run);
+    // Spec 0012 phase six, AC-14: eligibility has to be knowable. Every scored
+    // case of an enforce run carries its fall back count, because a scored
+    // case always reached the retrieval stats; a missing count means the file
+    // cannot say whether it mixed arms, and reading it as zero would pass it.
+    if (summary.rerankArm === 'enforce') {
+      const unrecorded = run.cases.filter(
+        (c) => c.status === 'scored' && c.rerankFallbacks === undefined
+      ).length;
+      if (unrecorded > 0) {
+        throw new Error(
+          `${label}: ${entry.resultsFile} measured rerank arm enforce, but ${unrecorded} scored case(s) ` +
+            'record no rerank fall back count, so whether it mixed two arms cannot be known. ' +
+            'It is not eligible as a phase entry.'
+        );
+      }
+    }
     // Spec 0012 phase six, AC-14: an enforce run in which the reranker fell
     // back measured a mix of two arms, so it never stands as a phase entry.
     // Refused by name, the way a dirty run is, rather than published with a
@@ -632,10 +648,15 @@ function checkRecordedDelta(
       parseResults(againstPath, `publishedRuns phase ${entry.phase}: its notComparableTo run`)
     );
 
+    // Deliberately NOT keyed on the rerank arm. A different arm alone does not
+    // make a delta impossible to compute: phase six's own migration plan
+    // computes exactly the enforce against off delta at one commit and says to
+    // publish it. The first version of the arm rule counted the arm here, and
+    // the pre deploy gate (2026-09-24) showed that reopened the original
+    // exploit across arms: a regressed enforce run published as prose, naming
+    // its off twin, with no results file edited.
     const sameInstrument =
       against.datasetHash === run.datasetHash &&
-      // Phase six AC-14: a different rerank arm is a different instrument.
-      against.rerankArm === run.rerankArm &&
       !(
         against.corpusHash !== undefined &&
         run.corpusHash !== undefined &&
