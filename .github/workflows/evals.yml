@@ -12,6 +12,15 @@ name: Evals
 
 on:
   workflow_dispatch:
+    inputs:
+      # Spec 0012 phase six, AC-10: the reranking arm this run measures. Every
+      # value is quoted on purpose: YAML reads a bare `off` as the boolean
+      # false, which would turn the default arm into `false`.
+      rerank:
+        description: 'Reranking arm to measure: off (what production runs), shadow, or enforce'
+        type: choice
+        options: ['off', 'shadow', 'enforce']
+        default: 'off'
   pull_request:
     paths:
       - 'apps/api/src/modules/conversation/**'
@@ -71,15 +80,13 @@ jobs:
       # failure rather than an expensive, silent one.
       UPSTASH_VECTOR_REST_URL: ${{ secrets.UPSTASH_VECTOR_REST_URL }}
       UPSTASH_VECTOR_REST_TOKEN: ${{ secrets.UPSTASH_VECTOR_REST_TOKEN }}
-      # Retrieval reranking (spec 0012 phase six). The harness forces
-      # `enforce` regardless of what the deployment runs, so the scoreboard
-      # entry this phase publishes measures what actually ships (AC-10).
-      #
-      # The reranker fails open by design (AC-6), so a missing or wrong key
-      # would quietly score the pre phase six path while reporting as though
-      # it had reranked. The harness therefore probes it before spending
-      # anything and refuses to run if no judgement comes back, exactly as it
-      # refuses a retrieval index it cannot reach.
+      # Retrieval reranking (spec 0012 phase six). A run measures the arm it is
+      # given (AC-10): `off` unless a manual dispatch picks another, and the
+      # arm is recorded with every result (AC-14). For a non `off` arm the
+      # reranker fails open by design (AC-6), so a missing or wrong key would
+      # quietly score the cosine path while recording the other arm; the
+      # harness therefore probes it before spending anything and refuses to
+      # run if no judgement comes back.
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,6 +100,10 @@ jobs:
         run: npm ci
 
       - name: Run interview eval
+        env:
+          # Passed through the environment and never interpolated into the
+          # script. Pull request runs have no inputs, so they measure `off`.
+          RERANK_ARM: ${{ inputs.rerank || 'off' }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             {
@@ -108,7 +119,7 @@ jobs:
           else
             CASE_ARGS=""
           fi
-          npm run eval:interview --workspace=apps/api -- $CASE_ARGS
+          npm run eval:interview --workspace=apps/api -- $CASE_ARGS --rerank "$RERANK_ARM"
           {
             echo '### Interview eval scoreboard'
             echo ''

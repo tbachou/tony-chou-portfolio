@@ -40,8 +40,11 @@ import { STATUS_ARGS } from '../../src/modules/conversation/eval/dirty-tree.js';
 import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard.js';
 import {
   RESULTS_PROVENANCE,
+  rerankArmOf,
+  rerankFallbacksOf,
   type BaselineFile,
   type CaseResult,
+  type RerankArm,
   type RunResults,
   type TokenTotals,
 } from '../../src/modules/conversation/eval/eval-types.js';
@@ -92,6 +95,30 @@ function numFlag(name: string, fallback: number): number {
     process.exit(1);
   }
   return value;
+}
+
+const RERANK_ARMS: readonly RerankArm[] = ['off', 'shadow', 'enforce'];
+
+/**
+ * The reranking arm this run measures (spec 0012 phase six, AC-10): explicit,
+ * defaulting to `off`, which is what production runs. Loud on a bad value,
+ * like numFlag: a typo that quietly measured the wrong arm would publish a
+ * number about a system nobody ran.
+ */
+function rerankArmFlag(): RerankArm {
+  const raw = arg('rerank');
+  if (raw === undefined) {
+    if (process.argv.includes('--rerank')) {
+      console.error('❌ --rerank needs a value: off, shadow or enforce');
+      process.exit(1);
+    }
+    return 'off';
+  }
+  if (!(RERANK_ARMS as readonly string[]).includes(raw)) {
+    console.error(`❌ --rerank must be off, shadow or enforce, got "${raw}"`);
+    process.exit(1);
+  }
+  return raw as RerankArm;
 }
 
 /** Parses a results/baseline JSON with a loud, named failure (never a raw stack). */
@@ -350,31 +377,39 @@ async function main(): Promise<void> {
   // From here on a retrieval failure aborts the case rather than degrading
   // quietly (AC-9). Production never sets this.
   process.env[RETRIEVAL_STRICT_ENV] = '1';
-  // Phase six AC-10: the eval runs the reranker rather than stubbing it, and
-  // is deliberately decoupled from whatever the deployment is running. The
-  // published scoreboard entry for this phase is only meaningful if the eval
-  // exercised what ships; left to the default (`off`) the harness would
-  // silently measure the path the phase exists to replace.
-  process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
-  // Forcing enforce proves nothing on its own: the reranker fails open, so a
-  // missing or wrong key would score every case on the cosine path while the
-  // run reports as reranked. Refuse before anything is spent instead.
-  const rerank = await rerankPreflight();
-  if (!rerank.ok) {
-    console.error(`❌ Reranking preflight failed: ${rerank.reason}.`);
-    console.error(
-      '   The harness forces enforce (AC-10), so without a working reranker every search\n' +
-        '   would fall back to the cosine path and the run would be recorded as though it had reranked.',
+  // Phase six AC-10: the arm is explicit and recorded with the results
+  // (AC-14), defaulting to `off`. Set on the environment in every case, `off`
+  // included, so a shell that happens to export RETRIEVAL_RERANK_MODE cannot
+  // change what this run measures behind the flag's back.
+  const rerankArm = rerankArmFlag();
+  process.env[RETRIEVAL_RERANK_MODE_ENV] = rerankArm;
+  if (rerankArm === 'off') {
+    console.log('Reranker: off (the arm this run measures; pass --rerank shadow|enforce to change it)');
+  } else {
+    // The reranker fails open, so a missing or wrong key would quietly score
+    // every case on the cosine path while the run records another arm. Refuse
+    // before anything is spent instead.
+    const rerank = await rerankPreflight();
+    if (!rerank.ok) {
+      console.error(`❌ Reranking preflight failed: ${rerank.reason}.`);
+      console.error(
+        `   This run measures rerank arm ${rerankArm}, so without a working reranker every search\n` +
+          '   would fall back to the cosine path and the run would be recorded as the wrong arm.',
+      );
+      process.exit(1);
+    }
+    // A probe proves the key and the path, not every later request: a rate
+    // limit or a size limit can still make a search fall back. Those are
+    // counted per case (AC-14), and claimed no further than that.
+    console.log(
+      `Reranker: ${RERANK_MODEL_ID} answered a probe (arm ${rerankArm}; fall backs are counted per case)`,
     );
-    process.exit(1);
   }
-  // A probe proves the key and the path, not every later request: a rate limit
-  // or a size limit can still make individual searches fall back, and those
-  // show up only as `rerank` lines with `fellBack: true`. Claim what was shown.
-  console.log(`Reranker: ${RERANK_MODEL_ID} answered a probe (mode forced to enforce; fall backs are logged per search)`);
   if (process.argv.includes('--preflight-only')) {
     console.log(
-      '--preflight-only: stopping here. Nothing was written, and nothing was spent beyond one TypeSafe probe.',
+      `--preflight-only: stopping here. Nothing was written, and nothing was spent${
+        rerankArm === 'off' ? '' : ' beyond one TypeSafe probe'
+      }.`,
     );
     return;
   }
@@ -495,6 +530,8 @@ async function main(): Promise<void> {
       caseCount: results.length,
       datasetHash,
       corpusHash,
+      rerankArm,
+      ...(rerankArm !== 'off' && { rerankModel: RERANK_MODEL_ID }),
       tokensByModel,
       tokenTotals,
       estimatedCostUsd: estimateCostUsd(tokensByModel),
@@ -525,6 +562,12 @@ async function main(): Promise<void> {
 
   // --save-baseline: a deliberate local step (AC-9); CI never passes it.
   if (process.argv.includes('--save-baseline')) {
+    if (rerankArm === 'enforce' && rerankFallbacksOf(run) > 0) {
+      console.warn(
+        '⚠ The reranker fell back on at least one search, so this run mixed two arms (AC-14).\n' +
+          '  It is saved as the baseline as asked, but it is not eligible as a phase entry.',
+      );
+    }
     const baselineVerdict = canSaveBaseline({
       partial: run.meta.partial,
       generationErrors: aggregate(run.cases).generationErrors,
@@ -573,6 +616,16 @@ async function main(): Promise<void> {
           '⚠ --noise-from run records no corpusHash (it predates retrieval), so the\n' +
             '  band it produces cannot account for retrieval variance.',
         );
+      }
+      // Phase six AC-14: a band comes from two runs of the SAME arm. A run
+      // recorded before phase six has no arm and ran the cosine path, so it
+      // reads as `off`.
+      if (rerankArmOf(other.meta) !== rerankArm) {
+        console.error(
+          `❌ --noise-from run measured rerank arm ${rerankArmOf(other.meta)} and this run measured ` +
+            `${rerankArm}; the noise band must come from two identical runs.`,
+        );
+        process.exit(1);
       }
       if (other.meta.partial) {
         console.error(
