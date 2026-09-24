@@ -368,9 +368,14 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-  console.log(`Reranker: ${RERANK_MODEL_ID} answered a probe; every search in this run is reranked (enforce)`);
+  // A probe proves the key and the path, not every later request: a rate limit
+  // or a size limit can still make individual searches fall back, and those
+  // show up only as `rerank` lines with `fellBack: true`. Claim what was shown.
+  console.log(`Reranker: ${RERANK_MODEL_ID} answered a probe (mode forced to enforce; fall backs are logged per search)`);
   if (process.argv.includes('--preflight-only')) {
-    console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
+    console.log(
+      '--preflight-only: stopping here. Nothing was written, and nothing was spent beyond one TypeSafe probe.',
+    );
     return;
   }
   const commit = git.commit;
