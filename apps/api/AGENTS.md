@@ -59,7 +59,7 @@ Two paths worth knowing, both easy to lose by grep alone. `file.ts:function` thr
 - `anthropic/ai-provider.interface.ts` — `streamMessage`, `forceToolCall`, `runToolConversation`, implemented by the direct and Bedrock services. `tool-conversation.ts` imports NO SDK because the Bedrock SDK bundles its own `@anthropic-ai/sdk` at a different version and the two `MessageParam` types are incompatible.
 - Protocol vs policy: the tool loop knows the wire format, the executor knows the rules. That split is why the loop has no idea retrieval exists.
 
-**Four files in `src/` exist only because the test runner's root is `src` and will not collect `scripts/`**: `eval/run-outcome.ts`, `eval/grounding-prompt.ts`, `retrieval/index-health.ts`, `anthropic/harness-replay.ts`. Each has exactly one caller, in `scripts/`. If you go looking for eval preflight logic and it is not next to the preflight, that is why.
+**Five files in `src/` exist only because the test runner's root is `src` and will not collect `scripts/`**: `eval/run-outcome.ts`, `eval/grounding-prompt.ts`, `retrieval/index-health.ts`, `retrieval/rerank-preflight.ts`, `anthropic/harness-replay.ts`. Each has exactly one caller, in `scripts/`. If you go looking for eval preflight logic and it is not next to the preflight, that is why.
 
 ## Conventions
 

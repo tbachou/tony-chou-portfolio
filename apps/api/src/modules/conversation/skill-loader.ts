@@ -7,28 +7,43 @@ import { join } from 'path';
 // read from src/ at runtime: process.cwd() is apps/api both in dev and on
 // Render. The repo-root fallback covers running the compiled server from the
 // monorepo root by hand.
-const SKILL_DIR_CANDIDATES = [
-  join(process.cwd(), 'src', 'modules', 'conversation', 'skills'),
-  join(
-    process.cwd(),
-    'apps',
-    'api',
-    'src',
-    'modules',
-    'conversation',
-    'skills',
-  ),
+const MODULE_ROOT_CANDIDATES = [
+  join(process.cwd(), 'src', 'modules', 'conversation'),
+  join(process.cwd(), 'apps', 'api', 'src', 'modules', 'conversation'),
 ];
+
+/**
+ * Where each prompt lives, relative to the conversation module root.
+ *
+ * Both the name union and the directory list used to be closed around a single
+ * `skills/` folder, so a prompt belonging to a sub module had nowhere to go but
+ * next to `tony.md` (spec 0012 phase six, AC-12). Keying the subdirectory off
+ * the name widens both at once and keeps one cache and one error path, rather
+ * than growing a second loader that would drift from this one.
+ *
+ * A prompt is filed with the code that sends it. `rerank.md` is retrieval's,
+ * not the persona's, and putting it in `skills/` would imply the persona reads
+ * it.
+ */
+const SKILL_SUBDIR = {
+  interviewer: 'skills',
+  tony: 'skills',
+  'credential-check': 'skills',
+  rerank: join('retrieval', 'skills'),
+} as const;
 
 const cache = new Map<string, string>();
 
-export type ConversationSkillName = 'interviewer' | 'tony' | 'credential-check';
+export type ConversationSkillName = keyof typeof SKILL_SUBDIR;
 
 export function loadConversationSkill(name: ConversationSkillName): string {
   const cached = cache.get(name);
-  if (cached) return cached;
+  // Checked against undefined rather than truthiness: an empty prompt file
+  // would otherwise miss the cache and be re-read on every call.
+  if (cached !== undefined) return cached;
 
-  for (const dir of SKILL_DIR_CANDIDATES) {
+  const dirs = MODULE_ROOT_CANDIDATES.map((root) => join(root, SKILL_SUBDIR[name]));
+  for (const dir of dirs) {
     try {
       // trimEnd keeps the prompt byte-identical to the inline constants this
       // loader replaced: a file's trailing newline is an editor artifact,
@@ -42,6 +57,6 @@ export function loadConversationSkill(name: ConversationSkillName): string {
     }
   }
   throw new Error(
-    `Conversation skill file ${name}.md not found in: ${SKILL_DIR_CANDIDATES.join(', ')}`,
+    `Conversation skill file ${name}.md not found in: ${dirs.join(', ')}`,
   );
 }

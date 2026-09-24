@@ -34,9 +34,17 @@ loadEnv({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
 import {
   MINIMUM_SIMILARITY,
+  cosineSelection,
   openReadOnly,
   isRetrievalConfigured,
+  searchCandidates,
 } from '../src/modules/conversation/retrieval/vector-store.js';
+import {
+  RERANK_KEEP_THRESHOLD,
+  RERANK_MODEL_ID,
+  isRerankConfigured,
+  rerankCandidates,
+} from '../src/modules/conversation/retrieval/reranker.js';
 import { checkIndexPopulation } from '../src/modules/conversation/retrieval/index-health.js';
 import { POSITIVES, NEGATIVES, type LabelledQuery } from './threshold-sweep.queries.js';
 
@@ -79,6 +87,125 @@ async function scoreAll(
 
 function fmt(n: number): string {
   return n.toFixed(3);
+}
+
+/**
+ * The reranked arm (spec 0012 phase six, AC-11).
+ *
+ * Runs both selection paths over the same widened candidate set and reports
+ * them side by side, which is what makes the decision to enforce an evidence
+ * based one rather than a preference. The exit bar in the spec's migration
+ * plan reads directly off this table: the reranked arm must reach the expected
+ * document at least as often as 0.68 does, must beat it on at least one query,
+ * and must lose no labelled positive.
+ *
+ * Two honest limits, both deliberate. `filterChunksForStory` is NOT applied
+ * here, because it is story aware and a labelled query has no story; this
+ * measures retrieval, not the guard. And the interviewer's question and the
+ * search query are the same string, because a labelled query is the question,
+ * with no persona paraphrase in between. Production judges against both, so
+ * this arm measures the easier of the two cases.
+ */
+type ArmResult = LabelledQuery & {
+  /** Paths the cosine path would hand the persona. */
+  cosinePaths: string[];
+  /** Paths the reranker would hand the persona. */
+  rerankPaths: string[];
+  fellBack: boolean;
+};
+
+async function runArms(
+  index: ReturnType<typeof openReadOnly>,
+  queries: LabelledQuery[],
+): Promise<ArmResult[]> {
+  const out: ArmResult[] = [];
+  for (const q of queries) {
+    const candidates = await searchCandidates(index, q.query);
+    const cosine = cosineSelection(candidates);
+    const reranked = await rerankCandidates({
+      candidates,
+      interviewerQuestion: q.query,
+      searchQuery: q.query,
+    });
+    out.push({
+      ...q,
+      cosinePaths: cosine.map((c) => c.sourcePath),
+      rerankPaths: reranked.kept.map((c) => c.sourcePath),
+      fellBack: reranked.fellBack,
+    });
+  }
+  return out;
+}
+
+/** A positive is reached when the expected document is in the selection. */
+function reached(paths: string[], expects: string): boolean {
+  return expects !== '' && paths.includes(expects);
+}
+
+function reportArms(positives: ArmResult[], negatives: ArmResult[]): void {
+  const fellBack = [...positives, ...negatives].filter((r) => r.fellBack).length;
+  if (fellBack > 0) {
+    console.log(
+      `\n  WARNING: the reranker fell back on ${fellBack} of ${positives.length + negatives.length} queries.\n` +
+        '  Those rows show the cosine selection in the rerank column, so the comparison\n' +
+        '  below understates the difference. Read the cause before trusting the table.',
+    );
+  }
+
+  const cosineHits = positives.filter((r) => reached(r.cosinePaths, r.expects)).length;
+  const rerankHits = positives.filter((r) => reached(r.rerankPaths, r.expects)).length;
+  const cosineRejects = negatives.filter((r) => r.cosinePaths.length === 0).length;
+  const rerankRejects = negatives.filter((r) => r.rerankPaths.length === 0).length;
+
+  console.log(`\n  arm                      positives reached   negatives rejected`);
+  console.log(
+    `  cosine ${MINIMUM_SIMILARITY} top-${3}              ${String(cosineHits).padStart(5)}/${positives.length}` +
+      `             ${String(cosineRejects).padStart(5)}/${negatives.length}`,
+  );
+  console.log(
+    `  rerank ${RERANK_MODEL_ID} @ ${RERANK_KEEP_THRESHOLD}    ${String(rerankHits).padStart(5)}/${positives.length}` +
+      `             ${String(rerankRejects).padStart(5)}/${negatives.length}`,
+  );
+
+  // Per query disagreement is the useful detail: a tie on the totals can still
+  // mean the two arms disagree on half the rows.
+  const disagreed = [...positives, ...negatives].filter(
+    (r) => r.cosinePaths.join('|') !== r.rerankPaths.join('|'),
+  );
+  if (disagreed.length > 0) {
+    console.log(`\n  the two arms disagreed on ${disagreed.length} of ${positives.length + negatives.length} queries:`);
+    for (const r of disagreed) {
+      console.log(`    "${r.query}"`);
+      console.log(`      expected ${r.expects === '' ? '(nothing)' : r.expects}`);
+      console.log(`      cosine   ${r.cosinePaths.join(', ') || '(nothing)'}`);
+      console.log(`      rerank   ${r.rerankPaths.join(', ') || '(nothing)'}`);
+    }
+  }
+
+  const regressed = positives.filter(
+    (r) => reached(r.cosinePaths, r.expects) && !reached(r.rerankPaths, r.expects),
+  );
+  const won = positives.filter(
+    (r) => !reached(r.cosinePaths, r.expects) && reached(r.rerankPaths, r.expects),
+  );
+
+  console.log('\n  exit bar (spec 0012 phase six, migration step 3):');
+  console.log(
+    `    reaches expected at least as often   ${rerankHits >= cosineHits ? 'PASS' : 'FAIL'}` +
+      `  (${rerankHits} vs ${cosineHits})`,
+  );
+  console.log(
+    `    beats cosine on at least one query   ${won.length > 0 ? 'PASS' : 'FAIL'}  (${won.length})`,
+  );
+  console.log(
+    `    loses no labelled positive           ${regressed.length === 0 ? 'PASS' : 'FAIL'}` +
+      `  (${regressed.length} lost)`,
+  );
+  console.log(
+    '\n  Reported, not enforced. Whether to set enforce is a judgement about the\n' +
+      '  trade this table describes, and a script that decided it would be making\n' +
+      '  that call silently.',
+  );
 }
 
 async function main(): Promise<void> {
@@ -172,6 +299,20 @@ async function main(): Promise<void> {
     `\nsweep:threshold ok — 10/10 positives clear ${MINIMUM_SIMILARITY}, ` +
       `${negatives.filter((r) => r.score < MINIMUM_SIMILARITY).length}/10 negatives rejected.`,
   );
+
+  // AC-11. Skipped rather than failed without a key: the threshold table above
+  // is the reason this script exists and still stands on its own.
+  if (!isRerankConfigured()) {
+    console.log(
+      '\nreranked arm skipped — TYPESAFE_API_KEY is not set.\n' +
+        'It lives in apps/api/.env on a developer machine.',
+    );
+    return;
+  }
+  console.log(`\nreranked arm — ${RERANK_MODEL_ID}, one judgement per candidate. This spends TypeSafe budget.`);
+  const posArms = await runArms(index, POSITIVES);
+  const negArms = await runArms(index, NEGATIVES);
+  reportArms(posArms, negArms);
 }
 
 main().catch((error: unknown) => {

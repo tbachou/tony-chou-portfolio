@@ -28,6 +28,18 @@ export type RetrievedChunk = {
   sourcePath: string;
 };
 
+/**
+ * A candidate before selection, still carrying its similarity score.
+ *
+ * The score stays inside retrieval and never reaches the model, which is why
+ * `RetrievedChunk` above is unchanged: what the persona receives is still the
+ * text, the heading and the path. Reranking needs the score for one reason
+ * (spec 0012 phase six) — the cosine selection has to be recoverable from the
+ * widened candidate set, so that every failure path can fall back to today's
+ * behaviour without issuing a second query.
+ */
+export type ScoredChunk = RetrievedChunk & { score: number };
+
 /** AC-5: at most three results per call. */
 export const TOP_K = 3;
 
@@ -148,6 +160,56 @@ export async function replaceAll(index: Index, chunks: Chunk[]): Promise<void> {
 }
 
 /**
+ * AC-5 of spec 0012 phase six: how many candidates the widened query asks for.
+ *
+ * Only issued when reranking is on. `off` keeps `TOP_K` exactly, so a
+ * deployment that has not enabled reranking pays nothing for its existence.
+ */
+export const RERANK_CANDIDATE_K = 10;
+
+/**
+ * The floor the widened query uses instead of `MINIMUM_SIMILARITY`.
+ *
+ * Low on purpose. The point of two stages is that the cheap one optimises for
+ * recall and the judgement stage supplies the precision, so this number exists
+ * to keep obvious noise out for free rather than to decide relevance. It is
+ * below every score in the calibration table above, positives and negatives
+ * alike, which is what makes the widened set a strict superset of the narrow
+ * one and lets the cosine selection be recomputed from it.
+ */
+export const RERANK_CANDIDATE_FLOOR = 0.4;
+
+/** The one place the index is queried. Both read paths below go through it. */
+async function queryIndex(
+  index: Index,
+  query: string,
+  topK: number,
+  floor: number,
+): Promise<ScoredChunk[]> {
+  // includeData is required to get the chunk text back. Without it the query
+  // returns ids, scores and metadata only, so the model would receive a
+  // citation with nothing to cite. Caught by the first live query.
+  const results = await index.query({
+    data: query,
+    topK,
+    includeMetadata: true,
+    includeData: true,
+  });
+  return results
+    .filter((result) => result.score >= floor)
+    .map((result) => {
+      const metadata = (result.metadata ?? {}) as Partial<ChunkMetadata>;
+      return {
+        text: String(result.data ?? ''),
+        heading: metadata.heading ?? '',
+        sourcePath: metadata.sourcePath ?? '',
+        score: result.score,
+      };
+    })
+    .filter((chunk) => chunk.sourcePath.length > 0);
+}
+
+/**
  * The read path behind the `searchKnowledge` tool (AC-5).
  *
  * Returns at most three chunks, each carrying its heading and source path,
@@ -155,24 +217,41 @@ export async function replaceAll(index: Index, chunks: Chunk[]): Promise<void> {
  * path the persona has nothing to name.
  */
 export async function search(index: Index, query: string): Promise<RetrievedChunk[]> {
-  // includeData is required to get the chunk text back. Without it the query
-  // returns ids, scores and metadata only, so the model would receive a
-  // citation with nothing to cite. Caught by the first live query.
-  const results = await index.query({
-    data: query,
-    topK: TOP_K,
-    includeMetadata: true,
-    includeData: true,
-  });
-  return results
-    .filter((result) => result.score >= MINIMUM_SIMILARITY)
-    .map((result) => {
-      const metadata = (result.metadata ?? {}) as Partial<ChunkMetadata>;
-      return {
-        text: String(result.data ?? ''),
-        heading: metadata.heading ?? '',
-        sourcePath: metadata.sourcePath ?? '',
-      };
-    })
-    .filter((chunk) => chunk.sourcePath.length > 0);
+  return queryIndex(index, query, TOP_K, MINIMUM_SIMILARITY);
+}
+
+/**
+ * The widened read path, used only when reranking is on (phase six, AC-1).
+ *
+ * Returns up to `RERANK_CANDIDATE_K` chunks above `RERANK_CANDIDATE_FLOOR`, in
+ * the index's own descending score order, each still carrying its score. This
+ * is a strict superset of what `search` would have returned for the same
+ * query: same index, same text, a lower floor and a larger k. `cosineSelection`
+ * below recovers the narrow result from it, so no failure path needs a second
+ * round trip.
+ */
+export async function searchCandidates(
+  index: Index,
+  query: string,
+): Promise<ScoredChunk[]> {
+  return queryIndex(index, query, RERANK_CANDIDATE_K, RERANK_CANDIDATE_FLOOR);
+}
+
+/**
+ * Today's behaviour, recomputed from the widened candidate set.
+ *
+ * This is what `off` returns, what `shadow` returns, and what every reranker
+ * failure falls back to (AC-6). It is a pure function of the candidates
+ * because of the superset property above: applying `MINIMUM_SIMILARITY` and
+ * `TOP_K` to the wide set gives exactly the rows the narrow query would have
+ * produced, so "failing open costs nothing" is a property of the code rather
+ * than a hope.
+ *
+ * The input is already in descending score order from the index, and the
+ * filter preserves it, so no re-sort is needed or done.
+ */
+export function cosineSelection(candidates: ScoredChunk[]): ScoredChunk[] {
+  return candidates
+    .filter((chunk) => chunk.score >= MINIMUM_SIMILARITY)
+    .slice(0, TOP_K);
 }

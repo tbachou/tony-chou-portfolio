@@ -58,6 +58,11 @@ import {
   retrievalStrictFromEnv,
 } from '../../src/modules/conversation/retrieval/search-knowledge.js';
 import {
+  RERANK_MODEL_ID,
+  RETRIEVAL_RERANK_MODE_ENV,
+} from '../../src/modules/conversation/retrieval/reranker.js';
+import { rerankPreflight } from '../../src/modules/conversation/retrieval/rerank-preflight.js';
+import {
   openReadOnly,
   search as searchIndex,
 } from '../../src/modules/conversation/retrieval/vector-store.js';
@@ -345,8 +350,32 @@ async function main(): Promise<void> {
   // From here on a retrieval failure aborts the case rather than degrading
   // quietly (AC-9). Production never sets this.
   process.env[RETRIEVAL_STRICT_ENV] = '1';
+  // Phase six AC-10: the eval runs the reranker rather than stubbing it, and
+  // is deliberately decoupled from whatever the deployment is running. The
+  // published scoreboard entry for this phase is only meaningful if the eval
+  // exercised what ships; left to the default (`off`) the harness would
+  // silently measure the path the phase exists to replace.
+  process.env[RETRIEVAL_RERANK_MODE_ENV] = 'enforce';
+  // Forcing enforce proves nothing on its own: the reranker fails open, so a
+  // missing or wrong key would score every case on the cosine path while the
+  // run reports as reranked. Refuse before anything is spent instead.
+  const rerank = await rerankPreflight();
+  if (!rerank.ok) {
+    console.error(`❌ Reranking preflight failed: ${rerank.reason}.`);
+    console.error(
+      '   The harness forces enforce (AC-10), so without a working reranker every search\n' +
+        '   would fall back to the cosine path and the run would be recorded as though it had reranked.',
+    );
+    process.exit(1);
+  }
+  // A probe proves the key and the path, not every later request: a rate limit
+  // or a size limit can still make individual searches fall back, and those
+  // show up only as `rerank` lines with `fellBack: true`. Claim what was shown.
+  console.log(`Reranker: ${RERANK_MODEL_ID} answered a probe (mode forced to enforce; fall backs are logged per search)`);
   if (process.argv.includes('--preflight-only')) {
-    console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
+    console.log(
+      '--preflight-only: stopping here. Nothing was written, and nothing was spent beyond one TypeSafe probe.',
+    );
     return;
   }
   const commit = git.commit;
