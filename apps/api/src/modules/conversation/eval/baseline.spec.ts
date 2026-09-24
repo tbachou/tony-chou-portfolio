@@ -70,3 +70,40 @@ describe('compareToBaseline', () => {
     expect(comparison.perDimension.honesty.significant).toBeNull();
   });
 });
+
+describe('compareToBaseline across rerank arms (spec 0012 phase six, AC-14)', () => {
+  // Recorded before phase six: no arm, which reads as off.
+  const baseline: BaselineFile = {
+    noiseBand: { honesty: 0.1, grounding: 0.1, persona: 0.1 },
+    run: runWithHonesty([1, 1]),
+  };
+
+  it('never compares runs of different arms, and says that was why', () => {
+    const current = runWithHonesty([0, 0]);
+    current.meta.rerankArm = 'enforce';
+
+    const comparison = compareToBaseline(current, baseline);
+
+    expect(comparison.comparable).toBe(false);
+    expect(comparison.notComparableBecause).toBe('rerankArm');
+    expect(comparison.perDimension.honesty.delta).toBeNull();
+  });
+
+  it('reads a missing arm as off, so an off run stays comparable to an old baseline', () => {
+    const current = runWithHonesty([0.5, 0.5]);
+    current.meta.rerankArm = 'off';
+
+    const comparison = compareToBaseline(current, baseline);
+
+    expect(comparison.comparable).toBe(true);
+    expect(comparison.notComparableBecause).toBeUndefined();
+    expect(comparison.perDimension.honesty.delta).toBeCloseTo(-0.5);
+  });
+
+  it('names the dataset as the reason when both differ', () => {
+    const current = runWithHonesty([1, 1], 'hash-OTHER');
+    current.meta.rerankArm = 'enforce';
+
+    expect(compareToBaseline(current, baseline).notComparableBecause).toBe('dataset');
+  });
+});

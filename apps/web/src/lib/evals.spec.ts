@@ -47,10 +47,12 @@ function caseRow(
 function runFile(overrides: {
   datasetHash?: string;
   corpusHash?: string;
+  rerankArm?: 'off' | 'shadow' | 'enforce';
   gitDirty?: boolean;
   gitCommit?: string;
   date?: string;
-  cases?: ReturnType<typeof caseRow>[];
+  /** A case may carry its rerank fall back count (spec 0012 phase six, AC-14). */
+  cases?: Array<ReturnType<typeof caseRow> & { rerankFallbacks?: number }>;
 }) {
   return {
     _readMeFirst: 'model authored text, not a claim by Tony Chou',
@@ -64,6 +66,7 @@ function runFile(overrides: {
       caseCount: (overrides.cases ?? [caseRow({})]).length,
       datasetHash: overrides.datasetHash ?? 'hash-a',
       ...(overrides.corpusHash !== undefined && { corpusHash: overrides.corpusHash }),
+      ...(overrides.rerankArm !== undefined && { rerankArm: overrides.rerankArm }),
       estimatedCostUsd: 0.19
     },
     cases: overrides.cases ?? [caseRow({})]
@@ -201,6 +204,66 @@ describe('loadPublished', () => {
     expect(() => loadPublished(dir)).not.toThrow();
   });
 
+  describe('rerank arms (spec 0012 phase six, AC-14)', () => {
+    const baselineAt = (persona: number) => ({
+      noiseBand: { honesty: 0, grounding: 0, persona: 0 },
+      // Recorded before phase six: no arm, which reads as off.
+      run: runFile({ datasetHash: 'hash-a', cases: [caseRow({ persona: scored(persona) })] })
+    });
+
+    it('leaves a recorded delta alone when the run measured another arm than the baseline', () => {
+      // The run scores persona 1 against a baseline of 0 and the manifest
+      // records 0, which would be refused on one arm. Across arms there is no
+      // comparison to verify.
+      const dir = fixture({
+        results: runFile({ datasetHash: 'hash-a', rerankArm: 'enforce', cases: [caseRow({ persona: scored(1) })] }),
+        baseline: baselineAt(0)
+      });
+      expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+    it('still checks an off run against a baseline that records no arm', () => {
+      const dir = fixture({
+        results: runFile({ datasetHash: 'hash-a', rerankArm: 'off', cases: [caseRow({ persona: scored(1) })] }),
+        baseline: baselineAt(0)
+      });
+      expect(() => loadPublished(dir)).toThrow(/recorded delta for persona is 0.*recomputed.*is 1/s);
+    });
+
+    it('refuses an enforce run in which the reranker fell back', () => {
+      const dir = fixture({
+        results: runFile({
+          rerankArm: 'enforce',
+          cases: [{ ...caseRow({}), rerankFallbacks: 0 }, { ...caseRow({}), rerankFallbacks: 2 }]
+        })
+      });
+      expect(() => loadPublished(dir)).toThrow(/fell back on 2 search\(es\).*not eligible as a phase entry/s);
+    });
+
+    it('accepts an enforce run with no fall back, and a shadow run with some', () => {
+      // Shadow returns the cosine path whatever the reranker does, so its fall
+      // backs change nothing a visitor saw and do not disqualify it.
+      const clean = fixture({
+        results: runFile({ rerankArm: 'enforce', cases: [{ ...caseRow({}), rerankFallbacks: 0 }] })
+      });
+      const shadow = fixture({
+        results: runFile({ rerankArm: 'shadow', cases: [{ ...caseRow({}), rerankFallbacks: 3 }] })
+      });
+      expect(() => loadPublished(clean)).not.toThrow();
+      expect(() => loadPublished(shadow)).not.toThrow();
+    });
+
+    it('reports the arm and the fall back total on the run summary', () => {
+      const dir = fixture({
+        results: runFile({ rerankArm: 'shadow', cases: [{ ...caseRow({}), rerankFallbacks: 3 }] })
+      });
+      const run = loadRun(loadPublished(dir).publishedRuns[0], dir);
+      expect(run.rerankArm).toBe('shadow');
+      expect(run.rerankFallbacks).toBe(3);
+      expect(loadRun(loadPublished(fixture({})).publishedRuns[0], fixture({})).rerankArm).toBe('off');
+    });
+  });
+
   it('refuses a manifest entry whose writeup does not exist (AC-2)', () => {
     const dir = fixture({ writeups: ['phase-two.md'] });
     expect(() => loadPublished(dir)).toThrow(/phase 1: writeupFile does not exist.*phase-one\.md/s);
@@ -319,6 +382,19 @@ describe('loadPublished', () => {
         }
       });
       expect(() => loadPublished(dir)).toThrow(/scored the SAME dataset/);
+    });
+
+    it('accepts a claim naming a run of another rerank arm on the same hashes (phase six AC-14)', () => {
+      // Same dataset, same corpus, different arm: a different system was
+      // measured, so "cannot be compared" is true rather than a hiding place.
+      const dir = fixture({
+        manifest: { publishedRuns: [claiming('results/twin.json')], baselineHistory: history },
+        results: runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME', rerankArm: 'enforce' }),
+        extraResults: {
+          'twin.json': runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' })
+        }
+      });
+      expect(() => loadPublished(dir)).not.toThrow();
     });
 
     it('is not silenced by appending a later measured phase', () => {
@@ -582,7 +658,11 @@ describe('loadRun', () => {
       'gitDirty',
       'judgeModel',
       'perDimension',
-      'provider'
+      'provider',
+      // Spec 0012 phase six, AC-14: the arm, resolved (a run with none reads
+      // as off), and the fall back total. Both run level, never case content.
+      'rerankArm',
+      'rerankFallbacks'
     ]);
     const serialized = JSON.stringify(run);
     for (const leaked of ['interviewerQuestion', 'tonyRaw', 'tonyEmitted', 'honestyLayers', 'reason']) {

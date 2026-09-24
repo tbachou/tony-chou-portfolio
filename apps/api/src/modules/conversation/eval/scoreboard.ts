@@ -5,6 +5,8 @@ import {
   DIMENSIONS,
   type BaselineFile,
   type RunResults,
+  rerankArmOf,
+  rerankFallbacksOf,
 } from './eval-types.js';
 
 /**
@@ -37,6 +39,19 @@ export function renderScoreboard(
   );
   lines.push(`- Cases: ${current.meta.caseCount}`);
   lines.push(`- Dataset hash: \`${current.meta.datasetHash.slice(0, 12)}…\``);
+  // Spec 0012 phase six, AC-14: every number names the rerank arm behind it.
+  const arm = rerankArmOf(current.meta);
+  const fallbacks = rerankFallbacksOf(current);
+  lines.push(
+    `- Rerank arm: ${arm}${current.meta.rerankModel ? ` (${current.meta.rerankModel})` : ''}${
+      arm === 'off' ? '' : ` · fall backs: ${fallbacks}`
+    }`,
+  );
+  if (arm === 'enforce' && fallbacks > 0) {
+    lines.push(
+      '- **The reranker fell back on at least one search, so this run mixed two arms and is not eligible as a phase entry.**',
+    );
+  }
   lines.push(
     `- Estimated cost: ${
       current.meta.estimatedCostUsd === null
@@ -76,7 +91,11 @@ export function renderScoreboard(
     lines.push('');
   } else if (!comparison.comparable) {
     lines.push(
-      '_Baseline delta **not comparable**: the dataset hash differs from the baseline run. Re-establish the baseline on the current dataset._',
+      comparison.notComparableBecause === 'rerankArm'
+        ? `_Baseline delta **not comparable**: this run measured rerank arm \`${arm}\` and the baseline measured \`${
+            baseline ? rerankArmOf(baseline.run.meta) : 'off'
+          }\`. Compare the two arms at one commit instead._`
+        : '_Baseline delta **not comparable**: the dataset hash differs from the baseline run. Re-establish the baseline on the current dataset._',
     );
     lines.push('');
   }

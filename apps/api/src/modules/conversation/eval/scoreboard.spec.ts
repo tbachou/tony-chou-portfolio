@@ -66,3 +66,44 @@ describe('renderScoreboard', () => {
     expect(renderScoreboard(aborted, null)).toContain('aborted by --max-cost');
   });
 });
+
+describe('renderScoreboard and the rerank arm (spec 0012 phase six, AC-14)', () => {
+  const withArm = (arm: 'off' | 'shadow' | 'enforce', fallbacks: number[]) =>
+    makeRun(
+      fallbacks.map((n, i) =>
+        makeCase({
+          caseId: `c${i}`,
+          rerankFallbacks: n,
+          dimensions: { honesty: scored(1), grounding: scored(1), persona: scored(1) },
+        }),
+      ),
+      { rerankArm: arm, ...(arm !== 'off' && { rerankModel: 'jev-1.13.0' }) },
+    );
+
+  it('names the arm, the model and the fall back count', () => {
+    const board = renderScoreboard(withArm('enforce', [0, 0]), null);
+    expect(board).toContain('- Rerank arm: enforce (jev-1.13.0) · fall backs: 0');
+    expect(board).not.toContain('not eligible as a phase entry');
+  });
+
+  it('shows a run recorded before phase six as off', () => {
+    const board = renderScoreboard(makeRun([makeCase({ caseId: 'a' })]), null);
+    expect(board).toContain('- Rerank arm: off');
+  });
+
+  it('says plainly that an enforce run with a fall back is not a phase entry', () => {
+    const board = renderScoreboard(withArm('enforce', [0, 2]), null);
+    expect(board).toContain('fall backs: 2');
+    expect(board).toContain('mixed two arms and is not eligible as a phase entry');
+  });
+
+  it('blames the arm, not the dataset, when the arms differ from the baseline', () => {
+    const baseline: BaselineFile = {
+      noiseBand: null,
+      run: makeRun([makeCase({ caseId: 'a' })]),
+    };
+    const board = renderScoreboard(withArm('enforce', [0]), baseline);
+    expect(board).toContain('this run measured rerank arm `enforce` and the baseline measured `off`');
+    expect(board).not.toContain('the dataset hash differs');
+  });
+});

@@ -274,6 +274,11 @@ const dimensionResultSchema = z
 const caseSchema = z
   .object({
     status: z.string(),
+    /**
+     * Searches where the reranker fell back to cosine (spec 0012 phase six,
+     * AC-14). Optional: runs recorded before phase six carry none.
+     */
+    rerankFallbacks: z.number().int().nonnegative().optional(),
     dimensions: z
       .object({
         honesty: dimensionResultSchema.optional(),
@@ -298,7 +303,14 @@ const runMetaSchema = z
      * The retrieval corpus (spec 0012 phase three, AC-11). Optional because
      * every run recorded before retrieval existed has none.
      */
-    corpusHash: z.string().min(1).optional()
+    corpusHash: z.string().min(1).optional(),
+    /**
+     * The reranking arm (spec 0012 phase six, AC-14). Optional because every
+     * run recorded before phase six has none, and those ran the plain cosine
+     * path, so a missing arm reads as `off` (see summarise).
+     */
+    rerankArm: z.enum(['off', 'shadow', 'enforce']).optional(),
+    rerankModel: z.string().min(1).optional()
   })
   .loose();
 
@@ -330,6 +342,10 @@ export type RunSummary = {
   caseCount: number;
   datasetHash: string;
   corpusHash?: string;
+  /** Resolved: a run recorded before phase six reads as `off` (AC-14). */
+  rerankArm: 'off' | 'shadow' | 'enforce';
+  /** Rerank fall backs summed over the run's cases (AC-14). */
+  rerankFallbacks: number;
   perDimension: Record<Dimension, DimensionAggregate>;
 };
 
@@ -371,6 +387,8 @@ function summarise(results: ParsedResults): RunSummary {
     caseCount: meta.caseCount,
     datasetHash: meta.datasetHash,
     corpusHash: meta.corpusHash,
+    rerankArm: meta.rerankArm ?? 'off',
+    rerankFallbacks: results.cases.reduce((sum, c) => sum + (c.rerankFallbacks ?? 0), 0),
     perDimension
   };
 }
@@ -502,7 +520,19 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
           'A dirty run is never published; re run it on a committed tree.'
       );
     }
-    checkRecordedDelta(entry, summarise(run), baseline, evalsDir);
+    const summary = summarise(run);
+    // Spec 0012 phase six, AC-14: an enforce run in which the reranker fell
+    // back measured a mix of two arms, so it never stands as a phase entry.
+    // Refused by name, the way a dirty run is, rather than published with a
+    // footnote nobody reads.
+    if (summary.rerankArm === 'enforce' && summary.rerankFallbacks > 0) {
+      throw new Error(
+        `${label}: ${entry.resultsFile} measured rerank arm enforce, but the reranker fell back on ` +
+          `${summary.rerankFallbacks} search(es), so it mixed two arms. It is not eligible as a phase ` +
+          'entry; re run it until no search falls back.'
+      );
+    }
+    checkRecordedDelta(entry, summary, baseline, evalsDir);
   }
 
   return manifest;
@@ -604,6 +634,8 @@ function checkRecordedDelta(
 
     const sameInstrument =
       against.datasetHash === run.datasetHash &&
+      // Phase six AC-14: a different rerank arm is a different instrument.
+      against.rerankArm === run.rerankArm &&
       !(
         against.corpusHash !== undefined &&
         run.corpusHash !== undefined &&
@@ -635,6 +667,11 @@ function checkRecordedDelta(
   ) {
     return;
   }
+  // Spec 0012 phase six, AC-14: runs of different rerank arms measure
+  // different systems, so a delta between them is not something to verify.
+  // A baseline recorded before phase six carries no arm and reads as `off`
+  // (see summarise), so an `off` run stays checkable against it.
+  if (baseline.rerankArm !== run.rerankArm) return;
 
   for (const dimension of DIMENSIONS) {
     const runMean = run.perDimension[dimension].mean;
