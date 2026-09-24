@@ -34,9 +34,11 @@ loadEnv({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
 import {
   MINIMUM_SIMILARITY,
+  TOP_K,
   cosineSelection,
   openReadOnly,
   isRetrievalConfigured,
+  search,
   searchCandidates,
 } from '../src/modules/conversation/retrieval/vector-store.js';
 import {
@@ -46,7 +48,15 @@ import {
   rerankCandidates,
 } from '../src/modules/conversation/retrieval/reranker.js';
 import { checkIndexPopulation } from '../src/modules/conversation/retrieval/index-health.js';
-import { POSITIVES, NEGATIVES, type LabelledQuery } from './threshold-sweep.queries.js';
+import {
+  BETA_DOCUMENT,
+  CLINICAL_PROBES,
+  NEGATIVES,
+  POSITIVES,
+  PROBES_REVIEWED,
+  STORY_PROBES,
+  type LabelledQuery,
+} from './threshold-sweep.queries.js';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const MANIFEST_PATH = path.join(REPO_ROOT, 'docs', 'evals', 'interview', 'corpus.json');
@@ -90,14 +100,15 @@ function fmt(n: number): string {
 }
 
 /**
- * The reranked arm (spec 0012 phase six, AC-11).
+ * The reranked arm (spec 0012 phase six, AC-11, AC-13).
  *
  * Runs both selection paths over the same widened candidate set and reports
  * them side by side, which is what makes the decision to enforce an evidence
- * based one rather than a preference. The exit bar in the spec's migration
- * plan reads directly off this table: the reranked arm must reach the expected
- * document at least as often as 0.68 does, must beat it on at least one query,
- * and must lose no labelled positive.
+ * based one rather than a preference. The sweep bar in the spec's migration
+ * plan (step 4) reads directly off this report: positives reached, beaten and
+ * never lost; negatives rejected at least as often as cosine, including the
+ * AC-13 probe sets once their labels are reviewed; no Beta document for a
+ * clinically adjacent probe; and the superset check below.
  *
  * Two honest limits, both deliberate. `filterChunksForStory` is NOT applied
  * here, because it is story aware and a labelled query has no story; this
@@ -109,9 +120,21 @@ function fmt(n: number): string {
 type ArmResult = LabelledQuery & {
   /** Paths the cosine path would hand the persona. */
   cosinePaths: string[];
-  /** Paths the reranker would hand the persona. */
+  /**
+   * Paths the reranker would hand the persona. On a fall back that is the
+   * cosine selection, because that is what production returns. Scoring a fall
+   * back as an empty selection, as the first version did, counted it as a
+   * correctly rejected negative and inflated the negatives bar.
+   */
   rerankPaths: string[];
   fellBack: boolean;
+  cause?: string;
+  /**
+   * What the narrow query (`TOP_K` at `MINIMUM_SIMILARITY`) returns by itself,
+   * for the superset check: the cosine selection recomputed from the widened
+   * query is only a faithful fall back if the two agree.
+   */
+  narrowPaths: string[];
 };
 
 async function runArms(
@@ -122,16 +145,20 @@ async function runArms(
   for (const q of queries) {
     const candidates = await searchCandidates(index, q.query);
     const cosine = cosineSelection(candidates);
+    const narrow = await search(index, q.query);
     const reranked = await rerankCandidates({
       candidates,
       interviewerQuestion: q.query,
       searchQuery: q.query,
     });
+    const cosinePaths = cosine.map((c) => c.sourcePath);
     out.push({
       ...q,
-      cosinePaths: cosine.map((c) => c.sourcePath),
-      rerankPaths: reranked.kept.map((c) => c.sourcePath),
+      cosinePaths,
+      rerankPaths: reranked.fellBack ? cosinePaths : reranked.kept.map((c) => c.sourcePath),
       fellBack: reranked.fellBack,
+      ...(reranked.cause ? { cause: reranked.cause } : {}),
+      narrowPaths: narrow.map((c) => c.sourcePath),
     });
   }
   return out;
@@ -142,38 +169,63 @@ function reached(paths: string[], expects: string): boolean {
   return expects !== '' && paths.includes(expects);
 }
 
-function reportArms(positives: ArmResult[], negatives: ArmResult[]): void {
-  const fellBack = [...positives, ...negatives].filter((r) => r.fellBack).length;
-  if (fellBack > 0) {
+/** A negative is rejected when the selection is empty. */
+function rejected(paths: string[]): boolean {
+  return paths.length === 0;
+}
+
+function touchesBeta(paths: string[]): boolean {
+  return paths.some((p) => BETA_DOCUMENT.test(p));
+}
+
+/** A bar line's verdict. A draft probe line reports, it does not gate. */
+function verdict(pass: boolean, gating: boolean): string {
+  if (gating) return pass ? 'PASS' : 'FAIL';
+  return pass ? 'pass, report only' : 'fail, report only';
+}
+
+type ArmSets = {
+  positives: ArmResult[];
+  negatives: ArmResult[];
+  story: ArmResult[];
+  clinical: ArmResult[];
+};
+
+function reportArms({ positives, negatives, story, clinical }: ArmSets): void {
+  const all = [...positives, ...negatives, ...story, ...clinical];
+  const count = (rows: ArmResult[], pass: (r: ArmResult) => boolean) => rows.filter(pass).length;
+
+  const fellBack = all.filter((r) => r.fellBack);
+  if (fellBack.length > 0) {
+    const causes = [...new Set(fellBack.map((r) => r.cause ?? 'unknown'))].join(', ');
     console.log(
-      `\n  WARNING: the reranker fell back on ${fellBack} of ${positives.length + negatives.length} queries.\n` +
-        '  Those rows show the cosine selection in the rerank column, so the comparison\n' +
-        '  below understates the difference. Read the cause before trusting the table.',
+      `\n  WARNING: the reranker fell back on ${fellBack.length} of ${all.length} queries (${causes}).\n` +
+        '  Those rows score the cosine selection in the rerank column, which is what production\n' +
+        '  returns on a fall back, so the table understates the difference. Read the cause first.',
     );
   }
 
-  const cosineHits = positives.filter((r) => reached(r.cosinePaths, r.expects)).length;
-  const rerankHits = positives.filter((r) => reached(r.rerankPaths, r.expects)).length;
-  const cosineRejects = negatives.filter((r) => r.cosinePaths.length === 0).length;
-  const rerankRejects = negatives.filter((r) => r.rerankPaths.length === 0).length;
+  const cosineHits = count(positives, (r) => reached(r.cosinePaths, r.expects));
+  const rerankHits = count(positives, (r) => reached(r.rerankPaths, r.expects));
+  const draft = PROBES_REVIEWED ? '' : ' (draft)';
+  const rejectRow = (label: string, rows: ArmResult[]) =>
+    `  ${label.padEnd(32)} cosine ${String(count(rows, (r) => rejected(r.cosinePaths))).padStart(2)}/${rows.length}` +
+    `   rerank ${String(count(rows, (r) => rejected(r.rerankPaths))).padStart(2)}/${rows.length}`;
 
-  console.log(`\n  arm                      positives reached   negatives rejected`);
+  console.log(`\n  arms: cosine is ${MINIMUM_SIMILARITY} top ${TOP_K}; rerank is ${RERANK_MODEL_ID} at ${RERANK_KEEP_THRESHOLD}`);
   console.log(
-    `  cosine ${MINIMUM_SIMILARITY} top-${3}              ${String(cosineHits).padStart(5)}/${positives.length}` +
-      `             ${String(cosineRejects).padStart(5)}/${negatives.length}`,
+    `  ${'positives reached'.padEnd(32)} cosine ${String(cosineHits).padStart(2)}/${positives.length}` +
+      `   rerank ${String(rerankHits).padStart(2)}/${positives.length}`,
   );
-  console.log(
-    `  rerank ${RERANK_MODEL_ID} @ ${RERANK_KEEP_THRESHOLD}    ${String(rerankHits).padStart(5)}/${positives.length}` +
-      `             ${String(rerankRejects).padStart(5)}/${negatives.length}`,
-  );
+  console.log(rejectRow('negatives rejected', negatives));
+  console.log(rejectRow(`story probes rejected${draft}`, story));
+  console.log(rejectRow(`clinical probes rejected${draft}`, clinical));
 
   // Per query disagreement is the useful detail: a tie on the totals can still
   // mean the two arms disagree on half the rows.
-  const disagreed = [...positives, ...negatives].filter(
-    (r) => r.cosinePaths.join('|') !== r.rerankPaths.join('|'),
-  );
+  const disagreed = all.filter((r) => r.cosinePaths.join('|') !== r.rerankPaths.join('|'));
   if (disagreed.length > 0) {
-    console.log(`\n  the two arms disagreed on ${disagreed.length} of ${positives.length + negatives.length} queries:`);
+    console.log(`\n  the two arms disagreed on ${disagreed.length} of ${all.length} queries:`);
     for (const r of disagreed) {
       console.log(`    "${r.query}"`);
       console.log(`      expected ${r.expects === '' ? '(nothing)' : r.expects}`);
@@ -188,23 +240,62 @@ function reportArms(positives: ArmResult[], negatives: ArmResult[]): void {
   const won = positives.filter(
     (r) => !reached(r.cosinePaths, r.expects) && reached(r.rerankPaths, r.expects),
   );
+  // The originals always gate; the probe sets join them once their labels are
+  // reviewed (AC-13), and until then are scored above and gate nothing.
+  const gatedNegatives = PROBES_REVIEWED ? [...negatives, ...story, ...clinical] : negatives;
+  const cosineRejects = count(gatedNegatives, (r) => rejected(r.cosinePaths));
+  const rerankRejects = count(gatedNegatives, (r) => rejected(r.rerankPaths));
+  const betaLeaks = clinical.filter((r) => touchesBeta(r.cosinePaths) || touchesBeta(r.rerankPaths));
+  const supersetMismatches = all.filter((r) => r.narrowPaths.join('|') !== r.cosinePaths.join('|'));
 
-  console.log('\n  exit bar (spec 0012 phase six, migration step 3):');
+  console.log('\n  sweep bar (spec 0012 phase six, migration step 4):');
   console.log(
-    `    reaches expected at least as often   ${rerankHits >= cosineHits ? 'PASS' : 'FAIL'}` +
-      `  (${rerankHits} vs ${cosineHits})`,
+    `    reaches expected at least as often    ${verdict(rerankHits >= cosineHits, true)}  (${rerankHits} vs ${cosineHits})`,
+  );
+  console.log(`    beats cosine on at least one query    ${verdict(won.length > 0, true)}  (${won.length})`);
+  console.log(
+    `    loses no labelled positive            ${verdict(regressed.length === 0, true)}  (${regressed.length} lost)`,
   );
   console.log(
-    `    beats cosine on at least one query   ${won.length > 0 ? 'PASS' : 'FAIL'}  (${won.length})`,
+    `    rejects at least as many negatives    ${verdict(rerankRejects >= cosineRejects, true)}` +
+      `  (${rerankRejects} vs ${cosineRejects} of ${gatedNegatives.length}${PROBES_REVIEWED ? ', probes included' : ', originals only'})`,
   );
   console.log(
-    `    loses no labelled positive           ${regressed.length === 0 ? 'PASS' : 'FAIL'}` +
-      `  (${regressed.length} lost)`,
+    `    no Beta document for a clinical probe ${verdict(betaLeaks.length === 0, PROBES_REVIEWED)}` +
+      `  (${betaLeaks.length} of ${clinical.length})`,
   );
+  console.log(
+    `    superset check holds on every query   ${verdict(supersetMismatches.length === 0, true)}` +
+      `  (${supersetMismatches.length} of ${all.length} differ)`,
+  );
+
+  for (const r of betaLeaks) {
+    console.log(`\n  Beta document returned for clinical probe "${r.query}"`);
+    console.log(`      cosine   ${r.cosinePaths.join(', ') || '(nothing)'}`);
+    console.log(`      rerank   ${r.rerankPaths.join(', ') || '(nothing)'}`);
+  }
+  if (supersetMismatches.length > 0) {
+    console.log(
+      '\n  Superset check: the narrow query and the cosine selection recomputed from the widened\n' +
+        '  query disagree below, so a fall back would not return exactly what off returns for them.\n' +
+        '  Approximate search can do this; the spec asks for each mismatch to be understood.',
+    );
+    for (const r of supersetMismatches) {
+      console.log(`    "${r.query}"`);
+      console.log(`      narrow   ${r.narrowPaths.join(', ') || '(nothing)'}`);
+      console.log(`      cosine   ${r.cosinePaths.join(', ') || '(nothing)'}`);
+    }
+  }
+  if (!PROBES_REVIEWED) {
+    console.log(
+      '\n  The story and clinical probe sets are draft labels. They are scored above and gate\n' +
+        '  nothing until Tony reviews them and sets PROBES_REVIEWED in threshold-sweep.queries.ts.',
+    );
+  }
   console.log(
     '\n  Reported, not enforced. Whether to set enforce is a judgement about the\n' +
-      '  trade this table describes, and a script that decided it would be making\n' +
-      '  that call silently.',
+      '  trade this table describes, and it also needs the eval bar (migration step 5):\n' +
+      '  a script that decided it would be making that call silently.',
   );
 }
 
@@ -309,10 +400,16 @@ async function main(): Promise<void> {
     );
     return;
   }
-  console.log(`\nreranked arm — ${RERANK_MODEL_ID}, one judgement per candidate. This spends TypeSafe budget.`);
-  const posArms = await runArms(index, POSITIVES);
-  const negArms = await runArms(index, NEGATIVES);
-  reportArms(posArms, negArms);
+  const total = POSITIVES.length + NEGATIVES.length + STORY_PROBES.length + CLINICAL_PROBES.length;
+  console.log(
+    `\nreranked arm — ${RERANK_MODEL_ID}, one judgement per candidate over ${total} queries. This spends TypeSafe budget.`,
+  );
+  reportArms({
+    positives: await runArms(index, POSITIVES),
+    negatives: await runArms(index, NEGATIVES),
+    story: await runArms(index, STORY_PROBES),
+    clinical: await runArms(index, CLINICAL_PROBES),
+  });
 }
 
 main().catch((error: unknown) => {
