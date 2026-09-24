@@ -57,7 +57,10 @@ import {
   RETRIEVAL_STRICT_ENV,
   retrievalStrictFromEnv,
 } from '../../src/modules/conversation/retrieval/search-knowledge.js';
-import { RETRIEVAL_RERANK_MODE_ENV } from '../../src/modules/conversation/retrieval/reranker.js';
+import {
+  RERANK_MODEL_ID,
+  RETRIEVAL_RERANK_MODE_ENV,
+} from '../../src/modules/conversation/retrieval/reranker.js';
 import { rerankPreflight } from '../../src/modules/conversation/retrieval/rerank-preflight.js';
 import {
   openReadOnly,
@@ -365,6 +368,7 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  console.log(`Reranker: ${RERANK_MODEL_ID} answered a probe; every search in this run is reranked (enforce)`);
   if (process.argv.includes('--preflight-only')) {
     console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
     return;
