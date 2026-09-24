@@ -6,6 +6,7 @@ import {
   type Dimension,
   type DimensionDelta,
   type RunResults,
+  rerankArmOf,
 } from './eval-types.js';
 
 /**
@@ -56,8 +57,14 @@ export function compareToBaseline(
     };
   }
 
-  const comparable =
+  const sameDataset =
     current.meta.datasetHash === baseline.run.meta.datasetHash;
+  // Spec 0012 phase six, AC-14: runs of different rerank arms measure
+  // different systems, so no delta between them means anything. A baseline
+  // recorded before phase six carries no arm and reads as `off`.
+  const sameArm =
+    rerankArmOf(current.meta) === rerankArmOf(baseline.run.meta);
+  const comparable = sameDataset && sameArm;
   const currentAgg = aggregate(current.cases).perDimension;
   const baselineAgg = aggregate(baseline.run.cases).perDimension;
 
@@ -84,5 +91,12 @@ export function compareToBaseline(
     };
   }
 
-  return { hasBaseline: true, comparable, perDimension };
+  return {
+    hasBaseline: true,
+    comparable,
+    ...(!comparable && {
+      notComparableBecause: sameDataset ? ('rerankArm' as const) : ('dataset' as const),
+    }),
+    perDimension,
+  };
 }

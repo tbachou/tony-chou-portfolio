@@ -231,6 +231,11 @@ export type GenerationCapture = {
   tonyEmitted: string | null;
   /** searchKnowledge results this turn, in order. Empty when it never searched. */
   retrieved: string[];
+  /**
+   * Searches this turn where the reranker fell back (spec 0012 phase six,
+   * AC-14). Null when the turn failed before its retrieval stats were reported.
+   */
+  rerankFallbacks: number | null;
   usage: JudgeUsage;
 };
 
@@ -287,12 +292,16 @@ async function generateOnce(
   let errorMessage: string | null = null;
   let tonyEmitted = '';
   let currentRole: 'interviewer' | 'tony' | null = null;
+  let rerankFallbacks: number | null = null;
 
   await service.generateTurnPair({
     topic,
     prepared,
     history: evalCase.history,
     hashedIp: `eval-${evalCase.id}`,
+    onRetrievalStats: (stats) => {
+      rerankFallbacks = stats.rerankFallbacks;
+    },
     emit: (event, data) => {
       if (event === 'turn_start') {
         currentRole = (data as { role: 'interviewer' | 'tony' }).role;
@@ -311,6 +320,7 @@ async function generateOnce(
     tonyRaw: capture.tonyText,
     tonyEmitted: errorMessage === null ? tonyEmitted : null,
     retrieved: capture.retrievedResults,
+    rerankFallbacks,
     usage: capture.usage,
   };
 }
@@ -352,6 +362,11 @@ export async function runCase(
     questionSource: evalCase.injectQuestion
       ? ('injected' as const)
       : ('generated' as const),
+    // From the attempt that was scored: a fall back in a discarded first
+    // attempt never reached the answer being judged.
+    ...(capture.rerankFallbacks !== null && {
+      rerankFallbacks: capture.rerankFallbacks,
+    }),
   };
 
   if (!capture.ok || !capture.tonyRaw || !capture.interviewerQuestion) {
