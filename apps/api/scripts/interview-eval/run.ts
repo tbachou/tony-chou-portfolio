@@ -110,6 +110,14 @@ function rerankArmFlag(): RerankArm {
   // space form, so without this the equals form fell through to the default
   // and silently measured `off`: the exact wrong arm this flag exists to rule
   // out (caught running the preflight, 2026-09-24).
+  // More than one occurrence is refused rather than resolved: "the first one
+  // wins" and "the equals form wins" are both rules an operator reading the
+  // command line would get wrong (pre deploy gate, 2026-09-24).
+  const occurrences = process.argv.filter((a) => a === '--rerank' || a.startsWith('--rerank=')).length;
+  if (occurrences > 1) {
+    console.error(`❌ --rerank given ${occurrences} times; give it once`);
+    process.exit(1);
+  }
   const equalsForm = process.argv.find((a) => a.startsWith('--rerank='));
   const raw = equalsForm !== undefined ? equalsForm.slice('--rerank='.length) : arg('rerank');
   if (raw === undefined) {
@@ -358,6 +366,9 @@ function resultsFileName(commit: string, dirty: boolean, dir: string): string {
 }
 
 async function main(): Promise<void> {
+  // Parsed before anything else so a bad value is refused before any request
+  // to the index; it used to be checked after the retrieval preflight.
+  const rerankArm = rerankArmFlag();
   const providerFlag = arg('provider');
   if (process.env.AI_PROVIDER === 'bedrock' && !providerFlag) {
     console.error(
@@ -386,7 +397,6 @@ async function main(): Promise<void> {
   // (AC-14), defaulting to `off`. Set on the environment in every case, `off`
   // included, so a shell that happens to export RETRIEVAL_RERANK_MODE cannot
   // change what this run measures behind the flag's back.
-  const rerankArm = rerankArmFlag();
   process.env[RETRIEVAL_RERANK_MODE_ENV] = rerankArm;
   if (rerankArm === 'off') {
     console.log('Reranker: off (the arm this run measures; pass --rerank shadow|enforce to change it)');
@@ -567,6 +577,13 @@ async function main(): Promise<void> {
 
   // --save-baseline: a deliberate local step (AC-9); CI never passes it.
   if (process.argv.includes('--save-baseline')) {
+    if (rerankArm !== 'off') {
+      console.warn(
+        `⚠ Saving a ${rerankArm} run as the baseline. Pull request evals run off by default, and runs of\n` +
+          '  different arms are never compared (AC-14), so every later PR eval will read "not comparable"\n' +
+          '  until the baseline moves again. Save an off run unless that is what you intend.',
+      );
+    }
     if (rerankArm === 'enforce' && rerankFallbacksOf(run) > 0) {
       console.warn(
         '⚠ The reranker fell back on at least one search, so this run mixed two arms (AC-14).\n' +

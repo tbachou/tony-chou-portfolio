@@ -288,8 +288,9 @@ function reportArms({ positives, negatives, story, clinical }: ArmSets): void {
   }
   if (!PROBES_REVIEWED) {
     console.log(
-      '\n  The story and clinical probe sets are draft labels. They are scored above and gate\n' +
-        '  nothing until Tony reviews them and sets PROBES_REVIEWED in threshold-sweep.queries.ts.',
+      '\n  The story and clinical probe sets are draft labels. Their labels gate nothing until Tony\n' +
+        '  reviews them and sets PROBES_REVIEWED in threshold-sweep.queries.ts. They do count toward\n' +
+        '  the superset check, which uses every query because it does not depend on labels.',
     );
   }
   console.log(
