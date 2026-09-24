@@ -1,7 +1,7 @@
 {
-  "corpusHash": "002e2ade470fb4e8e6d2efb6d1e0eab5970d78a0e92cafa4ca419e20aed8f8cd",
-  "chunkCount": 715,
-  "embeddedAt": "2026-09-24T14:11:01.965Z",
+  "corpusHash": "4d5098fe075e6b84303b16c769790c70b79755b3349a5f235bffd26c1d9d505b",
+  "chunkCount": 718,
+  "embeddedAt": "2026-09-24T15:55:45.171Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
@@ -141,7 +141,7 @@
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-retrieval-reranking.md",
-      "hash": "25c111dc3d20b1e0c24a07f424e151a86ed5f6689d235e378a0d26c2179f95b3"
+      "hash": "81e3bc3b737a74e459ddec3ac32beff79dbbfc778a6d5cd069204a3c20e4950e"
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-search-portfolio-retrieval.md",
@@ -157,7 +157,7 @@
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/index.md",
-      "hash": "0ed3e240da896160bfad95252b80b8c84736cb71b3ee87e64227631dbdf53318"
+      "hash": "05abff26604cedc0b164a7b90ebdd8be07c0f32dc2c5cdfd4b9a6079fc6825c9"
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/verify.md",

@@ -245,7 +245,12 @@ function reportArms({ positives, negatives, story, clinical }: ArmSets): void {
   const gatedNegatives = PROBES_REVIEWED ? [...negatives, ...story, ...clinical] : negatives;
   const cosineRejects = count(gatedNegatives, (r) => rejected(r.cosinePaths));
   const rerankRejects = count(gatedNegatives, (r) => rejected(r.rerankPaths));
-  const betaLeaks = clinical.filter((r) => touchesBeta(r.cosinePaths) || touchesBeta(r.rerankPaths));
+  // AC-13: the bar judges the reranked arm. A Beta document from cosine is a
+  // finding about the path production runs today, reported below, not held
+  // against the reranker, whose job is to remove it. Failing the bar on
+  // cosine's leak, as the first version did, would block the fix.
+  const rerankBetaLeaks = clinical.filter((r) => touchesBeta(r.rerankPaths));
+  const cosineBetaLeaks = clinical.filter((r) => touchesBeta(r.cosinePaths));
   const supersetMismatches = all.filter((r) => r.narrowPaths.join('|') !== r.cosinePaths.join('|'));
 
   console.log('\n  sweep bar (spec 0012 phase six, migration step 4):');
@@ -261,18 +266,28 @@ function reportArms({ positives, negatives, story, clinical }: ArmSets): void {
       `  (${rerankRejects} vs ${cosineRejects} of ${gatedNegatives.length}${PROBES_REVIEWED ? ', probes included' : ', originals only'})`,
   );
   console.log(
-    `    no Beta document for a clinical probe ${verdict(betaLeaks.length === 0, PROBES_REVIEWED)}` +
-      `  (${betaLeaks.length} of ${clinical.length})`,
+    `    reranker returns no Beta document     ${verdict(rerankBetaLeaks.length === 0, PROBES_REVIEWED)}` +
+      `  (${rerankBetaLeaks.length} of ${clinical.length} clinical probes)`,
   );
   console.log(
     `    superset check holds on every query   ${verdict(supersetMismatches.length === 0, true)}` +
       `  (${supersetMismatches.length} of ${all.length} differ)`,
   );
 
-  for (const r of betaLeaks) {
-    console.log(`\n  Beta document returned for clinical probe "${r.query}"`);
-    console.log(`      cosine   ${r.cosinePaths.join(', ') || '(nothing)'}`);
-    console.log(`      rerank   ${r.rerankPaths.join(', ') || '(nothing)'}`);
+  for (const r of rerankBetaLeaks) {
+    console.log(`\n  The reranker returned a Beta document for clinical probe "${r.query}"`);
+    console.log(`      rerank   ${r.rerankPaths.join(', ')}`);
+  }
+  if (cosineBetaLeaks.length > 0) {
+    console.log(
+      `\n  Production finding: the cosine path, which production runs today, returned a Beta\n` +
+        `  document for ${cosineBetaLeaks.length} of ${clinical.length} clinical probes. Not held against the reranker.`,
+    );
+    for (const r of cosineBetaLeaks) {
+      console.log(`    "${r.query}"`);
+      console.log(`      cosine   ${r.cosinePaths.join(', ')}`);
+      console.log(`      rerank   ${r.rerankPaths.join(', ') || '(nothing)'}`);
+    }
   }
   if (supersetMismatches.length > 0) {
     console.log(
