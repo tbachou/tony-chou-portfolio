@@ -210,3 +210,111 @@ describe('fetchInstantaneousValues', () => {
     ).toBe('2026-01-01T00:00:00');
   });
 });
+
+/**
+ * Retrying a flapping upstream.
+ *
+ * USGS does not go down so much as flap. Measured on 2026-09-05, twelve
+ * identical requests two seconds apart returned eleven 200s and one 503, and a
+ * run makes at least four requests where any one failing fails the whole call.
+ * That is how an eight percent per request rate became two lost cycles in a
+ * row. These pin the rule that fixes it, and the exception that keeps it
+ * honest.
+ */
+describe('a flapping upstream is retried, a bad request is not', () => {
+  const WINDOW = {
+    start: new Date('2026-09-05T00:00:00Z'),
+    end: new Date('2026-09-05T06:00:00Z'),
+  };
+  const noSleep = async () => {};
+
+  /** Replays the given responses in order, counting attempts. */
+  function flakyFetch(...responses: (Response | Error)[]) {
+    let call = 0;
+    const impl = async (): Promise<Response> => {
+      const next = responses[Math.min(call++, responses.length - 1)];
+      if (next instanceof Error) throw next;
+      return next;
+    };
+    return { impl: impl as unknown as typeof fetch, attempts: () => call };
+  }
+
+  it('succeeds when a 503 is followed by a 200', async () => {
+    const fetcher = flakyFetch(
+      jsonResponse(EMPTY, false, 503),
+      jsonResponse(withReading('2026-09-05T01:00:00.000-05:00')),
+    );
+
+    const readings = await fetchInstantaneousValues(
+      '03230500',
+      WINDOW,
+      fetcher.impl,
+      'America/New_York',
+      noSleep,
+    );
+
+    expect(fetcher.attempts()).toBe(2);
+    expect(readings).toHaveLength(1);
+  });
+
+  it('gives up after three attempts when every one is a 503', async () => {
+    const fetcher = flakyFetch(jsonResponse(EMPTY, false, 503));
+
+    await expect(
+      fetchInstantaneousValues('03230500', WINDOW, fetcher.impl, 'America/New_York', noSleep),
+    ).rejects.toThrow(/503/);
+
+    expect(fetcher.attempts()).toBe(3);
+  });
+
+  it('does NOT retry a 4xx, because that is our bug and not theirs', async () => {
+    // The load bearing exception. A 400 means the window or the site id is
+    // wrong, so three attempts spend triple the budget to learn what the first
+    // already said, and turn a loud fixable fault into a slow one.
+    const fetcher = flakyFetch(jsonResponse(EMPTY, false, 400));
+
+    await expect(
+      fetchInstantaneousValues('03230500', WINDOW, fetcher.impl, 'America/New_York', noSleep),
+    ).rejects.toThrow(/400/);
+
+    expect(fetcher.attempts()).toBe(1);
+  });
+
+  it('retries a thrown network error on the same terms as a 5xx', async () => {
+    const fetcher = flakyFetch(
+      new Error('ECONNRESET'),
+      jsonResponse(withReading('2026-09-05T01:00:00.000-05:00')),
+    );
+
+    const readings = await fetchInstantaneousValues(
+      '03230500',
+      WINDOW,
+      fetcher.impl,
+      'America/New_York',
+      noSleep,
+    );
+
+    expect(fetcher.attempts()).toBe(2);
+    expect(readings).toHaveLength(1);
+  });
+
+  it('backs off between attempts, and not before the first', async () => {
+    const waited: number[] = [];
+    const fetcher = flakyFetch(jsonResponse(EMPTY, false, 503));
+
+    await expect(
+      fetchInstantaneousValues(
+        '03230500',
+        WINDOW,
+        fetcher.impl,
+        'America/New_York',
+        async (ms) => {
+          waited.push(ms);
+        },
+      ),
+    ).rejects.toThrow();
+
+    // Two waits for three attempts, and the first attempt is immediate.
+    expect(waited).toEqual([1_000, 3_000]);
+  });
+});
