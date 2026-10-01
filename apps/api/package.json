@@ -52,7 +52,7 @@
     "@typesafe-ai/sdk": "^0.6.0",
     "@upstash/vector": "^1.2.3",
     "better-auth": "^1.6.26",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.1",
     "pg": "^8.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
