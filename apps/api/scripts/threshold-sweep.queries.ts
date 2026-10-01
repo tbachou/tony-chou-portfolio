@@ -141,9 +141,11 @@ export const STORY_PROBES: LabelledQuery[] = [
 /**
  * Questions near Beta, or near Tony's occupational therapy background, that
  * are not about Beta's engineering. Each expects nothing, and for these a Beta
- * document returned by EITHER arm is a failure on its own (`BETA_DOCUMENT`):
+ * document returned by the RERANKED arm is a failure on its own (`BETA_DOCUMENT`):
  * handing the persona rehab material in answer to a clinical sounding
- * question is how an answer comes to read as clinical advice. The first two
+ * question is how an answer comes to read as clinical advice. One returned by
+ * cosine is reported as a finding about production, not held against the
+ * reranker (AC-13, revised 2026-09-24). The first two
  * are the clinical auditor's, from the 2026-09-23 gate.
  */
 export const CLINICAL_PROBES: LabelledQuery[] = [
