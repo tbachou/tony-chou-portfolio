@@ -52,18 +52,6 @@
       "source": "wshobson/agents",
       "reason": "Upstream no longer publishes this skill. Checked 2026-08-31: wshobson/agents lists 181 skills and none is github-actions-hardening. It was a real registry install (b436d69, 2026-08-19), so it was removed or renamed upstream after that. Kept vendored under the exception in spec 0014 because there is nowhere to install it from."
     },
-    "github-actions-templates": {
-      "kind": "registry",
-      "source": "wshobson/agents"
-    },
-    "javascript-typescript-jest": {
-      "kind": "registry",
-      "source": "github/awesome-copilot"
-    },
-    "nestjs-best-practices": {
-      "kind": "registry",
-      "source": "kadajett/agent-nestjs-skills"
-    },
     "predeploy-audit": {
       "kind": "authored",
       "source": "tonychou/claude-workflow-skills",
@@ -76,34 +64,6 @@
     "prisma-postgres": {
       "kind": "registry",
       "source": "prisma/skills"
-    },
-    "react-markdown": {
-      "kind": "registry",
-      "source": "mikkelkrogsholm/dev-skills"
-    },
-    "tailwindcss-advanced-layouts": {
-      "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace"
-    },
-    "tailwindcss-animations": {
-      "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace"
-    },
-    "tailwindcss-debugging": {
-      "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace"
-    },
-    "tailwindcss-mobile-first": {
-      "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace"
-    },
-    "tailwindcss-performance": {
-      "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace"
-    },
-    "tailwindcss-responsive-darkmode": {
-      "kind": "registry",
-      "source": "josiahsiegel/claude-plugin-marketplace"
     },
     "terraform-style-guide": {
       "kind": "registry",

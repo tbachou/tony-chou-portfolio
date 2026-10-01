@@ -81,11 +81,9 @@ Two paths worth knowing, both easy to lose by grep alone. `file.ts:function` thr
 
 Installed globally, not committed here (spec 0014); `skills-lock.json` at the repo root is the list.
 
-- `nestjs-best-practices`: `kadajett/agent-nestjs-skills`, module/DI/security patterns
 - `prisma-database-setup`: `prisma/skills`, provider configuration
 - `prisma-postgres`: `prisma/skills`, hosted Postgres operations
 - `better-auth-best-practices`: `better-auth/skills`, auth server/client config
-- `javascript-typescript-jest`: `github/awesome-copilot`, Jest testing patterns — NOTE: `apps/api` is on Vitest since spec 0015, so this skill's Jest specifics no longer apply here; `apps/streamflow` and the Lambda are still Jest
 
 ## Related specs
 
