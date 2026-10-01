@@ -71,9 +71,7 @@ These reach the real world. None of them belongs in a test or a check:
 
 Installed globally, not committed here (spec 0014); `skills-lock.json` at the repo root is the list.
 
-- `javascript-typescript-jest`: `github/awesome-copilot`, the test idiom this workspace uses
 - `prisma-database-setup` and `prisma-postgres`: `prisma/skills`, schema and Prisma Postgres work
-- `github-actions-templates`: `wshobson/agents`, the two cron workflows that drive this pipeline
 - `github-actions-hardening`: vendored by exception in `.claude/skills/`, since upstream no longer publishes it
 
 ## Related specs
