@@ -28,24 +28,33 @@ const UPSTREAM_TIMEOUT_MS = 30_000;
  * observed. Three attempts take the per request rate to 0.08 cubed and the
  * per run rate to about two in a thousand.
  *
- * The cost is bounded. A `503` comes back in well under a second, so the
- * realistic worst case adds only the backoff below. The pathological case, a
- * chunk that times out on every attempt, adds two further
- * `UPSTREAM_TIMEOUT_MS` waits to that chunk, which the twenty minute job
- * budget absorbs many times over.
+ * The cost is bounded. In CI a failing `503` took three to eight seconds to
+ * arrive (a healthy answer takes about a quarter second), so a chunk that
+ * fails every attempt spends around three such waits plus the backoff below:
+ * under a minute. The pathological case, a chunk that times out on every
+ * attempt, spends three `UPSTREAM_TIMEOUT_MS` waits plus the backoff, about
+ * two minutes, and the first chunk to exhaust its attempts ends the step, so
+ * the twenty minute job budget still absorbs it many times over.
  */
 const RETRY_ATTEMPTS = 3;
 
 /**
  * Waits between attempts, in milliseconds, one per retry.
  *
- * Short on purpose. The measured blip cleared within two seconds, so a long
- * backoff would buy nothing and spend the job budget; these exist to avoid
- * hammering a service that is already struggling, not to wait out an outage.
- * A real outage should still fail the run promptly and be recorded, because
- * `PipelineRun` is how a stopped pipeline becomes visible at all.
+ * **Sized on CI, not on the first probe.** The 2026-09-05 blip cleared within
+ * two seconds, which first set these at one and three seconds. The CI runs of
+ * 2026-09-24 to 2026-10-03 show longer bad stretches: in every run where the
+ * ingest failed and the rescan failed right after it, USGS was still failing
+ * ten to sixteen seconds after the first request. Because a failing attempt
+ * itself takes three to eight seconds, one and three seconds put the last
+ * attempt only ten to twenty seconds in, at the edge of those stretches. Five
+ * and twenty put it thirty to forty seconds in.
+ *
+ * Still not a wait for an outage. A real outage should fail the run within a
+ * couple of minutes and be recorded, because `PipelineRun` is how a stopped
+ * pipeline becomes visible at all.
  */
-const RETRY_BACKOFF_MS = [1_000, 3_000];
+const RETRY_BACKOFF_MS = [5_000, 20_000];
 
 /**
  * Whether a failed attempt is worth repeating.

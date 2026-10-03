@@ -183,6 +183,10 @@ describe('fetchInstantaneousValues', () => {
           end: new Date('2024-03-01T00:00:00Z'),
         },
         impl,
+        'America/New_York',
+        // The 503 is retried; skip the real backoff, which is longer than a
+        // test's time limit.
+        async () => {},
       ),
     ).rejects.toThrow(/503/);
   });
@@ -314,7 +318,9 @@ describe('a flapping upstream is retried, a bad request is not', () => {
       ),
     ).rejects.toThrow();
 
-    // Two waits for three attempts, and the first attempt is immediate.
-    expect(waited).toEqual([1_000, 3_000]);
+    // Two waits for three attempts, and the first attempt is immediate. The
+    // waits are long enough to outlast the ten to sixteen second bad stretches
+    // CI recorded, see RETRY_BACKOFF_MS.
+    expect(waited).toEqual([5_000, 20_000]);
   });
 });
