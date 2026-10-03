@@ -3,6 +3,7 @@ import {
   GAUGE,
   USGS_IV_ENDPOINT,
 } from '../config';
+import { sanitizeError } from '../errors';
 import type { Reading } from '../types';
 import type { IngestWindow } from '../ingest/window';
 import { parseInstantaneousValues } from './parse';
@@ -59,16 +60,37 @@ const RETRY_BACKOFF_MS = [5_000, 20_000];
 /**
  * Whether a failed attempt is worth repeating.
  *
- * **A 4xx is never retried, and that is the load bearing half of this rule.**
+ * **A 4xx is not retried, and that is the load bearing half of this rule.**
  * A `400` or a `404` means the request itself is wrong: the window is
  * malformed, the site id is bad, the parameter code changed. Retrying that
  * turns a fast, loud, fixable bug into a slow one that still fails, and it
  * spends three times the budget to learn what the first attempt already said.
- * Only a 5xx, which is the server saying it could not answer a question it
+ * A 5xx, which is the server saying it could not answer a question it
  * understood, earns another go.
+ *
+ * So do the two 4xx codes that describe the server rather than the request:
+ * `408` (it gave up waiting) and `429` (it is throttling). USGS has announced
+ * that WaterServices will be "intentionally throttled and undergo several
+ * planned outages" before it is retired in Q1 2027, and a throttled request
+ * answers 429. None had appeared in CI as of 2026-10-03, so these ride the
+ * same backoff rather than a `Retry-After` header nobody has seen yet.
  */
 function worthRetrying(status: number): boolean {
-  return status >= 500;
+  return status >= 500 || status === 408 || status === 429;
+}
+
+/**
+ * Why a fetch or a body read threw, written into the message.
+ *
+ * `sanitizeError` is the only path to `PipelineRun` and the log, and it reads
+ * the message alone, so a reason left only on `cause` is lost. The reason is
+ * what tells a timeout (`TimeoutError`) from a dropped connection (`fetch
+ * failed` with a socket code), which is how the 2026-10-03 diagnosis was made.
+ */
+function describeCause(cause: unknown): string {
+  if (!(cause instanceof Error)) return String(cause);
+  const code = (cause.cause as { code?: unknown } | undefined)?.code;
+  return `${cause.name}: ${cause.message}${typeof code === 'string' ? ` (${code})` : ''}`;
 }
 
 const sleep = (ms: number): Promise<void> =>
@@ -173,13 +195,22 @@ export async function fetchInstantaneousValues(
   for (const span of chunk(window)) {
     const where = `${span.start.toISOString()} to ${span.end.toISOString()}`;
     let lastError: Error | undefined;
-    let response: Response | undefined;
+    let body: unknown;
+    let answered = false;
 
     for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt += 1) {
       if (attempt > 0) {
+        // One line per retry, so a flap the retry absorbs still shows in the
+        // CI log. Without it a run that needed two retries reads as a clean
+        // one, and the rising failure rate that says this source is being
+        // retired goes quiet.
+        console.warn(
+          `usgs retry ${attempt} of ${RETRY_ATTEMPTS - 1} for ${where} after: ${sanitizeError(lastError)}`,
+        );
         await sleepImpl(RETRY_BACKOFF_MS[attempt - 1] ?? 0);
       }
 
+      let response: Response;
       try {
         response = await fetchImpl(buildUrl(siteId, span, timeZone), {
           // A hung upstream used to block the job until the CI timeout killed
@@ -191,25 +222,43 @@ export async function fetchInstantaneousValues(
       } catch (cause) {
         // A refused connection, a DNS blip or the timeout above. Same class of
         // fault as a 5xx and retried on the same terms.
-        lastError = new Error(`USGS request threw for ${where}`, { cause });
-        response = undefined;
+        lastError = new Error(
+          `USGS request threw for ${where}: ${describeCause(cause)}`,
+          { cause },
+        );
         continue;
       }
 
-      if (response.ok) break;
+      if (!response.ok) {
+        lastError = new Error(
+          `USGS request failed with ${response.status} for ${where}`,
+        );
 
-      lastError = new Error(
-        `USGS request failed with ${response.status} for ${where}`,
-      );
+        // Most 4xx are our bug, not theirs. Fail now rather than three times.
+        if (!worthRetrying(response.status)) throw lastError;
+        continue;
+      }
 
-      // A 4xx is our bug, not theirs. Fail now rather than three times.
-      if (!worthRetrying(response.status)) throw lastError;
-      response = undefined;
+      // Read inside the loop: a body that stalls into the timeout above, a
+      // reset mid body, or a page that is not JSON is the same transient class
+      // as a 5xx, arriving one step later.
+      try {
+        body = await response.json();
+      } catch (cause) {
+        lastError = new Error(
+          `USGS response body failed for ${where}: ${describeCause(cause)}`,
+          { cause },
+        );
+        continue;
+      }
+
+      answered = true;
+      break;
     }
 
-    if (!response) throw lastError ?? new Error(`USGS request failed for ${where}`);
+    if (!answered) throw lastError ?? new Error(`USGS request failed for ${where}`);
 
-    readings.push(...parseInstantaneousValues(await response.json()));
+    readings.push(...parseInstantaneousValues(body));
   }
 
   return readings;

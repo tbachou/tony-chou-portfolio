@@ -1,4 +1,5 @@
 import { fetchInstantaneousValues, toSiteLocalTimestamp } from './client';
+import { sanitizeError } from '../errors';
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return {
@@ -167,6 +168,8 @@ describe('fetchInstantaneousValues', () => {
   });
 
   it('throws rather than returning a short list when a chunk fails', async () => {
+    // The 503 is retried, and each retry logs a line; keep the output quiet.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     let call = 0;
     const impl = (async () => {
       call += 1;
@@ -189,6 +192,7 @@ describe('fetchInstantaneousValues', () => {
         async () => {},
       ),
     ).rejects.toThrow(/503/);
+    warn.mockRestore();
   });
 
   it('uses the offset in force on the date, not the one in force today', () => {
@@ -232,12 +236,22 @@ describe('a flapping upstream is retried, a bad request is not', () => {
   };
   const noSleep = async () => {};
 
+  // Each retry logs a line; capture it so these tests can assert on it and the
+  // suite output stays quiet.
+  let warn: ReturnType<typeof jest.spyOn>;
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warn.mockRestore());
+
   /** Replays the given responses in order, counting attempts. */
   function flakyFetch(...responses: (Response | Error)[]) {
     let call = 0;
     const impl = async (): Promise<Response> => {
       const next = responses[Math.min(call++, responses.length - 1)];
-      if (next instanceof Error) throw next;
+      // DOMException is not `instanceof Error` inside jest's sandbox, though it
+      // is in Node itself, and it is what undici throws for a timeout.
+      if (next instanceof Error || next instanceof DOMException) throw next;
       return next;
     };
     return { impl: impl as unknown as typeof fetch, attempts: () => call };
@@ -322,5 +336,136 @@ describe('a flapping upstream is retried, a bad request is not', () => {
     // waits are long enough to outlast the ten to sixteen second bad stretches
     // CI recorded, see RETRY_BACKOFF_MS.
     expect(waited).toEqual([5_000, 20_000]);
+  });
+
+  // The gate's break-it pass on PR #77 confirmed each case below with a
+  // failing input before these fixes landed.
+
+  it.each([429, 408])(
+    'retries a %i, which describes the server and not our request',
+    async (status) => {
+      // USGS has announced it will throttle this service before retiring it,
+      // and a throttled request answers 429.
+      const fetcher = flakyFetch(
+        jsonResponse(EMPTY, false, status),
+        jsonResponse(withReading('2026-09-05T01:00:00.000-05:00')),
+      );
+
+      const readings = await fetchInstantaneousValues(
+        '03230500',
+        WINDOW,
+        fetcher.impl,
+        'America/New_York',
+        noSleep,
+      );
+
+      expect(fetcher.attempts()).toBe(2);
+      expect(readings).toHaveLength(1);
+    },
+  );
+
+  it('keeps why a request threw where the run record can see it', async () => {
+    // sanitizeError is the only path to PipelineRun and the log, and it reads
+    // the message alone, so the reason has to be in the message, not just in
+    // `cause`. Telling a timeout from a dropped connection is how the
+    // 2026-10-03 diagnosis was made.
+    const reset = new TypeError('fetch failed', {
+      cause: Object.assign(new Error('other side closed'), { code: 'ECONNRESET' }),
+    });
+    const timeout = new DOMException(
+      'The operation was aborted due to timeout',
+      'TimeoutError',
+    );
+
+    for (const [thrown, expected] of [
+      [reset, /TypeError: fetch failed \(ECONNRESET\)/],
+      [timeout, /TimeoutError: The operation was aborted due to timeout/],
+    ] as const) {
+      const fetcher = flakyFetch(thrown);
+      const error = await fetchInstantaneousValues(
+        '03230500',
+        WINDOW,
+        fetcher.impl,
+        'America/New_York',
+        noSleep,
+      ).catch((caught: unknown) => caught);
+
+      expect(fetcher.attempts()).toBe(3);
+      expect(sanitizeError(error)).toMatch(expected);
+    }
+  });
+
+  it('retries a 200 whose body cannot be read', async () => {
+    // A stall that trips the attempt's timeout, a reset mid body, or a page
+    // that is not JSON: the same transient class as a 5xx, one step later.
+    const unreadable = {
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    } as unknown as Response;
+    const fetcher = flakyFetch(
+      unreadable,
+      jsonResponse(withReading('2026-09-05T01:00:00.000-05:00')),
+    );
+
+    const readings = await fetchInstantaneousValues(
+      '03230500',
+      WINDOW,
+      fetcher.impl,
+      'America/New_York',
+      noSleep,
+    );
+
+    expect(fetcher.attempts()).toBe(2);
+    expect(readings).toHaveLength(1);
+  });
+
+  it('names the body failure when every read fails', async () => {
+    const unreadable = {
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    } as unknown as Response;
+    const fetcher = flakyFetch(unreadable);
+
+    await expect(
+      fetchInstantaneousValues('03230500', WINDOW, fetcher.impl, 'America/New_York', noSleep),
+    ).rejects.toThrow(/body.*SyntaxError: Unexpected end of JSON input/);
+    expect(fetcher.attempts()).toBe(3);
+  });
+
+  it('logs each retry, so a flap stays visible after the retry absorbs it', async () => {
+    // Without this a run that needed two retries is indistinguishable from a
+    // clean one, and the rising failure rate that says the source is being
+    // retired disappears from the logs.
+    const fetcher = flakyFetch(
+      jsonResponse(EMPTY, false, 503),
+      jsonResponse(EMPTY, false, 503),
+      jsonResponse(withReading('2026-09-05T01:00:00.000-05:00')),
+    );
+
+    await fetchInstantaneousValues(
+      '03230500',
+      WINDOW,
+      fetcher.impl,
+      'America/New_York',
+      noSleep,
+    );
+
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0][0]).toMatch(/usgs retry 1 of 2 .*2026-09-05.*503/);
+    expect(warn.mock.calls[1][0]).toMatch(/usgs retry 2 of 2 .*503/);
+  });
+
+  it('logs nothing when the first attempt succeeds', async () => {
+    const fetcher = flakyFetch(jsonResponse(withReading('2026-09-05T01:00:00.000-05:00')));
+
+    await fetchInstantaneousValues('03230500', WINDOW, fetcher.impl, 'America/New_York', noSleep);
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });
