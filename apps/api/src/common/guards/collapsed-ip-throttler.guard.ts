@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { rateLimitIdentity } from '../utils/ip-hash.util';
+import { rateLimitIdentity } from '../utils/ip-hash.util.js';
 
 /**
  * Same throttling rules as the stock guard, but tracked by IPv6 /64 prefix

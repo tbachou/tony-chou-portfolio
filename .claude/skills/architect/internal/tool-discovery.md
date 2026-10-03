@@ -4,7 +4,7 @@ Read this only when the stack walk (Stage c) settles one or more **new** tools (
 
 ## Step 1: Ask first (the consent gate)
 
-<!-- TOOL-CONSENT:START (identical in /architect, /audit and /sync; edit all or none) -->
+<!-- TOOL-CONSENT:START (identical in /architect and /audit; edit both or neither) -->
 **Asking is mandatory. Searching is not.** Nothing is searched, fetched, installed, or spawned for Agent Skill and MCP discovery until the engineer has picked. Offer four choices: find them for me, I will name the ones I want, no and record the decline, or not now. Only the first may run a search command. Never silently skip the offer, and never run a search before the engineer agrees to one.
 <!-- TOOL-CONSENT:END -->
 
@@ -51,7 +51,7 @@ Skill: `npx skills add <owner>/<repo> -y` (into the project's agent). MCP: conne
 
 ## Step 5: Record
 
-Skills installed → carry into the spec's `## Decision` **Implementation skills** field when you write it, and flag for the `## Agent skills` section of `AGENTS.md` (one bullet per skill, with its location, so only the needed skills load). Servers connected → flag for that section's compact `MCP servers:` line. Anything declined or skipped → flag for its compact `Declined:` line so a later stage does not offer it again (root for project wide tech, the nested area doc for area specific tech). `/audit` and `/sync` own writing `AGENTS.md`.
+Skills installed → carry into the spec's `## Decision` **Implementation skills** field when you write it, and flag for the `## Agent skills` section of `AGENTS.md` (one bullet per skill, with its location, so only the needed skills load). Servers connected → flag for that section's compact `MCP servers:` line. Anything declined or skipped → flag for its compact `Declined:` line so a later stage does not offer it again (root for project wide tech, the nested area doc for area specific tech). `/audit` owns writing `AGENTS.md`.
 
 ## Step 6: When nothing can be searched, installed, or connected
 

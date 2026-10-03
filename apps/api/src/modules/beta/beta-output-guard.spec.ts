@@ -8,7 +8,7 @@ import {
   toCoachPlan,
   type DraftPlan,
   type GuardInput,
-} from './beta-output-guard';
+} from './beta-output-guard.js';
 
 function makeStage(n: number) {
   return {

@@ -5,7 +5,7 @@
  * at module load). This file must stay side effect free: types, enums, and
  * plain arrays only.
  */
-import { StoryOwnership } from '../src/generated/prisma/enums';
+import { StoryOwnership } from '../src/generated/prisma/enums.js';
 
 export type TopicSeed = {
   slug: string;
@@ -66,6 +66,13 @@ export const topics: TopicSeed[] = [
     description: 'Owning a feature, or a company, end to end: onboarding, entrepreneurship, and mentorship.',
     sortOrder: 5,
   },
+  {
+    slug: 'backend-systems-design',
+    label: 'Backend systems and reliability',
+    description:
+      'Designing backend services for correctness under retries and failure: idempotency, webhook handling, and API architecture.',
+    sortOrder: 6,
+  },
 ];
 
 export const stories: StorySeed[] = [
@@ -80,7 +87,7 @@ export const stories: StorySeed[] = [
   {
     title: 'Chrome extension backend integration',
     ownership: StoryOwnership.SOLO,
-    engagement: 'Product Forge (Aug 2024 - Aug 2025)',
+    engagement: 'Product Forge (Jun 2024 - Jan 2025)',
     summary:
       "Built and maintained the API layer bridging a companion Chrome extension to the core backend: bearer-token auth (extensions can't share cookies with the main app's domain), Liveblocks real-time sync passthrough, and full artifact/meeting CRUD proxying across 30+ route handlers, plus a first-time-user onboarding flow and a major version upgrade. 85 of roughly 96 commits on this surface are Tony's.",
     topics: ['platform-integrations'],
@@ -138,7 +145,7 @@ export const stories: StorySeed[] = [
     ownership: StoryOwnership.SOLO,
     engagement: 'Topstep (Sep 2025 - Jul 2026)',
     summary:
-      'Independently rebuilt user onboarding with route-based workflows, LaunchDarkly A/B testing, and Datadog instrumentation, uncovering an unexpected drop-off step in the process.',
+      'Independently rebuilt user onboarding with route-based workflows and LaunchDarkly A/B testing, recommended and added Datadog instrumentation, and tracked per-step drop-off in Heap, which surfaced an unexpected drop-off step and directly informed the next iteration.',
     topics: ['product-ownership'],
   },
   {
@@ -242,9 +249,9 @@ export const stories: StorySeed[] = [
     ownership: StoryOwnership.CO_LED,
     engagement: 'Mailchimp',
     summary:
-      'Co-led a migration from SQL to Google Cloud Spanner, learning Spanner and Cloud Dataflow (used for the migration pipeline) while both were new to the team, driving a $500K per year infrastructure cost reduction through staged migrations and regression testing.',
+      'Co-led a migration from SQL to Google Cloud Spanner, learning Spanner and Cloud Dataflow (used for the migration pipeline) while both were new to the team, driving a meaningful reduction in annual infrastructure costs through staged migrations and regression testing.',
     requiredFraming:
-      'I co-led our SQL to Google Cloud Spanner migration, learning Spanner and Cloud Dataflow alongside the rest of the team as we drove a $500K per year infrastructure cost reduction.',
+      'I co-led our SQL to Google Cloud Spanner migration, learning Spanner and Cloud Dataflow alongside the rest of the team as we reduced our annual infrastructure costs.',
     topics: ['data-infrastructure'],
   },
   {
@@ -254,5 +261,21 @@ export const stories: StorySeed[] = [
     summary:
       'Mentors a software engineer on the Product Forge team through structured 1:1s, providing career guidance and technical development support. This is a Tensure-wide activity, independent of any single client engagement, and continues even though Tony has rotated off Product Forge itself.',
     topics: ['product-ownership'],
+  },
+  {
+    title: 'Webhook idempotency and acknowledgment discipline',
+    ownership: StoryOwnership.SOLO,
+    engagement: 'Product Forge',
+    summary:
+      "Designed the webhook layer's idempotency and acknowledgment discipline in the Flask backend: a webhook-registration endpoint that returns 200 success rather than erroring or duplicating when a URL is already registered, and acknowledgment handling where an unhandled event type or a missing user returns a 204 acknowledgment instead of an error. The provider retries on any non-2xx response, so an erroring handler creates a retry storm. A later processed-events table keyed on the provider's event ID, added by a different engineer after Tony rolled off in October 2025, is separate from this story.",
+    topics: ['backend-systems-design'],
+  },
+  {
+    title: 'Flask API subsystem design',
+    ownership: StoryOwnership.SOLO,
+    engagement: 'Product Forge',
+    summary:
+      'Designed and built core Flask API subsystems: Clerk auth and organization webhooks, request middleware, structured logging for Cloud Run, data export, the feedback system, and Mixpanel instrumentation, while authoring 21 schema migrations across the backend.',
+    topics: ['backend-systems-design'],
   },
 ];

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { DailyUsageService } from './daily-usage.service';
+import { DailyUsageService } from './daily-usage.service.js';
 
 @Module({
   providers: [DailyUsageService],

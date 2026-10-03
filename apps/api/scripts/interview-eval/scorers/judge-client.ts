@@ -10,7 +10,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type {
   DimensionResult,
   JudgeVerdict,
-} from '../../../src/modules/conversation/eval/eval-types';
+} from '../../../src/modules/conversation/eval/eval-types.js';
 
 export const JUDGE_MODEL = 'claude-haiku-4-5';
 const JUDGE_TIMEOUT_MS = 30_000;

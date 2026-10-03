@@ -124,7 +124,9 @@ Three parallel researchers swept the open literature for sources that state a we
 | `elbow_tendinopathy` | 0 | Nothing satisfies week explicit, permissively licensed, and upper limb at once |
 | `shoulder_impingement` | 3 | Programme duration only (8, 10, and 12 to 16 weeks), general adult population, no return to sport clearance |
 
-**The binding constraint is the licence rule, not the literature.** The evidence exists and is well established. Schöffl's grade based pulley timelines are the field standard. But the primary papers are Elsevier or Sage with no Creative Commons grant, so AC-2 excludes all of them: Schöffl and Schöffl (2006, *J Hand Surg Am*; 2007, *J Hand Ther*), Miro, vanSonnenberg, Sabb, Schöffl (2021, *Wilderness & Environmental Medicine*), Lum and Park (2019, *J Orthopaedics*), Hartnett, Bondoc, Feretti (2023, *J Hand Ther*), Crowley (2012, *J Hand Microsurg*). Do not re research these; they are closed.
+**The binding constraint is the licence rule, not the literature.** The evidence exists and is well established. Schöffl's grade based pulley timelines are the field standard. But the primary papers are Elsevier or Sage with no Creative Commons grant, so AC-2 excludes all of them: Schöffl and Schöffl (2006, *J Hand Surg Am*; 2007, *J Sports Med Phys Fitness*), Miro, vanSonnenberg, Sabb, Schöffl (2021, *Wilderness & Environmental Medicine*), Lum and Park (2019, *J Orthopaedics*), Hartnett, Bondoc, Feretti (2023, *J Hand Ther*), Crowley (2012, *J Hand Microsurg*). Do not re research these; they are closed.
+
+> **Correction, 2026-09-19.** The list above originally read "2007, *J Hand Ther*". That citation does not exist: Schöffl has no publication in that journal, and the DOI the reference resolved to (10.1197/j.jht.2007.10.019) is a two-page commentary by Schwartz DA, *J Hand Ther* 2008;21:86-87. The real 2007 paper is Schöffl and Schöffl, *J Sports Med Phys Fitness* 47:70-8 (PMID 17369801). Corrected in place; found by the citation verifier during the registry labelling work (spec 0008 successor).
 
 Three findings worth keeping even though the spec died:
 

@@ -14,8 +14,8 @@
  * results; they are never shown to the generator or phrased to judges as an
  * answer key (spec invariant).
  */
-import type { HistoryTurn } from '../../src/modules/conversation/conversation.service';
-import type { Difficulty } from '../../src/modules/conversation/eval/eval-types';
+import type { HistoryTurn } from '../../src/modules/conversation/conversation.service.js';
+import type { Difficulty } from '../../src/modules/conversation/eval/eval-types.js';
 
 export type EvalCase = {
   id: string;

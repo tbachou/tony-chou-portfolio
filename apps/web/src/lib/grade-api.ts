@@ -7,6 +7,8 @@
 // problem's image at the moment it is shown (AC-25), and a guess names its
 // problem by that id rather than by a date.
 
+import { readServerMessage } from './http-error';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export const GRADE_MIN = 0;
@@ -76,23 +78,8 @@ export class GradeRequestError extends Error {
   }
 }
 
-function extractServerMessage(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null;
-  const message = (body as { message?: unknown }).message;
-  if (typeof message === 'string') return message;
-  if (Array.isArray(message)) {
-    return message.filter((m): m is string => typeof m === 'string').join(' ');
-  }
-  return null;
-}
-
 async function toError(res: Response, fallback: string): Promise<GradeRequestError> {
-  let message: string | null = null;
-  try {
-    message = extractServerMessage(await res.json());
-  } catch {
-    // Non-JSON error body: fall through to the generic message.
-  }
+  const message = await readServerMessage(res);
   return new GradeRequestError(res.status, message ?? fallback);
 }
 

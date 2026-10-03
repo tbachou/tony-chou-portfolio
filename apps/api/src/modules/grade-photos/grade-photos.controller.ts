@@ -6,7 +6,7 @@ import {
   type CreateGradePhoto,
   type SetPhotoActive,
 } from '@portfolio/shared';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import {
   BadRequestException,
   Body,
@@ -20,12 +20,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { MAX_UPLOAD_BYTES } from './grade-photos.constants';
+import { MAX_UPLOAD_BYTES } from './grade-photos.constants.js';
 import {
   GradePhotosService,
   type GradePhotoListItem,
-} from './grade-photos.service';
-import { MulterErrorFilter } from './multer-error.filter';
+} from './grade-photos.service.js';
+import { MulterErrorFilter } from './multer-error.filter.js';
 
 /**
  * The uploaded file as multer hands it over.

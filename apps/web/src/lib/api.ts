@@ -61,14 +61,20 @@ export type SseTurnEvent =
  * persisted turns for `conversationId` (spec 0012 phase one). The contract is
  * `.strict()`, so sending one is a 400.
  */
-export async function* streamNextTurn(params: {
-  topicId: string;
-  conversationId?: string;
-}): AsyncGenerator<SseTurnEvent> {
+export async function* streamNextTurn(
+  params: {
+    topicId: string;
+    conversationId?: string;
+  },
+  signal?: AbortSignal
+): AsyncGenerator<SseTurnEvent> {
   const res = await fetch(`${API_URL}/conversation/turn`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params)
+    // `signal` is a SECOND parameter, not a field on `params`. The request
+    // contract is `.strict()`, so an extra property here would be a 400.
+    body: JSON.stringify(params),
+    signal
   });
 
   if (!res.ok || !res.body) {
@@ -80,24 +86,32 @@ export async function* streamNextTurn(params: {
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const blocks = buffer.split('\n\n');
-    buffer = blocks.pop() ?? '';
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop() ?? '';
 
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-      let eventName = 'message';
-      let data = '';
-      for (const line of block.split('\n')) {
-        if (line.startsWith('event:')) eventName = line.slice(6).trim();
-        else if (line.startsWith('data:')) data = line.slice(5).trim();
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+        let eventName = 'message';
+        let data = '';
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          else if (line.startsWith('data:')) data = line.slice(5).trim();
+        }
+        if (!data) continue;
+        yield { type: eventName, ...JSON.parse(data) } as SseTurnEvent;
       }
-      if (!data) continue;
-      yield { type: eventName, ...JSON.parse(data) } as SseTurnEvent;
     }
+  } finally {
+    // Runs whenever the consumer stops early — a `break`, a `return`, or an
+    // unmount — because `for await` calls the generator's `.return()`, which
+    // resumes this `finally`. Without it the response body stays open and the
+    // API keeps generating tokens for a page nobody is looking at.
+    await reader.cancel().catch(() => {});
   }
 }

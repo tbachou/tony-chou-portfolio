@@ -1,7 +1,7 @@
 ---
 name: debug
 allowed-tools: Bash, Read, Grep, Glob, Write, Edit, Agent
-description: "Run /debug to find and fix the root cause of a bug (something failing, broken, throwing, or behaving wrong) when a test fails for a reason that is not obvious, /check verify finds a failure, or behavior is unexpected. Builds a fast reproducible signal first, then runs a minimize, hypothesize, test, fix, verify loop, makes the minimal fix, and hands a regression test to /test. No features, no extra refactors."
+description: "Run /debug to find and fix the root cause of a bug (something failing, broken, throwing, or behaving wrong) when a test fails for a reason that is not obvious, /check finds a failure, or behavior is unexpected. Builds a fast reproducible signal first, then runs a minimize, hypothesize, test, fix, verify loop, makes the minimal fix, and lands a colocated regression test that fails without it. No features, no extra refactors."
 ---
 
 ## Output style (plain words, no dashes, no hyphens)
@@ -26,7 +26,7 @@ With the loop in hand: minimize the case, rank several hypotheses, then test the
 
 ## Artifact ownership
 
-Writes the **minimal code fix** for the root cause. Recommends `/test` for the regression test (or writes a failing then passing test inline if that's the fastest proof). Does **not** add features, refactor unrelated code, or rewrite the spec. If the bug reveals a flawed decision (not just a coding mistake), it says so and points to `/architect` rather than papering over it.
+Writes the **minimal code fix** for the root cause. Writes the regression test inline, colocated with the code it covers, following the project's existing test conventions. Does **not** add features, refactor unrelated code, or rewrite the spec. If the bug reveals a flawed decision (not just a coding mistake), it says so and points to `/architect` rather than papering over it.
 
 ---
 
@@ -139,7 +139,7 @@ Lead with the root cause and the fix; the reproduction and evidence are the trai
 ## /debug complete Â· <the bug, one line>
 
 **Root cause: <the proven cause>. Fixed by <the minimal change, files touched>.**
-Next: /test <feature>   (lock in the regression test, added inline or handed over)
+Next: run the suite (`npm test` at the repo root) to confirm the regression test holds
 Heads up: <same cause also at <where>, fixed too · or a design flaw → /architect <what>>   (omit if none)
 ```
 

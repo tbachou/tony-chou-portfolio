@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -82,7 +82,45 @@ const publishedRunSchema = z
     specPath: z.string().min(1),
     delta: perDimensionNumbers.optional(),
     noiseBand: perDimensionNumbers.optional(),
-    verdict: perDimensionVerdict.optional()
+    verdict: perDimensionVerdict.optional(),
+    /**
+     * Why this measured phase has no delta, and WHICH RUN it cannot be
+     * compared against.
+     *
+     * The reason alone was not checkable. Three attempts tried to infer what
+     * an entry "should" have been compared to — the current baseline, the
+     * newest phase, a candidate set — and each inference was wrong in its own
+     * way, because the manifest never recorded the answer. So the entry
+     * records it: `notComparableTo` names a committed results file, and the
+     * loader confirms it really is a different instrument. The claim becomes
+     * self describing, verified against data rather than reconstructed, and
+     * stable forever — appending a later phase or moving the baseline cannot
+     * change whether this row was telling the truth.
+     */
+    deltaUnavailable: z
+      .object({
+        /**
+         * Rendered in place of the delta. Trimmed before the length check,
+         * because `min(1)` alone rejected only the empty string: a space
+         * satisfied it, HTML collapsed it, and the page showed the bold
+         * heading followed by nothing. `String.trim` then still left U+200B,
+         * U+2060 and U+2800, so the rule is stated as what it means — at
+         * least one letter or digit. Capped because it is inlined verbatim
+         * into statically generated HTML.
+         */
+        reason: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .refine((value) => /[\p{L}\p{N}]/u.test(value), {
+            message: 'must contain a visible reason, not only whitespace or invisible characters'
+          }),
+        /** A committed results file, relative to the evals directory. */
+        notComparableTo: z.string().min(1)
+      })
+      .strict()
+      .optional()
   })
   .strict()
   .superRefine((entry, ctx) => {
@@ -90,8 +128,19 @@ const publishedRunSchema = z
     // and forbidden when there is not: a phase that took no run has nothing
     // to compare, and a row carrying a delta with no results file behind it
     // would be the transcription this whole design refuses.
-    const measuredOnly = ['resultsFile', 'delta', 'noiseBand', 'verdict'] as const;
-    for (const key of measuredOnly) {
+    //
+    // `delta` and `verdict` are the exception, and phase three is why. A run
+    // can be fully measured and still have NOTHING to compare against, when
+    // the phase changed the dataset: the golden set went from 22 cases to 27,
+    // the dataset hash moved, and a delta across that boundary is arithmetic
+    // between two different instruments. The two honest shapes are a delta or
+    // a stated reason there is none. A zero delta is NOT one of them — it
+    // asserts "nothing moved", which is a claim, and the page would publish it
+    // as one.
+    const alwaysWhenMeasured = ['resultsFile', 'noiseBand'] as const;
+    const comparisonOnly = ['delta', 'verdict'] as const;
+
+    for (const key of alwaysWhenMeasured) {
       const present = entry[key] !== undefined;
       if (entry.measured && !present) {
         ctx.addIssue({
@@ -107,6 +156,56 @@ const publishedRunSchema = z
           message: `phase ${entry.phase} is not measured, so ${key} must be absent`
         });
       }
+    }
+
+    for (const key of comparisonOnly) {
+      const present = entry[key] !== undefined;
+      if (!entry.measured && present) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `phase ${entry.phase} is not measured, so ${key} must be absent`
+        });
+      }
+    }
+
+    const hasReason = entry.deltaUnavailable !== undefined;
+
+    // A half stated comparison reads as a delta with no verdict on the page.
+    // Checked FIRST and made exclusive, because the shape rule below reads a
+    // half state as "no comparison at all" and would then tell the author to
+    // explain why there is no delta while a delta sits in their file. Being
+    // told to add the wrong field is worse than being told nothing.
+    const halfStated =
+      entry.measured && (entry.delta === undefined) !== (entry.verdict === undefined);
+    if (halfStated) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['verdict'],
+        message: `phase ${entry.phase} must carry delta and verdict together or neither`
+      });
+    }
+
+    // Exactly one of the two honest shapes, never both and never neither.
+    // Without this, dropping a delta would silently become a way to publish a
+    // measured phase with no comparison and no explanation, which is the same
+    // omission the noise band exists to prevent.
+    const hasComparison = entry.delta !== undefined && entry.verdict !== undefined;
+    if (entry.measured && !halfStated && hasComparison === hasReason) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['deltaUnavailable'],
+        message: hasReason
+          ? `phase ${entry.phase} carries both a delta and a reason there is none; give one or the other`
+          : `phase ${entry.phase} is measured but has no delta/verdict, so deltaUnavailable must say why not (e.g. the dataset hash changed)`
+      });
+    }
+    if (!entry.measured && hasReason) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['deltaUnavailable'],
+        message: `phase ${entry.phase} is not measured, so deltaUnavailable must be absent`
+      });
     }
   });
 
@@ -175,6 +274,11 @@ const dimensionResultSchema = z
 const caseSchema = z
   .object({
     status: z.string(),
+    /**
+     * Searches where the reranker fell back to cosine (spec 0012 phase six,
+     * AC-14). Optional: runs recorded before phase six carry none.
+     */
+    rerankFallbacks: z.number().int().nonnegative().optional(),
     dimensions: z
       .object({
         honesty: dimensionResultSchema.optional(),
@@ -199,7 +303,14 @@ const runMetaSchema = z
      * The retrieval corpus (spec 0012 phase three, AC-11). Optional because
      * every run recorded before retrieval existed has none.
      */
-    corpusHash: z.string().min(1).optional()
+    corpusHash: z.string().min(1).optional(),
+    /**
+     * The reranking arm (spec 0012 phase six, AC-14). Optional because every
+     * run recorded before phase six has none, and those ran the plain cosine
+     * path, so a missing arm reads as `off` (see summarise).
+     */
+    rerankArm: z.enum(['off', 'shadow', 'enforce']).optional(),
+    rerankModel: z.string().min(1).optional()
   })
   .loose();
 
@@ -231,6 +342,10 @@ export type RunSummary = {
   caseCount: number;
   datasetHash: string;
   corpusHash?: string;
+  /** Resolved: a run recorded before phase six reads as `off` (AC-14). */
+  rerankArm: 'off' | 'shadow' | 'enforce';
+  /** Rerank fall backs summed over the run's cases (AC-14). */
+  rerankFallbacks: number;
   perDimension: Record<Dimension, DimensionAggregate>;
 };
 
@@ -272,6 +387,8 @@ function summarise(results: ParsedResults): RunSummary {
     caseCount: meta.caseCount,
     datasetHash: meta.datasetHash,
     corpusHash: meta.corpusHash,
+    rerankArm: meta.rerankArm ?? 'off',
+    rerankFallbacks: results.cases.reduce((sum, c) => sum + (c.rerankFallbacks ?? 0), 0),
     perDimension
   };
 }
@@ -337,6 +454,11 @@ function readJson(absolutePath: string, label: string): unknown {
   if (!existsSync(absolutePath)) {
     throw new Error(`${label} is missing: ${absolutePath}`);
   }
+  // A directory reaches readFileSync as EISDIR, which the catch below reports
+  // as "is not valid JSON" — true, and useless to whoever typed the path.
+  if (!statSync(absolutePath).isFile()) {
+    throw new Error(`${label} is not a file: ${absolutePath}`);
+  }
   try {
     return JSON.parse(readFileSync(absolutePath, 'utf8'));
   } catch (cause) {
@@ -398,7 +520,35 @@ export function loadPublished(evalsDir: string = EVALS_DIR): PublishedManifest {
           'A dirty run is never published; re run it on a committed tree.'
       );
     }
-    checkRecordedDelta(entry, summarise(run), baseline);
+    const summary = summarise(run);
+    // Spec 0012 phase six, AC-14: eligibility has to be knowable. Every scored
+    // case of an enforce run carries its fall back count, because a scored
+    // case always reached the retrieval stats; a missing count means the file
+    // cannot say whether it mixed arms, and reading it as zero would pass it.
+    if (summary.rerankArm === 'enforce') {
+      const unrecorded = run.cases.filter(
+        (c) => c.status === 'scored' && c.rerankFallbacks === undefined
+      ).length;
+      if (unrecorded > 0) {
+        throw new Error(
+          `${label}: ${entry.resultsFile} measured rerank arm enforce, but ${unrecorded} scored case(s) ` +
+            'record no rerank fall back count, so whether it mixed two arms cannot be known. ' +
+            'It is not eligible as a phase entry.'
+        );
+      }
+    }
+    // Spec 0012 phase six, AC-14: an enforce run in which the reranker fell
+    // back measured a mix of two arms, so it never stands as a phase entry.
+    // Refused by name, the way a dirty run is, rather than published with a
+    // footnote nobody reads.
+    if (summary.rerankArm === 'enforce' && summary.rerankFallbacks > 0) {
+      throw new Error(
+        `${label}: ${entry.resultsFile} measured rerank arm enforce, but the reranker fell back on ` +
+          `${summary.rerankFallbacks} search(es), so it mixed two arms. It is not eligible as a phase ` +
+          'entry; re run it until no search falls back.'
+      );
+    }
+    checkRecordedDelta(entry, summary, baseline, evalsDir);
   }
 
   return manifest;
@@ -431,8 +581,99 @@ function loadBaselineSummary(evalsDir: string): RunSummary | null {
 function checkRecordedDelta(
   entry: PublishedRun,
   run: RunSummary,
-  baseline: RunSummary | null
+  baseline: RunSummary | null,
+  evalsDir: string
 ): void {
+  // An entry that publishes no delta still makes a CLAIM — "there was nothing
+  // to compare" — and that claim is falsifiable, so it gets checked like any
+  // other. Letting it through unchecked was the hole the pre-deploy gate
+  // found: the same lie is caught when told as a number and passes when told
+  // in prose, which is backwards, because the prose is what a reader believes.
+  //
+  // Falsifiable exactly when the baseline still in force scored the SAME
+  // instrument and is a different run. The legitimate case this field exists
+  // for is a phase that changed the dataset and thereby BECAME the baseline:
+  // there, run and baseline agree on every hash and comparing the run to
+  // itself would yield a meaningless zero. `gitCommit` plus `date` identify
+  // that, and the committed record is exactly it — `baseline.json` is byte
+  // identical to the phase three results file.
+  if (entry.delta === undefined) {
+    // The entry names the run it cannot be compared against, so this is one
+    // comparison against committed data rather than a guess about which
+    // baseline was in force.
+    //
+    // WHAT THIS CATCHES, stated honestly, because six rewrites went wrong by
+    // assuming otherwise: an author who names the WRONG FILE. That is the
+    // realistic failure in a hand maintained manifest, and against it this
+    // works. It does NOT stop someone determined. `datasetHash` and
+    // `corpusHash` are written by the same person, in the same file, as any
+    // lie would be, and nothing recomputes them — `check-corpus.ts` validates
+    // the retrieval manifest against `docs/specs`, never a results file. One
+    // edited character defeats this and would defeat any ordering rule layered
+    // on top of it. Being COMMITTED is not being DERIVED, and an earlier
+    // version of this comment claimed otherwise.
+    //
+    // So the ordering half is gone: a sibling scan, a per entry date equality
+    // check, and three attempts at inferring which run came first. Each was
+    // broken within one review cycle, none ever fired on the real record, and
+    // the last one rejected a legitimate near midnight run
+    // (2026-08-31T02:06Z is the evening of the 30th here). Machinery that a
+    // one character edit walks past does not buy honesty; on a page arguing
+    // that the measurement is disciplined it buys the APPEARANCE of a verified
+    // claim, which is the more expensive thing to be wrong about.
+    //
+    // The reason prose therefore carries the same trust as `phaseTitle` and
+    // the writeups, which is the trust the page already extends. If the
+    // sibling property is ever wanted, the honest form is a line in the
+    // writeup naming every published run on the same instrument, which a
+    // reader can check against the hashes already on the page. Three earlier versions inferred that and each
+    // inference broke differently: keyed to the current baseline it accused an
+    // untouched older row the moment the baseline advanced; keyed to the
+    // newest phase the shield became an edit to the list, so appending a phase
+    // silenced the row below it. Nothing here depends on position or on what
+    // has happened since.
+    const claim = entry.deltaUnavailable as { reason: string; notComparableTo: string };
+    const againstPath = containedPath(
+      evalsDir,
+      claim.notComparableTo,
+      `publishedRuns phase ${entry.phase}: deltaUnavailable.notComparableTo`
+    );
+    if (!existsSync(againstPath)) {
+      throw new Error(
+        `publishedRuns phase ${entry.phase}: deltaUnavailable.notComparableTo does not exist: ` +
+          `${againstPath}. Name the committed results file this run cannot be compared against.`
+      );
+    }
+    const against = summarise(
+      parseResults(againstPath, `publishedRuns phase ${entry.phase}: its notComparableTo run`)
+    );
+
+    // Deliberately NOT keyed on the rerank arm. A different arm alone does not
+    // make a delta impossible to compute: phase six's own migration plan
+    // computes exactly the enforce against off delta at one commit and says to
+    // publish it. The first version of the arm rule counted the arm here, and
+    // the pre deploy gate (2026-09-24) showed that reopened the original
+    // exploit across arms: a regressed enforce run published as prose, naming
+    // its off twin, with no results file edited.
+    const sameInstrument =
+      against.datasetHash === run.datasetHash &&
+      !(
+        against.corpusHash !== undefined &&
+        run.corpusHash !== undefined &&
+        against.corpusHash !== run.corpusHash
+      );
+    if (sameInstrument) {
+      throw new Error(
+        `publishedRuns phase ${entry.phase}: publishes no delta and names ${claim.notComparableTo} ` +
+          'as the run it cannot be compared against, but that run scored the SAME dataset ' +
+          `(${run.datasetHash.slice(0, 12)}…) and the same corpus, so the delta WAS computable. ` +
+          'Publish delta and verdict, or name the run whose instrument actually differs.'
+      );
+    }
+
+    return;
+  }
+
   if (baseline === null) return;
   if (baseline.datasetHash !== run.datasetHash) return;
   // AC-11: two runs are comparable only when both hashes match. A run with no
@@ -447,6 +688,13 @@ function checkRecordedDelta(
   ) {
     return;
   }
+  // Deliberately NOT skipped when the rerank arms differ. The enforce against
+  // off delta at one commit is the number spec 0012 phase six publishes
+  // (migration step 6), so it is exactly the delta that has to be checked.
+  // The first version of the arm rule returned here, and the pre deploy gate
+  // (2026-09-24) showed a regressed enforce or shadow run could then publish
+  // a delta of 0 as "not significant". The arm is recorded so a comparison is
+  // named for what it is, not so it can go unchecked.
 
   for (const dimension of DIMENSIONS) {
     const runMean = run.perDimension[dimension].mean;

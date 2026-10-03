@@ -3,13 +3,13 @@
 ## Stack
 
 - **Language / Runtime**: TypeScript, Node >= 22 (hard requirement: Node 20 dies with ERR_REQUIRE_ESM via better-auth)
-- **Monorepo**: npm workspaces — `apps/web` (Next.js 15, React 19, Tailwind, React Three Fiber), `apps/api` (NestJS 11, Prisma 7 on Prisma Postgres, Anthropic SDK), `apps/streamflow` (forecast pipeline, Prisma 7 on its own Postgres, jest; builds to `dist/`, which web imports), `packages/shared` (zod request schemas + shared types; builds to `dist/`)
+- **Monorepo**: npm workspaces — `apps/web` (Next.js 16, React 19, Tailwind), `apps/api` (NestJS 12, ESM, Prisma 7 on Prisma Postgres, Anthropic SDK), `apps/streamflow` (forecast pipeline, Prisma 7 on its own Postgres, jest; builds to `dist/`, which web imports), `packages/shared` (zod request schemas + shared types; builds to `dist/`)
 - **Package manager**: npm
 - Mirrors the architecture specs: [0001](docs/specs/_root/0001-backend-ai-stack/index.md) (backend/AI stack) and [0003](docs/specs/_root/0003-frontend-deployment-platform.md) (frontend/deploy)
 
 ## Build approach
 
-<TBD, set by /scope> (specs 0002 and 0004 defaulted to Tracer Bullet and noted the assumption; no scope header exists yet)
+**Tracer Bullet** — thin vertical slices end to end through every layer. Specs 0002 and 0004 defaulted to it and noted the assumption; it is the project default until a spec declares its own `**Approach**:` line.
 
 ## Commands
 
@@ -20,13 +20,13 @@ npm run dev:web                              # Next.js on :3000 (or launch.json 
 npm run lint                                 # ESLint flat config, whole repo
 npx tsc --noEmit -p apps/api/tsconfig.json   # typecheck api (same for apps/web)
 npm test                                     # ALL four suites: api, streamflow, web, feedback-classifier
-npm test --workspace=apps/api                # Jest (all mocked, no DB/network)
+npm test --workspace=apps/api                # Vitest (all mocked, no DB/network)
 npm run check:evals                          # validate docs/evals/interview/published.json
 npm run check:corpus --workspace=apps/api    # docs/specs changed? the retrieval manifest must match
 cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotchas first)
 ```
 
-**Run `npm test` at the root, not one workspace.** Four workspaces have tests and they use two runners: `apps/api` and `apps/streamflow` and `infra/lambda/feedback-classifier` on jest, `apps/web` on vitest. `npm test --workspaces --if-present` runs all of them, does not stop at the first failing workspace, and exits non zero if any failed. Until 2026-09-01 there was no root script, and a whole review of a branch ran `npm test --workspace=apps/api` throughout and reported that count as though it were the suite; CI caught a web failure the review never saw. CI runs the four explicitly, so a NEW workspace with tests is picked up by the root script automatically but must still be added to `ci.yml` by hand.
+**Run `npm test` at the root, not one workspace.** Four workspaces have tests and they use two runners: `apps/streamflow` and `infra/lambda/feedback-classifier` on jest, `apps/api` and `apps/web` on vitest (apps/api moved with the NestJS 12 / ESM migration, spec 0015). `npm test --workspaces --if-present` runs all of them, does not stop at the first failing workspace, and exits non zero if any failed. Until 2026-09-01 there was no root script, and a whole review of a branch ran `npm test --workspace=apps/api` throughout and reported that count as though it were the suite; CI caught a web failure the review never saw. CI runs the four explicitly, so a NEW workspace with tests is picked up by the root script automatically but must still be added to `ci.yml` by hand.
 
 ## Git
 
@@ -55,10 +55,11 @@ cd apps/api && npx prisma migrate dev        # schema change (see apps/api gotch
 
 ## Agent skills
 
-- [architect](.claude/skills/architect/) · [develop](.claude/skills/develop/) · [check](.claude/skills/check/) · [audit](.claude/skills/audit/) · [debug](.claude/skills/debug/) · [predeploy-audit](.claude/skills/predeploy-audit/): local workflow suite (spec → build → verify → gate), no registry source
+- [architect](.claude/skills/architect/) · [develop](.claude/skills/develop/) · [check](.claude/skills/check/) · [audit](.claude/skills/audit/) · [debug](.claude/skills/debug/) · [predeploy-audit](.claude/skills/predeploy-audit/): local workflow suite (spec → build → verify → gate), no registry source. **Project scoped on purpose, not installed globally** (the six were symlinked into `~/.claude/skills/` until 2026-09-20; the links pointed at the main checkout, so their content tracked whatever branch it happened to be on, and they carry repo specific rules like "there is no `docs/scope/` here" that are wrong advice in any other project). They load automatically whenever you work in this repo; do not link them out again.
+- **Code review goes through the built-in `/code-review`**, at `high` effort or above, and `/predeploy-audit` chains it as part of the gate. `/check` proves a change works at runtime and does NOT review code; its `review` mode was retired on 2026-09-20 because the built-in does the job better (effort levels, `--comment`, `--fix`, and an `ultra` multi-agent mode the user can trigger).
 - [agent-brief](.claude/skills/agent-brief/): local, composes a subagent's prompt. Carries the environment facts an agent cannot discover (its shell is Node 20, a fresh worktree has no `node_modules` or generated Prisma client, its base may be stale) plus the revert and confirm bar
 - [github-actions-hardening](.claude/skills/github-actions-hardening/): `wshobson/agents`, GitHub Actions threat model (script injection, privileged triggers, SHA pinning). **Vendored by exception** (spec 0014): upstream no longer publishes it, so there is nowhere to install it from.
-- `github-actions-templates` (`wshobson/agents`), `writing-for-agents` + `codebase-design` (`mattpocock/skills`): registry skills, installed globally, not in this repo.
+- `writing-for-agents` + `codebase-design` (`mattpocock/skills`): registry skills, installed globally, not in this repo.
 - **Registry skills are NOT committed here** (spec 0014). They live in `~/.claude/skills/`, one install per machine, and `skills-lock.json` is the list. Install with `npx skills add <owner>/<repo> --skill <name> -g -y`, run from OUTSIDE the repo or with `-g`, since installing inside the repo puts the files back and fails `npm run check:skills`. Three traps, all silent. A bare `add <owner>/<repo>` installs EVERY skill in a multi-skill repo (the 2026-08-18 cleanup hand-picked 19 and pruned ~800); `--skill a,b` installs NOTHING while printing the available list as though it worked; and a name that has vanished upstream fails the same way, which is how `github-actions-hardening` became a vendored exception. Pass one `--skill` per run and verify each landed.
 - Stack-specific skills are listed in each workspace's AGENTS.md.
 

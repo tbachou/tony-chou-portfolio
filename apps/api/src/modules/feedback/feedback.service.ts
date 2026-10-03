@@ -1,12 +1,12 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { utcDateOnly } from '../../common/utils/date.util';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { utcDateOnly } from '../../common/utils/date.util.js';
 import type { CreateFeedback } from '@portfolio/shared';
-import { FeedbackSnsPublisher } from './feedback-sns.publisher';
+import { FeedbackSnsPublisher } from './feedback-sns.publisher.js';
 import {
   FEEDBACK_IP_DAILY_CAP,
   FEEDBACK_RATE_LIMIT_MESSAGE,
-} from './feedback.constants';
+} from './feedback.constants.js';
 
 @Injectable()
 export class FeedbackService {

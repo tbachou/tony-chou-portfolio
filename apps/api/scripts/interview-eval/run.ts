@@ -21,52 +21,60 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync, execSync } from 'node:child_process';
 
-loadEnv({ path: path.resolve(__dirname, '..', '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '..', '.env') });
 
-import { AnthropicService } from '../../src/modules/anthropic/anthropic.service';
-import { BedrockAnthropicService } from '../../src/modules/anthropic/bedrock-anthropic.service';
+import { AnthropicService } from '../../src/modules/anthropic/anthropic.service.js';
+import { BedrockAnthropicService } from '../../src/modules/anthropic/bedrock-anthropic.service.js';
 import {
   resolveConfiguredProvider,
   type AiProvider,
-} from '../../src/modules/anthropic/ai-provider.interface';
-import { hashDataset } from '../../src/modules/conversation/eval/dataset-hash';
+} from '../../src/modules/anthropic/ai-provider.interface.js';
+import { hashDataset } from '../../src/modules/conversation/eval/dataset-hash.js';
 import {
   estimateCostUsd,
   PRICE_TABLE,
-} from '../../src/modules/conversation/eval/pricing';
-import { aggregate } from '../../src/modules/conversation/eval/aggregate';
-import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline';
-import { STATUS_ARGS } from '../../src/modules/conversation/eval/dirty-tree';
-import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard';
+} from '../../src/modules/conversation/eval/pricing.js';
+import { aggregate } from '../../src/modules/conversation/eval/aggregate.js';
+import { computeNoiseBand } from '../../src/modules/conversation/eval/baseline.js';
+import { STATUS_ARGS } from '../../src/modules/conversation/eval/dirty-tree.js';
+import { renderScoreboard } from '../../src/modules/conversation/eval/scoreboard.js';
 import {
   RESULTS_PROVENANCE,
+  rerankArmOf,
+  rerankFallbacksOf,
   type BaselineFile,
   type CaseResult,
+  type RerankArm,
   type RunResults,
   type TokenTotals,
-} from '../../src/modules/conversation/eval/eval-types';
-import { selectCases } from '../../src/modules/conversation/eval/select-cases';
-import { GOLDEN_CASES, type EvalCase } from './golden';
-import { datasetHashPayload, runCase } from './harness';
+} from '../../src/modules/conversation/eval/eval-types.js';
+import { selectCases } from '../../src/modules/conversation/eval/select-cases.js';
+import { GOLDEN_CASES, type EvalCase } from './golden.js';
+import { datasetHashPayload, runCase } from './harness.js';
 import {
   collectCorpus,
   hashCorpus,
   type CorpusManifest,
-} from '../../src/modules/conversation/retrieval/corpus';
+} from '../../src/modules/conversation/retrieval/corpus.js';
 import {
   RETRIEVAL_STRICT_ENV,
   retrievalStrictFromEnv,
-} from '../../src/modules/conversation/retrieval/search-knowledge';
+} from '../../src/modules/conversation/retrieval/search-knowledge.js';
+import {
+  RERANK_MODEL_ID,
+  RETRIEVAL_RERANK_MODE_ENV,
+} from '../../src/modules/conversation/retrieval/reranker.js';
+import { rerankPreflight } from '../../src/modules/conversation/retrieval/rerank-preflight.js';
 import {
   openReadOnly,
   search as searchIndex,
-} from '../../src/modules/conversation/retrieval/vector-store';
-import { checkIndexPopulation } from '../../src/modules/conversation/retrieval/index-health';
+} from '../../src/modules/conversation/retrieval/vector-store.js';
+import { checkIndexPopulation } from '../../src/modules/conversation/retrieval/index-health.js';
 import {
   canSaveBaseline,
   evaluateRunOutcome,
-} from '../../src/modules/conversation/eval/run-outcome';
-import { JUDGE_MODEL } from './scorers/judge-client';
+} from '../../src/modules/conversation/eval/run-outcome.js';
+import { JUDGE_MODEL } from './scorers/judge-client.js';
 
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
@@ -87,6 +95,43 @@ function numFlag(name: string, fallback: number): number {
     process.exit(1);
   }
   return value;
+}
+
+const RERANK_ARMS: readonly RerankArm[] = ['off', 'shadow', 'enforce'];
+
+/**
+ * The reranking arm this run measures (spec 0012 phase six, AC-10): explicit,
+ * defaulting to `off`, which is what production runs. Loud on a bad value,
+ * like numFlag: a typo that quietly measured the wrong arm would publish a
+ * number about a system nobody ran.
+ */
+function rerankArmFlag(): RerankArm {
+  // `--rerank=enforce` as well as `--rerank enforce`. `arg()` reads only the
+  // space form, so without this the equals form fell through to the default
+  // and silently measured `off`: the exact wrong arm this flag exists to rule
+  // out (caught running the preflight, 2026-09-24).
+  // More than one occurrence is refused rather than resolved: "the first one
+  // wins" and "the equals form wins" are both rules an operator reading the
+  // command line would get wrong (pre deploy gate, 2026-09-24).
+  const occurrences = process.argv.filter((a) => a === '--rerank' || a.startsWith('--rerank=')).length;
+  if (occurrences > 1) {
+    console.error(`❌ --rerank given ${occurrences} times; give it once`);
+    process.exit(1);
+  }
+  const equalsForm = process.argv.find((a) => a.startsWith('--rerank='));
+  const raw = equalsForm !== undefined ? equalsForm.slice('--rerank='.length) : arg('rerank');
+  if (raw === undefined) {
+    if (process.argv.includes('--rerank')) {
+      console.error('❌ --rerank needs a value: off, shadow or enforce');
+      process.exit(1);
+    }
+    return 'off';
+  }
+  if (!(RERANK_ARMS as readonly string[]).includes(raw)) {
+    console.error(`❌ --rerank must be off, shadow or enforce, got "${raw}"`);
+    process.exit(1);
+  }
+  return raw as RerankArm;
 }
 
 /** Parses a results/baseline JSON with a loud, named failure (never a raw stack). */
@@ -321,6 +366,9 @@ function resultsFileName(commit: string, dirty: boolean, dir: string): string {
 }
 
 async function main(): Promise<void> {
+  // Parsed before anything else so a bad value is refused before any request
+  // to the index; it used to be checked after the retrieval preflight.
+  const rerankArm = rerankArmFlag();
   const providerFlag = arg('provider');
   if (process.env.AI_PROVIDER === 'bedrock' && !providerFlag) {
     console.error(
@@ -345,8 +393,39 @@ async function main(): Promise<void> {
   // From here on a retrieval failure aborts the case rather than degrading
   // quietly (AC-9). Production never sets this.
   process.env[RETRIEVAL_STRICT_ENV] = '1';
+  // Phase six AC-10: the arm is explicit and recorded with the results
+  // (AC-14), defaulting to `off`. Set on the environment in every case, `off`
+  // included, so a shell that happens to export RETRIEVAL_RERANK_MODE cannot
+  // change what this run measures behind the flag's back.
+  process.env[RETRIEVAL_RERANK_MODE_ENV] = rerankArm;
+  if (rerankArm === 'off') {
+    console.log('Reranker: off (the arm this run measures; pass --rerank shadow|enforce to change it)');
+  } else {
+    // The reranker fails open, so a missing or wrong key would quietly score
+    // every case on the cosine path while the run records another arm. Refuse
+    // before anything is spent instead.
+    const rerank = await rerankPreflight();
+    if (!rerank.ok) {
+      console.error(`❌ Reranking preflight failed: ${rerank.reason}.`);
+      console.error(
+        `   This run measures rerank arm ${rerankArm}, so without a working reranker every search\n` +
+          '   would fall back to the cosine path and the run would be recorded as the wrong arm.',
+      );
+      process.exit(1);
+    }
+    // A probe proves the key and the path, not every later request: a rate
+    // limit or a size limit can still make a search fall back. Those are
+    // counted per case (AC-14), and claimed no further than that.
+    console.log(
+      `Reranker: ${RERANK_MODEL_ID} answered a probe (arm ${rerankArm}; fall backs are counted per case)`,
+    );
+  }
   if (process.argv.includes('--preflight-only')) {
-    console.log('--preflight-only: stopping here. Nothing was spent and nothing was written.');
+    console.log(
+      `--preflight-only: stopping here. Nothing was written, and nothing was spent${
+        rerankArm === 'off' ? '' : ' beyond one TypeSafe probe'
+      }.`,
+    );
     return;
   }
   const commit = git.commit;
@@ -359,7 +438,7 @@ async function main(): Promise<void> {
   const concurrency = Math.max(1, numFlag('concurrency', 2));
   const maxCostUsd = numFlag('max-cost', 2);
   const outDir = path.resolve(
-    arg('out') ?? path.resolve(__dirname, '..', '..', '..', '..', 'docs', 'evals', 'interview'),
+    arg('out') ?? path.resolve(import.meta.dirname, '..', '..', '..', '..', 'docs', 'evals', 'interview'),
   );
 
   const cases: EvalCase[] = selectCases(GOLDEN_CASES, caseCap);
@@ -466,6 +545,8 @@ async function main(): Promise<void> {
       caseCount: results.length,
       datasetHash,
       corpusHash,
+      rerankArm,
+      ...(rerankArm !== 'off' && { rerankModel: RERANK_MODEL_ID }),
       tokensByModel,
       tokenTotals,
       estimatedCostUsd: estimateCostUsd(tokensByModel),
@@ -496,6 +577,19 @@ async function main(): Promise<void> {
 
   // --save-baseline: a deliberate local step (AC-9); CI never passes it.
   if (process.argv.includes('--save-baseline')) {
+    if (rerankArm !== 'off') {
+      console.warn(
+        `⚠ Saving a ${rerankArm} run as the baseline. Pull request evals run off by default, and runs of\n` +
+          '  different arms are never compared (AC-14), so every later PR eval will read "not comparable"\n' +
+          '  until the baseline moves again. Save an off run unless that is what you intend.',
+      );
+    }
+    if (rerankArm === 'enforce' && rerankFallbacksOf(run) > 0) {
+      console.warn(
+        '⚠ The reranker fell back on at least one search, so this run mixed two arms (AC-14).\n' +
+          '  It is saved as the baseline as asked, but it is not eligible as a phase entry.',
+      );
+    }
     const baselineVerdict = canSaveBaseline({
       partial: run.meta.partial,
       generationErrors: aggregate(run.cases).generationErrors,
@@ -511,7 +605,7 @@ async function main(): Promise<void> {
       // either the cwd or the repo root.
       const candidates = [
         path.resolve(noiseFrom),
-        path.resolve(__dirname, '..', '..', '..', '..', noiseFrom),
+        path.resolve(import.meta.dirname, '..', '..', '..', '..', noiseFrom),
       ];
       const noisePath = candidates.find((p) => fs.existsSync(p));
       if (!noisePath) {
@@ -544,6 +638,16 @@ async function main(): Promise<void> {
           '⚠ --noise-from run records no corpusHash (it predates retrieval), so the\n' +
             '  band it produces cannot account for retrieval variance.',
         );
+      }
+      // Phase six AC-14: a band comes from two runs of the SAME arm. A run
+      // recorded before phase six has no arm and ran the cosine path, so it
+      // reads as `off`.
+      if (rerankArmOf(other.meta) !== rerankArm) {
+        console.error(
+          `❌ --noise-from run measured rerank arm ${rerankArmOf(other.meta)} and this run measured ` +
+            `${rerankArm}; the noise band must come from two identical runs.`,
+        );
+        process.exit(1);
       }
       if (other.meta.partial) {
         console.error(

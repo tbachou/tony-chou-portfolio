@@ -6,7 +6,7 @@ The public portfolio on Vercel: a terminal-themed single-page site (interview si
 
 ## Stack
 
-Next.js 15 (App Router) · React 19 · Tailwind 3.4 mapped to CSS custom properties · React Three Fiber + drei (the opt-in 3D desk scene) · IBM Plex Mono via next/font · better-auth client for the internal admin.
+Next.js 16 (App Router) · React 19.3 · Tailwind 3.4 mapped to CSS custom properties · IBM Plex Mono via next/font · better-auth client for the internal admin.
 
 ## Commands
 
@@ -35,9 +35,7 @@ npm run lint --workspace=apps/web            # ESLint (root flat config)
 
 Installed globally, not committed here (spec 0014); `skills-lock.json` at the repo root is the list.
 
-- `react-markdown`: `mikkelkrogsholm/dev-skills`, rendering markdown as React elements (remark/rehype plugins, component overrides). Governs one module, `src/app/projects/interview-simulator/evals/Markdown.tsx`, which is why it is listed here and not at the root
 - `vercel-react-best-practices`: `vercel-labs/agent-skills`, React/Next performance patterns
-- `tailwindcss-*` (6 skills, e.g. `tailwindcss-advanced-layouts`): `josiahsiegel/claude-plugin-marketplace`, layout/animation/mobile patterns
 
 ## Related specs
 

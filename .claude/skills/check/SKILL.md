@@ -1,8 +1,8 @@
 ---
 name: check
 allowed-tools: Bash, Read, Grep, Glob, Write, Agent
-argument-hint: [verify | review]
-description: "Run /check before merge to confirm a change is sound. Two modes: `/check verify` drives the real app and proves behavior against the spec (every acceptance criterion met, every specced surface built); `/check review` runs a senior code review on a different model than wrote the code. Verify after /develop, review before a PR. Writes findings to docs/reviews/; never edits your code."
+argument-hint: "[feature or path]"
+description: "Run /check before merge to prove a change actually works: it drives the real app and confirms behavior against the spec (every acceptance criterion met, every specced surface built). Runtime proof, not a code read. Typically right after /develop. Never edits your code. For a code review of the diff, use the built-in /code-review instead."
 ---
 
 ## Output style (plain words, no dashes, no hyphens)
@@ -13,40 +13,24 @@ Write everything this skill produces, files and messages alike, in plain simple 
 
 ## What this skill does
 
-`/check` is the gate before merge. It confirms a change is sound in two different ways, run as two modes; they are separate jobs and you usually run both, verify first:
+`/check` is runtime proof before merge: run the real app and watch the change behave. It proves the feature actually works and conforms to its spec (every acceptance criterion met, every specced surface built), which green tests never reveal. Read only on code, owns no durable files, runs on the main thread. Typically after `/develop`.
 
-- **`verify`** (runtime proof): run the real app and watch the change behave. Proves the feature actually works and conforms to the spec (every acceptance criterion met, every specced surface built), which green tests never reveal. Read only on code, owns no durable files. Runs on the main thread. Typically after `/develop`.
-- **`review`** (fresh model code review): a rigorous senior read of the diff, on a **different model than wrote the code**, because a model reviewing its own output shares its blind spots. Writes findings ranked by severity to `docs/reviews/`. Read only on code. Typically before opening a PR.
+Failures route to `/debug` (a bug) or `/develop` (a surface that was never built). This skill never edits your code.
 
-Neither mode edits your code. `verify` points failures at `/debug` or `/develop`; `review` reports findings for the implementer to fix.
+## What this skill is NOT
 
-## Pick the mode (route before doing anything else)
+**It does not review code.** For a senior read of the diff, use the **built-in `/code-review`** skill, which is the better tool for that job: it takes an effort level (`/code-review high`), can post findings as inline PR comments (`--comment`), can apply them (`--fix`), and has a deep multi-agent cloud mode (`/code-review ultra`) that the user can trigger. `/predeploy-audit` already chains it at high effort as part of the deploy gate.
 
-This is the first step, always, before reading any mode file or touching the repo. Look at what followed `/check`:
+This skill used to carry a second `review` mode that spawned a contrasting-model reviewer. That was retired: the built-in skill does the same job better, and keeping both meant two paths to one outcome with only one of them maintained. If someone types `/check review`, say the review mode is gone and point at `/code-review` (or `/predeploy-audit` for the full pre-push gate), then offer to run the runtime check instead.
 
-- The argument **starts with `verify` (or `run`)** → runtime proof. Read `modes/verify.md` and follow it fully. Pass any remaining arguments (a feature name, a scope) through.
-- The argument **starts with `review`** → code review. Read `modes/review.md` and follow it fully. Pass the review steering through unchanged (e.g. `/check review with opus`, `/check review uncommitted`).
-- **No mode word, or anything ambiguous** (bare `/check`, or a feature name with no mode like `/check auth`) → do NOT guess and do NOT default to a mode. Show the two options as a plain text panel and **stop and wait** for the engineer to type their choice. This is the case that makes `/check` safe to type with nothing after it.
+## Execution
 
-**How to present the choice (plain text, works on every agent, no interactive modal):**
+Read `modes/verify.md` and follow it fully. Pass any argument (a feature name, a path) through as the target.
 
-Print exactly this, then stop and wait for the reply. Do not proceed, do not assume `verify`, until the engineer answers. Route on their typed word (`verify` / `review` / `both`).
-
-```
-Which check do you want to run? Type one:
-  • verify  run the real app and prove the change works against its spec (usually right after /develop)
-  • review  a fresh model senior read of the diff, ranked findings (usually right before a PR)
-  • both    verify first, then review
-```
-
-Do not use an interactive picker or modal for this; it is a typed choice shown inline, so it behaves the same in every AI tool. (The `argument-hint` in this skill's frontmatter also surfaces `verify | review` in Claude Code's own autocomplete as you type, before submit; other tools ignore that field, which is why this inline panel is the portable path.)
-
-If a feature name was passed with no mode (`/check auth`), carry it through as the target once the engineer picks the mode; still ask the mode.
-
-Do not mix the two in one run. If the engineer types **both**, do `verify` first (confirm it works), and only then offer `review` as the next step.
+If the argument is bare `/check` with nothing after it, target the current change set and say what you scoped to.
 
 ## Portability (any OS, any agent)
 
-Any Agent Skills client on macOS, Linux, or Windows. `git` is the only required CLI and behaves the same everywhere; other shell snippets are POSIX reference, not literal scripts, so use your agent's own cross platform file, process, and browser tools and apply branching logic yourself. Each mode file adds its own portability notes (browser/HTTP driving for `verify`, the cross model spawn and bundled file handling for `review`). No subagent support falls back to running the work inline, noted per mode.
+Any Agent Skills client on macOS, Linux, or Windows. `git` is the only required CLI and behaves the same everywhere; other shell snippets are POSIX reference, not literal scripts, so use your agent's own cross platform file, process, and browser tools and apply branching logic yourself. `modes/verify.md` adds its own notes on browser and HTTP driving. No subagent support falls back to running the work inline.
 
-Bundled files live in this skill's folder: `modes/verify.md`, `modes/review.md`, and (for review) `review-agent-prompt.md` and `review-guide.md`. Read only the mode file you routed to; the main agent resolves the review bundled files to absolute paths when it spawns the reviewer.
+Bundled files live in this skill's folder: `modes/verify.md`.

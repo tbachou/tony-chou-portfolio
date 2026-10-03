@@ -1,9 +1,9 @@
 import * as path from 'node:path';
-import { collectCorpus } from './corpus';
-import { chunkMarkdown, type Chunk } from './chunk';
-import { evaluateTonyResponse } from '../ownership-guard';
-import { stories } from '../../../../prisma/fixtures';
-import type { StoryModel } from '../../../generated/prisma/models';
+import { collectCorpus } from './corpus.js';
+import { chunkMarkdown, type Chunk } from './chunk.js';
+import { evaluateTonyResponse } from '../ownership-guard.js';
+import { stories } from '../../../../prisma/fixtures.js';
+import type { StoryModel } from '../../../generated/prisma/models.js';
 
 /**
  * The corpus must not be able to weaponise the ownership guard (spec 0012
@@ -25,7 +25,7 @@ import type { StoryModel } from '../../../generated/prisma/models';
  * is handed can make its own honest answer fail.
  */
 
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..', '..');
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..', '..', '..', '..');
 
 /** The fixture stories, shaped as the guard consumes them. */
 const storyFixtures = stories.map(
@@ -124,4 +124,4 @@ describe('the committed corpus against the ownership guard', () => {
 
 // Imported last so the failing-first version of this file names the missing
 // export clearly rather than failing on an unrelated line.
-import { filterChunksForStory } from './search-knowledge';
+import { filterChunksForStory } from './search-knowledge.js';

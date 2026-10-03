@@ -1,6 +1,6 @@
-import { aiProviderFactory } from './anthropic.module';
-import type { AnthropicService } from './anthropic.service';
-import type { BedrockAnthropicService } from './bedrock-anthropic.service';
+import { aiProviderFactory } from './anthropic.module.js';
+import type { AnthropicService } from './anthropic.service.js';
+import type { BedrockAnthropicService } from './bedrock-anthropic.service.js';
 
 /**
  * Spec 0005 provider-swap child: the factory keyed on AI_PROVIDER is the

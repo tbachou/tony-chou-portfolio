@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { GradeReveal } from '@/lib/grade-api';
+import { readStored, writeStored } from '@/lib/safe-storage';
 
 /**
  * The visitor's progress through the set (AC-24) and their saved reveals
@@ -112,22 +113,18 @@ export function useGradeProgress() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    try {
-      setProgress(parseProgress(window.localStorage.getItem(PROGRESS_STORAGE_KEY)));
-    } catch {
-      setProgress(EMPTY_PROGRESS);
-    }
+    // parseProgress owns its own failure mode (a corrupt value returns
+    // EMPTY_PROGRESS), so only the read needs guarding here.
+    setProgress(parseProgress(readStored(PROGRESS_STORAGE_KEY)));
     setLoaded(true);
   }, []);
 
   const recordReveal = useCallback((reveal: GradeReveal) => {
     setProgress((previous) => {
       const next = applyReveal(previous, reveal);
-      try {
-        window.localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // Store unavailable or full: keep the in-memory value for this session.
-      }
+      // Store unavailable or full: the in-memory value still stands for
+      // this session, so the result is ignored.
+      writeStored(PROGRESS_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
   }, []);

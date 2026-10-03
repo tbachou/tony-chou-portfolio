@@ -3,10 +3,8 @@
 import { contactInfo } from '@/lib/resume-data';
 import { FeedbackForm } from './FeedbackForm';
 import { TerminalWindow } from './TerminalWindow';
-import { useDeskScene } from './DeskSceneProvider';
 
 export function ContactSection() {
-  const { reenter, triggerRef } = useDeskScene();
   return (
     <section
       id="contact"
@@ -57,20 +55,8 @@ export function ContactSection() {
           cat colophon.txt
         </h3>
         <p className="mt-3 max-w-[39rem] text-term-sm leading-relaxed text-term-body">
-          This site is hand-built — Next.js and Tailwind up front, NestJS behind it, React Three
-          Fiber for the one corner of 3D I couldn&apos;t resist.
+          This site is hand-built — Next.js and Tailwind up front, NestJS behind it.
         </p>
-        <button
-          type="button"
-          // Leaving the scene puts focus back here rather than at <body>.
-          // This control sits near the bottom of a very long single-page
-          // site, so landing at the top instead is a real cost.
-          ref={triggerRef}
-          onClick={reenter}
-          className="mt-3 text-term-sm text-term-ink underline-offset-4 hover:underline"
-        >
-          [ view the 3d desk ]
-        </button>
 
         <h3 className="mt-10 text-term-sm font-normal text-term-muted">
           <span aria-hidden="true">$ </span>

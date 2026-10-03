@@ -15,7 +15,7 @@ import { join } from 'path';
  * and it fails for exactly one reason: someone removed the registration.
  */
 describe('AppModule wiring', () => {
-  const source = readFileSync(join(__dirname, 'app.module.ts'), 'utf8');
+  const source = readFileSync(join(import.meta.dirname, 'app.module.ts'), 'utf8');
 
   it('registers OriginCheckGuard as a global guard, so CSRF cover is not per-controller', () => {
     expect(source).toContain('OriginCheckGuard');

@@ -18,6 +18,8 @@ A npm workspaces monorepo, TypeScript throughout, Node 22 or newer.
 | `packages/shared` | zod | Request contracts both sides validate against, so the client and server cannot drift |
 | `infra/lambda/feedback-classifier` | AWS Lambda | Feedback classification, the AWS side of spec 0005 |
 
+The API's full request and response surface is written down in [`docs/api/`](docs/api/), generated from the same zod schemas that validate every request. A CI check fails the build when it stops matching the code.
+
 Three demos run live, no install and no signup:
 
 - **Interview simulator** (`/`): pick a topic and watch the two AI voices work through it, streamed token by token.
@@ -47,8 +49,9 @@ The api needs a Postgres database and an Anthropic API key; see `apps/api/.env.e
 
 ```bash
 npm run lint
-npm test --workspace=apps/api
+npm test                                          # all four workspaces that have tests
 npx tsc --noEmit -p apps/api/tsconfig.json
+npm run build:openapi --workspace=apps/api        # regenerate docs/api/ after a route change
 ```
 
 ## How it is built

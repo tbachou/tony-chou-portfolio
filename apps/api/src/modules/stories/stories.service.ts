@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { StoryOwnership } from '../../generated/prisma/enums';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { StoryOwnership } from '../../generated/prisma/enums.js';
 
 export type StoryOwnershipWire = 'solo' | 'contributed' | 'co-led';
 

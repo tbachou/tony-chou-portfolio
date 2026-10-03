@@ -5,11 +5,11 @@ import {
   NotFoundException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { isUniqueViolation } from '../grade/grade.service';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { isUniqueViolation } from '../grade/grade.service.js';
 import type { CreateGradePhoto } from '@portfolio/shared';
-import { processUpload, UndecodableImageError } from './image-pipeline';
-import { newObjectKey, PhotoStorageService } from './photo-storage.service';
+import { processUpload, UndecodableImageError } from './image-pipeline.js';
+import { newObjectKey, PhotoStorageService } from './photo-storage.service.js';
 
 /** One row as the admin list shows it, with a URL the browser can actually load. */
 export type GradePhotoListItem = {

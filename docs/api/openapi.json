@@ -1,0 +1,1426 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Tony Chou portfolio API",
+    "version": "1.0.0",
+    "description": "The HTTP surface of `apps/api`, the NestJS service behind the portfolio’s AI features: the interview simulator, Beta the return to climbing planner, and Grade Guesser.\n\nThis document is generated from the zod schemas that actually validate each request (`packages/shared/contracts.ts`) plus a route registry, and a CI check fails the build when either artifact stops matching the code. Run `npm run build:openapi --workspace=apps/api` to regenerate it.\n\n**What is described here.** Request bodies and path parameters are generated, so they are exactly what the service enforces, including the refusal of unknown properties. Responses are hand written from the service return types and are not machine checked, so treat them as documentation rather than as a contract.\n\n**Authentication.** Eleven routes are anonymous. The four under `/internal` require a better-auth session cookie and are the admin surface. Sign up is permanently closed; the single admin account is seeded directly.\n\n**Rate limiting.** A route that documents a `429` response is rate limited; a route that does not is not. There is no global limiter, so the static reads carry no limit of their own. Where a limit applies it is keyed per client on an address identity that collapses an IPv6 allocation to its /64 prefix, so rotating within one cannot buy more requests, and it comes in two layers: an in memory window that resets on deploy, and, for the routes that spend money on a model call, a persisted daily cap that does not. Exceeding a window answers 429; exhausting the shared daily budget for plans answers 503. The numbers are deliberately not copied here, because they move and a stale limit in a public document is worse than none. `check:openapi` compares each route’s 429 against the code, so this paragraph cannot drift from it.\n\n**Not described here.** better-auth mounts its own sign in and session handlers, which are not Nest controller routes and so are outside both the registry and the check that guards it. `apps/web` also serves its own route handlers on the web origin; those are a separate surface and this document leaves them out on purpose.\n\n**No `servers` block.** The api origin is not published in this repository."
+  },
+  "tags": [
+    {
+      "name": "service",
+      "description": "Liveness and greeting."
+    },
+    {
+      "name": "content",
+      "description": "The curated stories and interview topics."
+    },
+    {
+      "name": "conversation",
+      "description": "The interview simulator."
+    },
+    {
+      "name": "beta",
+      "description": "Beta, the return to climbing planner."
+    },
+    {
+      "name": "grade",
+      "description": "Grade Guesser, the daily climbing grade game."
+    },
+    {
+      "name": "feedback",
+      "description": "Visitor feedback."
+    },
+    {
+      "name": "internal",
+      "description": "The admin surface, behind a better-auth session."
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "get-root",
+        "summary": "Service greeting",
+        "tags": [
+          "service"
+        ],
+        "description": "A plain text liveness greeting from the Nest root controller. Carries no state and is not the health check.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "A greeting.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "get-health",
+        "summary": "Health check",
+        "tags": [
+          "service"
+        ],
+        "description": "Answers as soon as the process is serving. It does not reach the database.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The service is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stories": {
+      "get": {
+        "operationId": "get-stories",
+        "summary": "List the curated stories",
+        "tags": [
+          "content"
+        ],
+        "description": "The verified work stories the interview simulator is grounded in. `ownership` is what the honesty guard enforces: a story marked `contributed` or `co-led` may not be claimed solo.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Every story.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "ownership": {
+                        "type": "string",
+                        "enum": [
+                          "solo",
+                          "contributed",
+                          "co-led"
+                        ]
+                      },
+                      "engagement": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "title",
+                      "ownership",
+                      "engagement",
+                      "summary"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/topics": {
+      "get": {
+        "operationId": "get-topics",
+        "summary": "List the interview topics",
+        "tags": [
+          "content"
+        ],
+        "description": "The topics a visitor can start a conversation on. `id` is what `POST /conversation/turn` takes.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Every topic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "slug": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "slug",
+                      "label",
+                      "description"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/beta/status": {
+      "get": {
+        "operationId": "get-beta-status",
+        "summary": "Whether Beta can take a plan right now",
+        "tags": [
+          "beta"
+        ],
+        "description": "Lets a client show the daily cap before a visitor fills the form. `reason` is `daily_cap` when the shared budget for the day is spent.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Current availability.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "daily_cap"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A rate limit was exceeded. See **Rate limiting** in the document description for which limit applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/beta/plan": {
+      "post": {
+        "operationId": "post-beta-plan",
+        "summary": "Generate a return to climbing plan (streaming)",
+        "tags": [
+          "beta"
+        ],
+        "description": "Runs a three agent pipeline, screener then drafter then coach, and streams the result as Server Sent Events.\n\nBeta is an educational demo. It is not medical advice, a diagnosis, or physical therapy. It screens for warning signs but does not ask about age, pregnancy, medication, surgery or other conditions, and the web app gates the form behind a fuller caveat that a direct caller of this route never sees.\n\nEvery failure that can be known before the stream opens arrives as a plain HTTP error, including the rate limits and the daily budget. Once the stream is open the status is already 200, so later failures arrive as an `error` event instead.\n\nNothing a visitor types here is stored or logged. The service keeps anonymous counters only.\n\n**Event sequence**\n\n| Event | Data | When |\n|---|---|---|\n| `status` | `{ stage: \"screening\" \\| \"drafting\" \\| \"coaching\" }` | Each time the pipeline enters a stage. |\n| `red_flag` | `{ category: string \\| null, message: string }` | A red flag was found: a checked warning sign, a pain pattern treated the same way, or the screener’s own judgment. The pipeline stops; no plan follows. |\n| `plan_delta` | `{ text: string }` | A chunk of plan text. Append it to what you already hold. |\n| `plan_replace` | `{}` | Discard the text so far: the coach is rewriting the plan from the start. |\n| `error` | `{ message: string }` | The pipeline stopped after the stream opened. No `done` follows. |\n| `done` | `{}` | The plan is complete. The stream then closes. |",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "injuryArea": {
+                    "type": "string",
+                    "enum": [
+                      "finger_pulley",
+                      "elbow_tendinopathy",
+                      "shoulder_impingement"
+                    ]
+                  },
+                  "onsetWeeksAgo": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 520
+                  },
+                  "symptoms": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "sudden_pop_with_swelling",
+                        "numbness_or_tingling",
+                        "cannot_bear_weight_or_grip",
+                        "night_pain",
+                        "pain_with_specific_holds_or_moves",
+                        "pain_at_session_start_that_warms_up",
+                        "morning_stiffness",
+                        "mild_swelling",
+                        "tenderness_to_touch",
+                        "weakness_or_early_fatigue"
+                      ]
+                    }
+                  },
+                  "painBehavior": {
+                    "type": "string",
+                    "enum": [
+                      "none_at_rest_hurts_under_load",
+                      "warms_up_then_fine",
+                      "worsens_as_session_goes_on",
+                      "constant_even_at_rest"
+                    ]
+                  },
+                  "preInjuryGrade": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 12,
+                    "pattern": "^[A-Za-z0-9 .+/-]+$"
+                  },
+                  "discipline": {
+                    "type": "string",
+                    "enum": [
+                      "bouldering",
+                      "sport",
+                      "trad",
+                      "indoor_gym"
+                    ]
+                  },
+                  "goals": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "sessionsPerWeek": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 14
+                  },
+                  "equipmentAccess": {
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "climbing_gym",
+                        "home_wall",
+                        "hangboard",
+                        "resistance_bands",
+                        "weights",
+                        "none"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "injuryArea",
+                  "onsetWeeksAgo",
+                  "symptoms",
+                  "painBehavior",
+                  "preInjuryGrade",
+                  "discipline"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stream opened. Events follow in the sequence above; a plan that fails mid stream still answers 200 and reports the failure as an `error` event.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "400": {
+            "description": "The request body or path parameter did not match the schema. `message` lists one entry per failed field, including an unknown property, which every contract rejects rather than dropping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A rate limit was exceeded. See **Rate limiting** in the document description for which limit applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The service is not configured to reach the model provider. Raised before the stream opens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The shared daily budget for plans is spent. It resets the next day.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversation/turn": {
+      "post": {
+        "operationId": "post-conversation-turn",
+        "summary": "Generate the next interview turn pair (streaming)",
+        "tags": [
+          "conversation"
+        ],
+        "description": "Generates one turn pair, an interviewer question and an answer in Tony’s voice, and streams both as Server Sent Events. Every generated answer passes the ownership guard before a single token reaches the visitor.\n\nOmit `conversationId` to start a conversation; the first `turn_end` carries the id to send back on the next call. The transcript is rebuilt from persisted rows and is never echoed by the client.\n\nNo visitor text is stored. The service persists anonymous counters and a hashed address only.\n\n**Event sequence**\n\n| Event | Data | When |\n|---|---|---|\n| `turn_start` | `{ role: \"interviewer\" \\| \"tony\" }` | A speaker begins. Sent twice per turn pair. |\n| `token` | `{ text: string }` | A chunk of the current speaker’s text. |\n| `turn_end` | `{ conversationId: string, turnIndex: number, isFinal: boolean }` | The pair is complete. `isFinal` marks the last turn of the conversation. |\n| `turn_error` | `{ message: string }` | Generation failed after the stream opened. No `turn_end` follows. |",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topicId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "topicId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stream opened. Events follow in the sequence above; a turn that fails mid stream still answers 200 and reports the failure as a `turn_error` event.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "400": {
+            "description": "The request body or path parameter did not match the schema. `message` lists one entry per failed field, including an unknown property, which every contract rejects rather than dropping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A rate limit was exceeded. See **Rate limiting** in the document description for which limit applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The topic has no mapped stories, or the service is not configured to reach the model provider. Raised before the stream opens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback": {
+      "post": {
+        "operationId": "post-feedback",
+        "summary": "Submit feedback",
+        "tags": [
+          "feedback"
+        ],
+        "description": "Accepts a short message from a visitor. This is the one place the service stores visitor typed text on purpose; it is stored and forwarded for classification, and it is never written to a log.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "bug",
+                      "feature",
+                      "other"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "beta",
+                      "portfolio"
+                    ]
+                  }
+                },
+                "required": [
+                  "message",
+                  "source"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body or path parameter did not match the schema. `message` lists one entry per failed field, including an unknown property, which every contract rejects rather than dropping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A rate limit was exceeded. See **Rate limiting** in the document description for which limit applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/grade/problems": {
+      "get": {
+        "operationId": "get-grade-problems",
+        "summary": "List today’s problem ids",
+        "tags": [
+          "grade"
+        ],
+        "description": "Public ids only, in play order. Images are minted one at a time by the route below rather than all at once.\n\n**Conditional route.** This route exists only when `GRADE_GAME_ENABLED` is set. The module that serves it is not registered otherwise, so it answers 404 rather than being disabled.",
+        "security": [],
+        "x-conditional-on": "GRADE_GAME_ENABLED",
+        "responses": {
+          "200": {
+            "description": "The ordered problem ids and how many there are.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "publicId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "publicId"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "problems",
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A rate limit was exceeded. See **Rate limiting** in the document description for which limit applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/grade/problems/{publicId}/image": {
+      "get": {
+        "operationId": "get-grade-problems-by-publicId-image",
+        "summary": "Get a problem’s image URL",
+        "tags": [
+          "grade"
+        ],
+        "description": "Mints a presigned object URL at the moment the problem is shown. A problem that is not licensed for display answers 404 rather than 403, so an excluded photo is indistinguishable from one that does not exist.\n\n**Conditional route.** This route exists only when `GRADE_GAME_ENABLED` is set. The module that serves it is not registered otherwise, so it answers 404 rather than being disabled.",
+        "security": [],
+        "x-conditional-on": "GRADE_GAME_ENABLED",
+        "parameters": [
+          {
+            "name": "publicId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A presigned URL for the image.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "imageUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "imageUrl"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body or path parameter did not match the schema. `message` lists one entry per failed field, including an unknown property, which every contract rejects rather than dropping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such problem, or the problem is not licensed for display.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The problem exists but is no longer active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A rate limit was exceeded. See **Rate limiting** in the document description for which limit applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/grade/guess": {
+      "post": {
+        "operationId": "post-grade-guess",
+        "summary": "Submit a guess and get the reveal",
+        "tags": [
+          "grade"
+        ],
+        "description": "Records the guess and answers with the true grade, the histogram of every guess so far, and the model’s own attempt when it has landed.\n\n**Conditional route.** This route exists only when `GRADE_GAME_ENABLED` is set. The module that serves it is not registered otherwise, so it answers 404 rather than being disabled.",
+        "security": [],
+        "x-conditional-on": "GRADE_GAME_ENABLED",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "guess": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 8
+                  },
+                  "publicId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16}$"
+                  }
+                },
+                "required": [
+                  "guess",
+                  "publicId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The reveal for this problem.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "publicId": {
+                      "type": "string",
+                      "description": "Echoed back so a client can match a reveal to the problem it holds."
+                    },
+                    "trueGrade": {
+                      "type": "integer"
+                    },
+                    "model": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "grade": {
+                              "type": "integer"
+                            },
+                            "confidence": {
+                              "type": "string",
+                              "enum": [
+                                "low",
+                                "medium",
+                                "high"
+                              ]
+                            },
+                            "observations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "reasoning": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "grade",
+                            "confidence",
+                            "observations",
+                            "reasoning"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Null while this problem’s vision call has not landed yet."
+                    },
+                    "guessCounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "plays": {
+                      "type": "integer"
+                    },
+                    "yourGuess": {
+                      "type": "integer"
+                    },
+                    "yourDistance": {
+                      "type": "integer"
+                    },
+                    "modelDistance": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "Null whenever `model` is."
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "publicId",
+                    "trueGrade",
+                    "model",
+                    "guessCounts",
+                    "plays",
+                    "yourGuess",
+                    "yourDistance",
+                    "modelDistance"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body or path parameter did not match the schema. `message` lists one entry per failed field, including an unknown property, which every contract rejects rather than dropping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such problem, or the problem is not licensed for display.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A rate limit was exceeded. See **Rate limiting** in the document description for which limit applies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The problem’s stats row could not be read back. Retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/usage/summary": {
+      "get": {
+        "operationId": "get-internal-usage-summary",
+        "summary": "Usage totals for the admin dashboard",
+        "tags": [
+          "internal"
+        ],
+        "description": "A rolling window of daily turn and token totals, plus the heaviest sources by hashed address. Addresses are hashed at the boundary and never stored raw.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The usage summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dailyTotals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "date": {
+                            "type": "string",
+                            "format": "date"
+                          },
+                          "turnCount": {
+                            "type": "integer"
+                          },
+                          "tokenCount": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "date",
+                          "turnCount",
+                          "tokenCount"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "topSources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "hashedIp": {
+                            "type": "string"
+                          },
+                          "tokenCount": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "hashedIp",
+                          "tokenCount"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "dailyTotals",
+                    "topSources"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid better-auth session cookie was sent, or it has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/grade-photos": {
+      "get": {
+        "operationId": "get-internal-grade-photos",
+        "summary": "List the Grade Guesser photo pool",
+        "tags": [
+          "internal"
+        ],
+        "description": "Every photo in the pool, active or not, each with a presigned URL the browser can load. Registered whatever `GRADE_GAME_ENABLED` is set to, so the pool can be curated while the game is off.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whole pool.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "trueGrade": {
+                        "type": "integer"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "sourceNote": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "note": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "active": {
+                        "type": "boolean"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "imageUrl": {
+                        "type": "string",
+                        "description": "A presigned object URL, valid for a limited window."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "trueGrade",
+                      "source",
+                      "sourceNote",
+                      "note",
+                      "active",
+                      "createdAt",
+                      "imageUrl"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid better-auth session cookie was sent, or it has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post-internal-grade-photos",
+        "summary": "Add a photo to the pool",
+        "tags": [
+          "internal"
+        ],
+        "description": "A multipart upload: the fields below plus the image itself. The image is re-encoded before it is stored.\n\n**Field notes**\n\n- `trueGrade`: Arrives as a string over multipart and is coerced to an integer. The generated schema says `integer`, which is what the field becomes, not what the wire carries.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"
+                  },
+                  "trueGrade": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 8
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "own_photo",
+                      "permission_given",
+                      "licensed",
+                      "unlicensed_test"
+                    ]
+                  },
+                  "sourceNote": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The image. Required. Rejected with 413 above the size limit and 415 when it cannot be decoded as an image."
+                  }
+                },
+                "required": [
+                  "id",
+                  "trueGrade",
+                  "source",
+                  "file"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The stored photo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "trueGrade": {
+                      "type": "integer"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "sourceNote": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "imageUrl": {
+                      "type": "string",
+                      "description": "A presigned object URL, valid for a limited window."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "trueGrade",
+                    "source",
+                    "sourceNote",
+                    "note",
+                    "active",
+                    "createdAt",
+                    "imageUrl"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body or path parameter did not match the schema. `message` lists one entry per failed field, including an unknown property, which every contract rejects rather than dropping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid better-auth session cookie was sent, or it has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A photo with this id is already in the pool.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The image is larger than the upload limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The upload could not be decoded as an image.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/grade-photos/{id}/active": {
+      "patch": {
+        "operationId": "patch-internal-grade-photos-by-id-active",
+        "summary": "Activate or retire a photo",
+        "tags": [
+          "internal"
+        ],
+        "description": "Toggles whether a photo can be served to players. Retiring one does not delete it.\n\n**Field notes**\n\n- `active`: Accepts the strings `\"true\"` and `\"false\"` as well as a real boolean, because the admin form sends a string. The generated schema says `boolean`, which is what the field becomes.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "active"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated photo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "trueGrade": {
+                      "type": "integer"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "sourceNote": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "imageUrl": {
+                      "type": "string",
+                      "description": "A presigned object URL, valid for a limited window."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "trueGrade",
+                    "source",
+                    "sourceNote",
+                    "note",
+                    "active",
+                    "createdAt",
+                    "imageUrl"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request body or path parameter did not match the schema. `message` lists one entry per failed field, including an unknown property, which every contract rejects rather than dropping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid better-auth session cookie was sent, or it has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No photo with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "better-auth.session_token",
+        "description": "The better-auth session cookie, set by signing in. In production it is served with the `__Secure-` prefix, `Secure`, and `SameSite=None`, because the site and the api are separate origins."
+      }
+    },
+    "schemas": {
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "enum": [
+              400
+            ]
+          },
+          "message": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One entry per failed field, as `path: reason`."
+          },
+          "error": {
+            "type": "string",
+            "enum": [
+              "Bad Request"
+            ]
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "error"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "statusCode",
+          "message"
+        ]
+      }
+    }
+  }
+}

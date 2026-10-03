@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AI_PROVIDER,
   resolveConfiguredProvider,
   type AiProvider,
-} from '../anthropic/ai-provider.interface';
+} from '../anthropic/ai-provider.interface.js';
 import {
   GRADER_CALL_TIMEOUT_MS,
   GRADER_MAX_TOKENS,
@@ -16,9 +16,9 @@ import {
   MAX_OBSERVATION_LENGTH,
   MAX_REASONING_LENGTH,
   type GradeConfidence,
-} from './grade.constants';
-import { loadGradeSkill } from './skill-loader';
-import type { GradeModelAnalysis } from './grade.service';
+} from './grade.constants.js';
+import { loadGradeSkill } from './skill-loader.js';
+import type { GradeModelAnalysis } from './grade.service.js';
 
 const USER_MESSAGE =
   'Estimate the V grade of the boulder problem in this photograph, and report it with the report_grade tool.';

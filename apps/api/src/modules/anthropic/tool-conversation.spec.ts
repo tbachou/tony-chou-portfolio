@@ -4,8 +4,8 @@ import {
   type CreateMessage,
   type ProviderMessage,
   type ToolLoopRequest,
-} from './tool-conversation';
-import type { ToolDefinition } from './ai-provider.interface';
+} from './tool-conversation.js';
+import type { ToolDefinition } from './ai-provider.interface.js';
 
 const TOOL: ToolDefinition = {
   name: 'searchKnowledge',
@@ -70,7 +70,7 @@ const base = {
 describe('runToolConversation', () => {
   it('returns the text and never calls a tool when the model just answers', async () => {
     const { create, bodies } = recordingCreate([textMessage('an answer')]);
-    const executeTool = jest.fn();
+    const executeTool = vi.fn();
 
     const result = await runToolConversation(create, 'model-x', {
       ...base,
@@ -90,7 +90,7 @@ describe('runToolConversation', () => {
       toolMessage([{ id: 'tu_1', input: { query: 'how does Tony spec' } }]),
       textMessage('grounded answer'),
     ]);
-    const executeTool = jest.fn().mockResolvedValue('a chunk');
+    const executeTool = vi.fn().mockResolvedValue('a chunk');
 
     const result = await runToolConversation(create, 'model-x', {
       ...base,
@@ -123,7 +123,7 @@ describe('runToolConversation', () => {
       toolMessage([{ id: 'tu_1' }, { id: 'tu_2' }]),
       textMessage('done'),
     ]);
-    const executeTool = jest
+    const executeTool = vi
       .fn()
       .mockResolvedValueOnce('first')
       .mockResolvedValueOnce('second');
@@ -331,7 +331,7 @@ describe('runToolConversation', () => {
         usage: usage(),
       },
     ]);
-    const executeTool = jest.fn();
+    const executeTool = vi.fn();
 
     const result = await runToolConversation(create, 'model-x', {
       ...base,

@@ -5,7 +5,7 @@ import {
   gradeGuessRequestSchema,
 } from '@portfolio/shared';
 import { z } from 'zod';
-import { ZodValidationPipe } from './zod-validation.pipe';
+import { ZodValidationPipe } from './zod-validation.pipe.js';
 
 /**
  * This pipe is the api's entire input boundary now that the global

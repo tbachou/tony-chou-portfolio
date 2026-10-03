@@ -1,7 +1,7 @@
 import { Inject, Injectable, type ExecutionContext } from '@nestjs/common';
 import type { ThrottlerLimitDetail } from '@nestjs/throttler';
-import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard';
-import { BetaUsageService } from './beta-usage.service';
+import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard.js';
+import { BetaUsageService } from './beta-usage.service.js';
 
 /**
  * IPv6-collapsing throttle tracking (see CollapsedIpThrottlerGuard) plus

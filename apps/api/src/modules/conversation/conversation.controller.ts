@@ -2,7 +2,7 @@ import {
   conversationTurnRequestSchema,
   type ConversationTurnRequest,
 } from '@portfolio/shared';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import {
   BadRequestException,
   Body,
@@ -14,16 +14,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard';
+import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard.js';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import type { Request, Response } from 'express';
-import { ConversationService } from './conversation.service';
+import { ConversationService } from './conversation.service.js';
 import {
   hashIp,
   rateLimitIdentity,
   resolveClientIp,
-} from '../../common/utils/ip-hash.util';
-import { writeSseEvent } from './sse.util';
+} from '../../common/utils/ip-hash.util.js';
+import { writeSseEvent } from './sse.util.js';
 
 @Controller('conversation')
 @AllowAnonymous()
@@ -79,6 +79,11 @@ export class ConversationController {
       hashedIp,
     });
 
+    // A turn pair is two model calls, the second a tool loop. Without this
+    // both run to completion for a socket the visitor already closed.
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -91,8 +96,9 @@ export class ConversationController {
       history: conversation.turns,
       hashedIp,
       emit: (event, data) => writeSseEvent(res, event, data),
+      signal: abort.signal,
     });
 
-    res.end();
+    if (!res.writableEnded) res.end();
   }
 }

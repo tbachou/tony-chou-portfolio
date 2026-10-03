@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
-import { TopicsService, TopicResponse } from './topics.service';
+import { TopicsService, TopicResponse } from './topics.service.js';
 
 @Controller('topics')
 @AllowAnonymous()

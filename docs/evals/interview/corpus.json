@@ -1,11 +1,15 @@
 {
-  "corpusHash": "2a0b97393679c9cdcea266063bb348f4a4a6a054fbb1097f542a704c80622030",
-  "chunkCount": 616,
-  "embeddedAt": "2026-09-03T01:52:36.025Z",
+  "corpusHash": "4d5098fe075e6b84303b16c769790c70b79755b3349a5f235bffd26c1d9d505b",
+  "chunkCount": 718,
+  "embeddedAt": "2026-09-24T15:55:45.171Z",
   "documents": [
     {
       "path": "docs/evals/interview/0012-phase-one-context-engineering.md",
       "hash": "d06e83e2369299ebb3df47f71797446543ae5a5bfc59f036290bf70f3890e3bf"
+    },
+    {
+      "path": "docs/evals/interview/0012-phase-three-search-knowledge.md",
+      "hash": "f4764036e333d3f9e8f4b68962f9066c4b40fafde30d0d5da338b086d19dc4c2"
     },
     {
       "path": "docs/evals/interview/0012-phase-two-public-evals-page.md",
@@ -17,7 +21,7 @@
     },
     {
       "path": "docs/specs/_root/0002-conversation-engine-and-usage-dashboard/index.md",
-      "hash": "417754721585a684a9573ac3cb551ea1a2ba9b0e64d68d1f96457a4544aa9c15"
+      "hash": "7074187f51469c26645ac7d4b149a32dadebfcd367344e8617b8f5b4bd964b01"
     },
     {
       "path": "docs/specs/_root/0002-conversation-engine-and-usage-dashboard/verify.md",
@@ -29,7 +33,7 @@
     },
     {
       "path": "docs/specs/_root/0004-beta-climbing-rehab-planner/index.md",
-      "hash": "a9449ed805ba872566503a00439df8e9b492913f6473b21839b818914abb362c"
+      "hash": "23389a1616bfeb4fb1ea5651221eb688f145f5edaa960dbc0e0becd315bb140b"
     },
     {
       "path": "docs/specs/_root/0004-beta-climbing-rehab-planner/verify.md",
@@ -41,7 +45,7 @@
     },
     {
       "path": "docs/specs/_root/0005-aws-genai-integration/0005-beta-guardrails.md",
-      "hash": "71972e3860b74f87f819caaf5de8bb9cd7965dffc90464503c456890969f6001"
+      "hash": "c75694d5f65497cd1fec730f452940cf5fcdacbdf7c27508ac2b2cf4953eff30"
     },
     {
       "path": "docs/specs/_root/0005-aws-genai-integration/0005-classifier-flow.md",
@@ -136,8 +140,12 @@
       "hash": "1a6155157d605870502b1af430054961e4d27d4167d6453fd1abf19de30a519c"
     },
     {
+      "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-retrieval-reranking.md",
+      "hash": "81e3bc3b737a74e459ddec3ac32beff79dbbfc778a6d5cd069204a3c20e4950e"
+    },
+    {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/0012-search-portfolio-retrieval.md",
-      "hash": "899fb708a79c5bc62668f770c2626480fd5d9a53ba3103361e27598528ac9341"
+      "hash": "805fced533ad833977bee470f7abcf6a80b3e141993b192f82537c618d8ae7ab"
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/findings/2026-08-31-grounding-embellishment.md",
@@ -149,19 +157,31 @@
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/index.md",
-      "hash": "360f522387d57bf4ada350d03874b5560fec2a06464d94f6328f37e7ebace740"
+      "hash": "05abff26604cedc0b164a7b90ebdd8be07c0f32dc2c5cdfd4b9a6079fc6825c9"
     },
     {
       "path": "docs/specs/_root/0012-grounded-portfolio-agent/verify.md",
-      "hash": "881ce030f7be2e034d4a45659af7d14b4c120c221a0e3a02c50314bd45167740"
+      "hash": "d9d3e36d12cd48522e312000d9f293554b0c1bb7892e02ab59ef0f7ccec2eaa6"
     },
     {
       "path": "docs/specs/_root/0013-credential-check-second-layer.md",
-      "hash": "9110318ec1ef23b90b236b1a36106b32a3f0cda80fe25ecff582091c2077e971"
+      "hash": "eefc2c0a7f60cd2990de2cd94472e8af08e80a2c17a74284aedd9ff95e0f3fbc"
     },
     {
       "path": "docs/specs/_root/0014-agent-skill-storage/index.md",
       "hash": "ab06b104e188ffa081b4ec24c6c753852a3c469012e2dbf629b6ee2b725365c8"
+    },
+    {
+      "path": "docs/specs/_root/0015-nestjs-12-esm-migration/index.md",
+      "hash": "f010625fa92f18c6ef98c94a7b43049a3d3ff0c892d97915c1787e68536e0389"
+    },
+    {
+      "path": "docs/specs/_root/0016-openapi-document-generation/index.md",
+      "hash": "bb795dcf055d9684e35b33ff5120162889ee3c7aa3dfef85c9cb155f792193b7"
+    },
+    {
+      "path": "docs/specs/_root/0016-openapi-document-generation/verify.md",
+      "hash": "c3fac78ead55637b92593ec486dca48f79e63f4d8e085ac4e6d6fcc820c87f17"
     }
   ]
 }

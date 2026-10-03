@@ -1,5 +1,5 @@
-import { combineHonestyLayers } from './combine-honesty';
-import { judgeError, scored } from './test-fixtures';
+import { combineHonestyLayers } from './combine-honesty.js';
+import { judgeError, scored } from './test-fixtures.js';
 
 describe('combineHonestyLayers', () => {
   const guardPass = { ok: true, reason: null };

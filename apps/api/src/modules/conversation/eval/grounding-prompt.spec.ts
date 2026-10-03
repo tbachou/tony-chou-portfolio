@@ -1,5 +1,5 @@
-import { buildGroundingUserMessage } from './grounding-prompt';
-import type { StoryModel } from '../../../generated/prisma/models';
+import { buildGroundingUserMessage } from './grounding-prompt.js';
+import type { StoryModel } from '../../../generated/prisma/models.js';
 
 const story = {
   id: 's1',

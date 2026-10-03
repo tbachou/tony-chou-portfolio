@@ -34,11 +34,11 @@ import { config as loadEnv } from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-loadEnv({ path: path.resolve(__dirname, '..', '.env') });
+loadEnv({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
-import { AnthropicService } from '../src/modules/anthropic/anthropic.service';
-import { loadBetaSkill } from '../src/modules/beta/skill-loader';
-import { CORPUS } from './beta-guard-corpus.profiles';
+import { AnthropicService } from '../src/modules/anthropic/anthropic.service.js';
+import { loadBetaSkill } from '../src/modules/beta/skill-loader.js';
+import { CORPUS } from './beta-guard-corpus.profiles.js';
 
 /** Results are labelled `id` or `id#N` under --repeat; both map to one profile. */
 function profileFor(resultId: string): unknown {

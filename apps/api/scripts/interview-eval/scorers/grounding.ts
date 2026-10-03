@@ -14,10 +14,10 @@
  * has to change regardless, so a new dimension would have cost a second
  * baseline invalidation for nothing.
  */
-import type { StoryModel } from '../../../src/generated/prisma/models';
-import type { DimensionResult } from '../../../src/modules/conversation/eval/eval-types';
-import { judge, type JudgeUsage } from './judge-client';
-import { buildGroundingUserMessage } from '../../../src/modules/conversation/eval/grounding-prompt';
+import type { StoryModel } from '../../../src/generated/prisma/models.js';
+import type { DimensionResult } from '../../../src/modules/conversation/eval/eval-types.js';
+import { judge, type JudgeUsage } from './judge-client.js';
+import { buildGroundingUserMessage } from '../../../src/modules/conversation/eval/grounding-prompt.js';
 
 const GROUNDING_JUDGE_SYSTEM = `You are an evaluator for a portfolio site's simulated interview. The "Tony" persona must answer strictly from the sources provided to it: the story facts, and any retrieved document sections it was given. It must invent no facts, projects, numbers, or dates beyond those sources.
 

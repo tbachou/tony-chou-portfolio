@@ -3,8 +3,8 @@ import {
   MAX_LONG_EDGE,
   STORED_CONTENT_TYPE,
   STORED_EXTENSION,
-} from './grade-photos.constants';
-import { processUpload, UndecodableImageError } from './image-pipeline';
+} from './grade-photos.constants.js';
+import { processUpload, UndecodableImageError } from './image-pipeline.js';
 
 // Real sharp, not a mock. The whole point of these assertions is that the
 // bytes coming out have actually been re-encoded — a mocked pipeline would

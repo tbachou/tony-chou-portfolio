@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
-import { BetaService, parseDraftPlan, __testing } from './beta.service';
-import { renderPlanFallback } from './beta-output-guard';
+import { BetaService, parseDraftPlan, __testing } from './beta.service.js';
+import { renderPlanFallback } from './beta-output-guard.js';
 import type { BetaPlanRequest } from '@portfolio/shared';
 import {
   CONSTANT_REST_PAIN_MESSAGE,
@@ -13,26 +13,26 @@ import {
   REFUSAL_MESSAGE,
   MANDATORY_REST_PAIN_CAUTION,
   SCREENER_MODEL,
-} from './beta.constants';
-import type { PrismaService } from '../prisma/prisma.service';
+} from './beta.constants.js';
+import type { PrismaService } from '../prisma/prisma.service.js';
 import type {
   AnthropicService,
   StreamMessageParams,
-} from '../anthropic/anthropic.service';
-import type { UpstreamErrorClassification } from '../anthropic/ai-provider.interface';
-import type { BetaUsageService } from './beta-usage.service';
+} from '../anthropic/anthropic.service.js';
+import type { UpstreamErrorClassification } from '../anthropic/ai-provider.interface.js';
+import type { BetaUsageService } from './beta-usage.service.js';
 
 // The agent prompts are markdown files read from disk relative to
 // process.cwd(); these tests lock pipeline behavior, not prompt contents,
 // so the loader is stubbed out entirely.
-jest.mock('./skill-loader', () => ({
-  loadBetaSkill: jest.fn(() => 'stub skill prompt'),
+vi.mock('./skill-loader', () => ({
+  loadBetaSkill: vi.fn(() => 'stub skill prompt'),
 }));
 
 // PrismaService is only referenced through constructor injection here; the
 // real module drags in the generated Prisma client and the pg adapter, none
 // of which may be touched by these tests (no real database, ever).
-jest.mock('../prisma/prisma.service', () => ({
+vi.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaServiceStub {},
 }));
 
@@ -136,19 +136,19 @@ function classifyFakeUpstreamError(
 }
 
 function makeHarness() {
-  const prisma = { $transaction: jest.fn().mockResolvedValue([]) };
+  const prisma = { $transaction: vi.fn().mockResolvedValue([]) };
   const anthropic = {
-    forceToolCall: jest.fn(),
-    streamMessage: jest.fn(),
-    classifyUpstreamError: jest.fn(classifyFakeUpstreamError),
+    forceToolCall: vi.fn(),
+    streamMessage: vi.fn(),
+    classifyUpstreamError: vi.fn(classifyFakeUpstreamError),
   };
   const usage = {
-    reserveGlobalSlot: jest.fn().mockResolvedValue(true),
-    refundGlobalSlot: jest.fn().mockResolvedValue(undefined),
-    recordRedFlagBlock: jest.fn().mockResolvedValue(undefined),
-    recordGuardBlock: jest.fn().mockResolvedValue(undefined),
-    recordInjectionBlock: jest.fn().mockResolvedValue(undefined),
-    successIncrementOps: jest.fn().mockReturnValue(['global-op', 'ip-op']),
+    reserveGlobalSlot: vi.fn().mockResolvedValue(true),
+    refundGlobalSlot: vi.fn().mockResolvedValue(undefined),
+    recordRedFlagBlock: vi.fn().mockResolvedValue(undefined),
+    recordGuardBlock: vi.fn().mockResolvedValue(undefined),
+    recordInjectionBlock: vi.fn().mockResolvedValue(undefined),
+    successIncrementOps: vi.fn().mockReturnValue(['global-op', 'ip-op']),
   };
   const service = new BetaService(
     prisma as unknown as PrismaService,
@@ -783,6 +783,204 @@ describe('BetaService.generatePlan', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Visitor disconnects mid-plan. The pipeline used to run to completion for
+  // a closed socket: a pre-deploy sweep found neither SSE route watched
+  // req.on('close'), and the browser half never aborted either.
+  // -------------------------------------------------------------------------
+  describe('an abandoned request', () => {
+    /** A signal already aborted, as the controller's close handler leaves it. */
+    function abortedSignal(): AbortSignal {
+      const c = new AbortController();
+      c.abort();
+      return c.signal;
+    }
+
+    it('skips the coach when the visitor left during the drafter', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      // The drafter is the 21-27s call, so the coach is the saving.
+      expect(h.anthropic.streamMessage).not.toHaveBeenCalled();
+    });
+
+    it('refunds the slot as abandoned, not as an error', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      // Tallying a disconnect as an error would corrupt the only signal for
+      // whether Beta is actually broken.
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('abandoned');
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalledWith('error');
+    });
+
+    it('never counts an abandoned plan as a success', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      expect(h.prisma.$transaction).not.toHaveBeenCalled();
+      expect(h.events.map(([name]) => name)).not.toContain('done');
+    });
+
+    it('emits nothing to the closed socket', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      // The visitor is gone; an `error` event would be written into a socket
+      // nobody is reading, and would read as a failure in any replay.
+      expect(h.events.map(([name]) => name)).not.toContain('error');
+    });
+
+    it('hands the signal to every agent call so an in-flight one aborts', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+      const signal = new AbortController().signal;
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal,
+      });
+
+      // Without this the abort only takes effect BETWEEN stages, so a
+      // disconnect during the drafter would still pay for the whole call.
+      for (const call of h.anthropic.forceToolCall.mock.calls) {
+        expect(call[0].signal).toBe(signal);
+      }
+      expect(h.anthropic.streamMessage.mock.calls[0][0].signal).toBe(signal);
+    });
+
+    it('still runs normally when no signal is supplied', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      expect(h.events.map(([name]) => name)).toContain('done');
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalled();
+    });
+  });
+
+  // Follow-ups from the pre-deploy break-it pass on the abort handling.
+  describe('an abandoned request, harder cases', () => {
+    function abortedSignal(): AbortSignal {
+      const c = new AbortController();
+      c.abort();
+      return c.signal;
+    }
+
+    it('emits nothing on the screener red-flag path either', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall.mockResolvedValueOnce({
+        input: { verdict: 'red_flag', category: 'sudden_pop_with_swelling' },
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      // The abandoned branch in the catch never sees this path: it returns
+      // early with its own refund. Before the emit was centrally guarded,
+      // this wrote a red_flag into a destroyed socket.
+      expect(h.events).toHaveLength(0);
+    });
+
+    it('does not file a genuine upstream failure as abandoned', async () => {
+      const h = makeHarness();
+      // A 503 that happens to land while the visitor is navigating away is
+      // still a 503; filing it as abandoned would hide it from errorCount,
+      // which is the signal the abandoned branch exists to protect.
+      h.anthropic.forceToolCall.mockRejectedValueOnce(fakeApiError(503));
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+        signal: abortedSignal(),
+      });
+
+      expect(h.usage.refundGlobalSlot).toHaveBeenCalledWith('error');
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalledWith('abandoned');
+    });
+
+    it('never refunds a slot a completed plan already consumed', async () => {
+      const h = makeHarness();
+      h.anthropic.forceToolCall
+        .mockResolvedValueOnce(screenerClear)
+        .mockResolvedValueOnce(drafterOk);
+      h.anthropic.streamMessage.mockImplementation(coachStream());
+      // A throw after the success transaction commits. Today nothing awaits
+      // in that window, so this is a latent guard rather than a live bug —
+      // it is here so the window staying one statement wide is enforced.
+      h.prisma.$transaction.mockImplementationOnce(async () => {
+        queueMicrotask(() => undefined);
+        return [];
+      });
+
+      await h.service.generatePlan({
+        input: makeInput(),
+        hashedIp: 'hashed-ip',
+        emit: h.emit,
+      });
+
+      expect(h.usage.refundGlobalSlot).not.toHaveBeenCalled();
+      expect(h.events.map(([name]) => name)).toContain('done');
+    });
+  });
+
   describe('global budget reservation', () => {
     it('emits only the demo-budget error when no slot can be reserved', async () => {
       const h = makeHarness();
@@ -1154,7 +1352,7 @@ describe('BetaService.generatePlan', () => {
 
       async function runCapturingLogs(mode: string | undefined) {
         const logged: string[] = [];
-        const spy = jest
+        const spy = vi
           .spyOn(Logger.prototype, 'log')
           .mockImplementation((message) => {
             logged.push(String(message));

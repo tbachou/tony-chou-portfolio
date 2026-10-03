@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns';
-import type { FeedbackCategoryValue, FeedbackSourceValue } from './feedback.constants';
+import type { FeedbackCategoryValue, FeedbackSourceValue } from './feedback.constants.js';
 
 export type FeedbackPublishEvent = {
   id: string;

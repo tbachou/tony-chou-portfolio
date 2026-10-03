@@ -4,6 +4,8 @@
 **Status**: Accepted
 
 > **Beta is feature complete and still maintained (2026-08-22).** It is built, verified, and deployed, and it stays running. Feature frozen means no new capabilities, not abandoned: dependency and security updates, breakage fixes, and defect repair all continue as normal. What was retired is the list of NEW things, because every item on it depended on something Beta does not have. The streaming follow up and production shadow mode both needed traffic that an unadvertised surface does not generate. `enforce` mode stayed blocked on its own diagnosis bar. The clinical evidence checker (spec 0008) died because the citable corpus does not exist. Four initiatives, one root cause, discovered four times. Two consequences are now permanent decisions rather than deferred ones, recorded in [0005 child: in process safety layers](../0005-aws-genai-integration/0005-beta-guardrails.md): the guard stays in `shadow`, and the `claude-sonnet-5` pin is not to be changed casually.
+>
+> **Correction, 2026-09-19.** Two claims above were wrong when written. "The guard stays in `shadow`": `e522b27` (2026-08-20) had already set it to `enforce`, where production has run since. "The streaming follow up … needed traffic": the same commit built it. Detail in the [0005 guardrails child](../0005-aws-genai-integration/0005-beta-guardrails.md). Separately, the clinical evidence checker's premise was re-examined on 2026-09-19 — the licence rule governed redistributing text, never citing it — and a registry of sourced clinical claims now exists (`apps/api/src/modules/beta/clinical-rules.ts`, PRs #89–#91).
 
 ## Summary
 

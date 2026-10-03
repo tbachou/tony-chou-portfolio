@@ -1,4 +1,4 @@
-import { hashCorpus, hashDocumentBytes, isCorpusDocument } from './corpus';
+import { hashCorpus, hashDocumentBytes, isCorpusDocument } from './corpus.js';
 
 describe('isCorpusDocument', () => {
   it('includes spec index files, child specs, verify notes and findings', () => {

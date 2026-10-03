@@ -55,9 +55,24 @@ export type CaseResult = {
   generationError?: string;
   /** Wall time for the case: generation, retry, and judge calls. */
   durationMs?: number;
+  /**
+   * Searches in this case where the reranker fell back to the cosine
+   * selection (spec 0012 phase six, AC-14), from the attempt that was scored.
+   * An `enforce` run with any measured a mix of two arms. Absent on runs
+   * recorded before phase six.
+   */
+  rerankFallbacks?: number;
 };
 
 export type TokenTotals = { inputTokens: number; outputTokens: number };
+
+/**
+ * Which reranking arm an eval run measured (spec 0012 phase six, AC-10,
+ * AC-14): the same three values as `RETRIEVAL_RERANK_MODE`. Declared here
+ * rather than imported so the result types do not pull in the reranker
+ * module and the provider SDK behind it.
+ */
+export type RerankArm = 'off' | 'shadow' | 'enforce';
 
 export type RunMeta = {
   date: string;
@@ -78,6 +93,15 @@ export type RunMeta = {
    * are not comparable.
    */
   corpusHash?: string;
+  /**
+   * The reranking arm this run measured (spec 0012 phase six, AC-14). Absent
+   * on every run recorded before phase six, and those ran the plain cosine
+   * path, so absent reads as `off` (see `rerankArmOf`). Two runs whose arms
+   * differ are never compared.
+   */
+  rerankArm?: RerankArm;
+  /** `RERANK_MODEL_ID`, for a run whose arm is not `off`; absent otherwise. */
+  rerankModel?: string;
   /** Tokens summed per model id, so cost can be priced per model. */
   tokensByModel: Record<string, TokenTotals>;
   tokenTotals: TokenTotals;
@@ -111,6 +135,16 @@ export type RunResults = {
   cases: CaseResult[];
 };
 
+/** A run's rerank arm, reading a missing one as `off` (phase six, AC-14). */
+export function rerankArmOf(meta: Pick<RunMeta, 'rerankArm'>): RerankArm {
+  return meta.rerankArm ?? 'off';
+}
+
+/** Rerank fall backs summed across a run's cases (phase six, AC-14). */
+export function rerankFallbacksOf(run: Pick<RunResults, 'cases'>): number {
+  return run.cases.reduce((sum, c) => sum + (c.rerankFallbacks ?? 0), 0);
+}
+
 /**
  * The committed baseline (AC-9): one accepted run plus the noise band
  * observed between the two identical runs that established it. Moves only by
@@ -138,7 +172,10 @@ export type Aggregates = {
 
 export type DimensionDelta = {
   delta: number | null;
-  /** False when the dataset hash differs from the baseline's (AC-6). */
+  /**
+   * False when the dataset hash (AC-6) or the rerank arm (phase six, AC-14)
+   * differs from the baseline's.
+   */
   comparable: boolean;
   /** Null when no noise band is published; deltas inside the band are not significant (AC-9). */
   significant: boolean | null;
@@ -147,5 +184,7 @@ export type DimensionDelta = {
 export type BaselineComparison = {
   hasBaseline: boolean;
   comparable: boolean;
+  /** Which rule made it not comparable, when it is not, so the note can say. */
+  notComparableBecause?: 'dataset' | 'rerankArm';
   perDimension: Record<Dimension, DimensionDelta>;
 };

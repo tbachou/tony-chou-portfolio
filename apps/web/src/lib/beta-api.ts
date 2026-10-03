@@ -2,6 +2,7 @@ import type {
   BetaPlanRequest as BetaPlanPayload,
   Symptom,
 } from '@portfolio/shared';
+import { readServerMessage } from './http-error';
 
 // The request enums and the plan payload are the contract, and it is owned
 // by @portfolio/shared — the same schema the api validates with. Re-exported
@@ -32,14 +33,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 
 
-
-
-
 export type BetaStatus = {
   available: boolean;
   reason: 'ok' | 'daily_cap';
 };
-
 
 export type BetaStage = 'screening' | 'drafting' | 'coaching';
 
@@ -79,17 +76,6 @@ export async function fetchBetaStatus(): Promise<BetaStatus> {
   return res.json();
 }
 
-/** Pulls the human-readable message out of a NestJS error body. */
-function extractServerMessage(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null;
-  const message = (body as { message?: unknown }).message;
-  if (typeof message === 'string') return message;
-  if (Array.isArray(message)) {
-    return message.filter((m): m is string => typeof m === 'string').join(' ');
-  }
-  return null;
-}
-
 /**
  * Consumes POST /beta/plan's SSE stream as it arrives (same block parsing
  * as streamNextTurn in api.ts). Yields one event per `event:`/`data:`
@@ -98,20 +84,19 @@ function extractServerMessage(body: unknown): string | null {
  */
 export async function* streamBetaPlan(
   payload: BetaPlanPayload,
+  signal?: AbortSignal,
 ): AsyncGenerator<BetaSseEvent> {
   const res = await fetch(`${API_URL}/beta/plan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    // Kept off `payload`: the request contract is `.strict()`, so an extra
+    // property in the body would be a 400.
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!res.ok || !res.body) {
-    let message: string | null = null;
-    try {
-      message = extractServerMessage(await res.json());
-    } catch {
-      // Non-JSON error body: fall through to the generic message.
-    }
+    const message = await readServerMessage(res);
     throw new BetaRequestError(
       res.status,
       message ?? `The planner request failed (status ${res.status}).`,
@@ -122,24 +107,31 @@ export async function* streamBetaPlan(
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const blocks = buffer.split('\n\n');
-    buffer = blocks.pop() ?? '';
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop() ?? '';
 
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-      let eventName = 'message';
-      let data = '';
-      for (const line of block.split('\n')) {
-        if (line.startsWith('event:')) eventName = line.slice(6).trim();
-        else if (line.startsWith('data:')) data = line.slice(5).trim();
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+        let eventName = 'message';
+        let data = '';
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          else if (line.startsWith('data:')) data = line.slice(5).trim();
+        }
+        if (!data) continue;
+        yield { type: eventName, ...JSON.parse(data) } as BetaSseEvent;
       }
-      if (!data) continue;
-      yield { type: eventName, ...JSON.parse(data) } as BetaSseEvent;
     }
+  } finally {
+    // See streamNextTurn: releases the body when the consumer stops early or
+    // the component unmounts. A Beta plan that nobody reads still spends a
+    // daily slot, so leaking one is worse here than on the interview.
+    await reader.cancel().catch(() => {});
   }
 }

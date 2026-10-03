@@ -16,6 +16,12 @@ export type StreamMessageParams = {
   timeoutMs?: number;
   /** SDK retry count; SDK default when omitted. Beta passes 0 and retries itself. */
   maxRetries?: number;
+  /**
+   * Aborts the upstream call when the visitor disconnects. Both SSE routes
+   * pass one: without it the pipeline runs to completion after the browser
+   * is gone, which is spend on output nobody receives.
+   */
+  signal?: AbortSignal;
 };
 
 export type StreamMessageResult = {
@@ -51,6 +57,12 @@ export type ForceToolCallParams = {
   inputSchema: Record<string, unknown>;
   timeoutMs: number;
   maxRetries?: number;
+  /**
+   * Aborts the upstream call when the visitor disconnects. Both SSE routes
+   * pass one: without it the pipeline runs to completion after the browser
+   * is gone, which is spend on output nobody receives.
+   */
+  signal?: AbortSignal;
 };
 
 export type ForceToolCallResult = {
@@ -116,6 +128,12 @@ export type RunToolConversationParams = {
   model?: string;
   timeoutMs?: number;
   maxRetries?: number;
+  /**
+   * Aborts the upstream call when the visitor disconnects. Both SSE routes
+   * pass one: without it the pipeline runs to completion after the browser
+   * is gone, which is spend on output nobody receives.
+   */
+  signal?: AbortSignal;
 };
 
 export type RunToolConversationResult = StreamMessageResult & {

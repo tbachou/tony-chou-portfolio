@@ -5,15 +5,15 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '../../generated/prisma/client';
-import { utcDateOnly } from '../../common/utils/date.util';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import { utcDateOnly } from '../../common/utils/date.util.js';
 import {
   BETA_GLOBAL_DAILY_CAP,
   BETA_IP_DAILY_CAP,
   DEMO_BUDGET_MESSAGE,
   IP_LIMIT_MESSAGE,
-} from './beta.constants';
+} from './beta.constants.js';
 
 export type BetaStatus = {
   available: boolean;
@@ -21,7 +21,7 @@ export type BetaStatus = {
 };
 
 /** Why a reserved global slot is being returned (each maps to a counter column). */
-export type RefundReason = 'error' | 'red_flag' | 'refusal';
+export type RefundReason = 'error' | 'red_flag' | 'refusal' | 'abandoned';
 
 /**
  * Anonymous outcome/abuse tally columns on BetaDailyUsageCounter. Pure
@@ -29,6 +29,7 @@ export type RefundReason = 'error' | 'red_flag' | 'refusal';
  * visitor content (AC-6 unchanged).
  */
 type OutcomeColumn =
+  | 'abandonedCount'
   | 'errorCount'
   | 'redFlagCount'
   | 'refusalCount'
@@ -39,6 +40,7 @@ type OutcomeColumn =
   | 'injectionBlockCount';
 
 const REFUND_REASON_COLUMN: Record<RefundReason, OutcomeColumn> = {
+  abandoned: 'abandonedCount',
   error: 'errorCount',
   red_flag: 'redFlagCount',
   refusal: 'refusalCount',

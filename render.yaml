@@ -18,7 +18,10 @@ services:
   - type: web
     name: tony-chou-portfolio-api
     runtime: node
-    plan: free
+    # Starter, not free. Verified against the live service with the Render
+    # CLI on 2026-09-20, and already recorded in apps/api/AGENTS.md; this
+    # line said `free` and was simply stale.
+    plan: starter
     buildCommand: npm install && npm run build --workspace=apps/api
     startCommand: npm run start:prod --workspace=apps/api
     preDeployCommand: cd apps/api && npx prisma migrate deploy
@@ -67,6 +70,19 @@ services:
       - key: UPSTASH_VECTOR_REST_URL
         sync: false
       - key: UPSTASH_VECTOR_REST_TOKEN
+        sync: false
+      # Retrieval reranking (spec 0012 phase six). Ships `off`, which is byte
+      # identical to the pre phase six read path and issues no widened query,
+      # so merging the code changes nothing for a visitor. The migration plan
+      # moves this to `shadow` to measure, then to `enforce` only once the
+      # reranked arm of `sweep:threshold` clears its exit bar.
+      #
+      # Rollback is this line back to `off`. Changing it restarts the service.
+      - key: RETRIEVAL_RERANK_MODE
+        value: 'off'
+      # The reranker's provider key. Absent means every search takes the
+      # cosine path, which is a fall back rather than a failure (AC-6).
+      - key: TYPESAFE_API_KEY
         sync: false
       # Required by the boot guard whenever AI_PROVIDER=bedrock — the factory
       # fails startup if any is missing rather than failing at first request.

@@ -46,20 +46,27 @@ function caseRow(
 
 function runFile(overrides: {
   datasetHash?: string;
+  corpusHash?: string;
+  rerankArm?: 'off' | 'shadow' | 'enforce';
   gitDirty?: boolean;
-  cases?: ReturnType<typeof caseRow>[];
+  gitCommit?: string;
+  date?: string;
+  /** A case may carry its rerank fall back count (spec 0012 phase six, AC-14). */
+  cases?: Array<ReturnType<typeof caseRow> & { rerankFallbacks?: number }>;
 }) {
   return {
     _readMeFirst: 'model authored text, not a claim by Tony Chou',
     meta: {
-      date: '2026-08-30T04:39:16.206Z',
-      gitCommit: 'bf4c88e45bbf27aa092b1d7341bb3fa03726e75c',
+      date: overrides.date ?? '2026-08-30T04:39:16.206Z',
+      gitCommit: overrides.gitCommit ?? 'bf4c88e45bbf27aa092b1d7341bb3fa03726e75c',
       gitDirty: overrides.gitDirty ?? false,
       provider: 'anthropic',
       generatorModel: 'claude-sonnet-5',
       judgeModel: 'claude-haiku-4-5',
       caseCount: (overrides.cases ?? [caseRow({})]).length,
       datasetHash: overrides.datasetHash ?? 'hash-a',
+      ...(overrides.corpusHash !== undefined && { corpusHash: overrides.corpusHash }),
+      ...(overrides.rerankArm !== undefined && { rerankArm: overrides.rerankArm }),
       estimatedCostUsd: 0.19
     },
     cases: overrides.cases ?? [caseRow({})]
@@ -102,6 +109,8 @@ const created: string[] = [];
 function fixture(options: {
   manifest?: unknown;
   results?: unknown;
+  /** Extra results files by name, for manifests with more than one run. */
+  extraResults?: Record<string, unknown>;
   baseline?: unknown;
   writeups?: string[];
   specs?: string[];
@@ -127,6 +136,15 @@ function fixture(options: {
       path.join(evalsDir, 'results', 'run.json'),
       JSON.stringify(options.results ?? runFile({}))
     );
+  }
+  // Always present, on a genuinely different instrument, so a fixture that
+  // states an honest "cannot be compared" claim has something true to name.
+  writeFileSync(
+    path.join(evalsDir, 'results', 'other.json'),
+    JSON.stringify(runFile({ datasetHash: 'hash-OTHER', corpusHash: 'corpus-OTHER' }))
+  );
+  for (const [name, body] of Object.entries(options.extraResults ?? {})) {
+    writeFileSync(path.join(evalsDir, 'results', name), JSON.stringify(body));
   }
   if (options.baseline) {
     writeFileSync(path.join(evalsDir, 'baseline.json'), JSON.stringify(options.baseline));
@@ -186,6 +204,108 @@ describe('loadPublished', () => {
     expect(() => loadPublished(dir)).not.toThrow();
   });
 
+  describe('rerank arms (spec 0012 phase six, AC-14)', () => {
+    const baselineAt = (persona: number) => ({
+      noiseBand: { honesty: 0, grounding: 0, persona: 0 },
+      // Recorded before phase six: no arm, which reads as off.
+      run: runFile({ datasetHash: 'hash-a', cases: [caseRow({ persona: scored(persona) })] })
+    });
+
+    it('checks a recorded delta across arms whenever the hashes match (pre deploy gate, 2026-09-24)', () => {
+      // The enforce against off delta at one commit is the number phase six
+      // publishes, so it has to be checked. The first version of the arm rule
+      // skipped it, and a regressed run could publish 0 as "not significant".
+      // Rows are the break it pass's table: each records a delta of 0 for a
+      // run scoring 0 against a baseline scoring 1.
+      const regressed = [{ ...caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) }), rerankFallbacks: 0 }];
+      const offBaseline = (arm?: 'off') => ({
+        noiseBand: { honesty: 0, grounding: 0, persona: 0 },
+        run: runFile({ datasetHash: 'hash-a', ...(arm && { rerankArm: arm }), cases: [caseRow({})] })
+      });
+      for (const [runArm, baseline] of [
+        ['enforce', offBaseline('off')],
+        ['enforce', offBaseline()],
+        ['shadow', offBaseline('off')],
+        ['off', offBaseline('off')]
+      ] as const) {
+        const dir = fixture({
+          results: runFile({ datasetHash: 'hash-a', rerankArm: runArm, cases: regressed }),
+          baseline
+        });
+        expect(() => loadPublished(dir), `${runArm} run`).toThrow(/recorded delta for honesty is 0.*recomputed.*is -1/s);
+      }
+    });
+
+    it('accepts the correct cross-arm delta', () => {
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [{ ...measuredEntry, delta: { honesty: -1, grounding: -1, persona: -1 } }, unmeasuredEntry],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        },
+        results: runFile({
+          datasetHash: 'hash-a',
+          rerankArm: 'enforce',
+          cases: [{ ...caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) }), rerankFallbacks: 0 }]
+        }),
+        baseline: { noiseBand: { honesty: 0, grounding: 0, persona: 0 }, run: runFile({ datasetHash: 'hash-a', rerankArm: 'off' }) }
+      });
+      expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+    it('still checks an off run against a baseline that records no arm', () => {
+      const dir = fixture({
+        results: runFile({ datasetHash: 'hash-a', rerankArm: 'off', cases: [caseRow({ persona: scored(1) })] }),
+        baseline: baselineAt(0)
+      });
+      expect(() => loadPublished(dir)).toThrow(/recorded delta for persona is 0.*recomputed.*is 1/s);
+    });
+
+    it('refuses an enforce run in which the reranker fell back', () => {
+      const dir = fixture({
+        results: runFile({
+          rerankArm: 'enforce',
+          cases: [{ ...caseRow({}), rerankFallbacks: 0 }, { ...caseRow({}), rerankFallbacks: 2 }]
+        })
+      });
+      expect(() => loadPublished(dir)).toThrow(/fell back on 2 search\(es\).*not eligible as a phase entry/s);
+    });
+
+    it('refuses an enforce run whose scored cases do not all record a fall back count', () => {
+      // Reading a missing count as zero would pass a run whose eligibility
+      // cannot be known (both passes of the 2026-09-24 gate found this).
+      const dir = fixture({
+        results: runFile({
+          rerankArm: 'enforce',
+          cases: [{ ...caseRow({}), rerankFallbacks: 0 }, caseRow({})]
+        })
+      });
+      expect(() => loadPublished(dir)).toThrow(/1 scored case\(s\) record no rerank fall back count/);
+    });
+
+    it('accepts an enforce run with no fall back, and a shadow run with some', () => {
+      // Shadow returns the cosine path whatever the reranker does, so its fall
+      // backs change nothing a visitor saw and do not disqualify it.
+      const clean = fixture({
+        results: runFile({ rerankArm: 'enforce', cases: [{ ...caseRow({}), rerankFallbacks: 0 }] })
+      });
+      const shadow = fixture({
+        results: runFile({ rerankArm: 'shadow', cases: [{ ...caseRow({}), rerankFallbacks: 3 }] })
+      });
+      expect(() => loadPublished(clean)).not.toThrow();
+      expect(() => loadPublished(shadow)).not.toThrow();
+    });
+
+    it('reports the arm and the fall back total on the run summary', () => {
+      const dir = fixture({
+        results: runFile({ rerankArm: 'shadow', cases: [{ ...caseRow({}), rerankFallbacks: 3 }] })
+      });
+      const run = loadRun(loadPublished(dir).publishedRuns[0], dir);
+      expect(run.rerankArm).toBe('shadow');
+      expect(run.rerankFallbacks).toBe(3);
+      expect(loadRun(loadPublished(fixture({})).publishedRuns[0], fixture({})).rerankArm).toBe('off');
+    });
+  });
+
   it('refuses a manifest entry whose writeup does not exist (AC-2)', () => {
     const dir = fixture({ writeups: ['phase-two.md'] });
     expect(() => loadPublished(dir)).toThrow(/phase 1: writeupFile does not exist.*phase-one\.md/s);
@@ -202,14 +322,316 @@ describe('loadPublished', () => {
   });
 
   it('refuses a measured entry with no comparison facts (AC-2)', () => {
-    const { delta: _delta, ...withoutDelta } = measuredEntry;
+    const { resultsFile: _resultsFile, ...withoutResults } = measuredEntry;
     const dir = fixture({
       manifest: {
-        publishedRuns: [withoutDelta],
+        publishedRuns: [withoutResults],
         baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
       }
     });
-    expect(() => loadPublished(dir)).toThrow(/is measured, so delta is required/);
+    expect(() => loadPublished(dir)).toThrow(/is measured, so resultsFile is required/);
+  });
+
+  it('refuses a measured entry that drops the delta without saying why', () => {
+    // Dropping a delta must not become a quiet way to publish a measured phase
+    // with no comparison and no explanation.
+    const { delta: _delta, verdict: _verdict, ...withoutComparison } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [withoutComparison],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/deltaUnavailable must say why not/);
+  });
+
+  it('accepts a measured phase that states why it has no delta (phase three)', () => {
+    // A phase that CHANGES the dataset has nothing to compare against. The
+    // honest record is a stated reason, not a zero delta, which would publish
+    // "nothing moved" as a measured claim.
+    const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [
+          {
+            ...rest,
+            deltaUnavailable: { reason: 'the golden set went from 22 cases to 27, so the dataset hash changed', notComparableTo: 'results/other.json' }
+          }
+        ],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    const manifest = loadPublished(dir);
+    expect(manifest.publishedRuns[0].delta).toBeUndefined();
+    expect(manifest.publishedRuns[0].verdict).toBeUndefined();
+    expect(manifest.publishedRuns[0].deltaUnavailable?.reason).toMatch(/dataset hash changed/);
+  });
+
+  /**
+   * The exploit the pre-deploy gate's adversarial pass confirmed, landed as
+   * the specification before the fix.
+   *
+   * `deltaUnavailable` is prose where `delta` is a number, and a number is
+   * falsifiable: `checkRecordedDelta` recomputes it and refuses a mismatch.
+   * The reason had no such check, so the same lie told in words passed where
+   * told as a figure it was caught. That is not a hypothetical: it hides a
+   * real regression behind "not comparable" on a page whose whole argument is
+   * that a published number cannot drift from the record.
+   */
+  /**
+   * The claim `deltaUnavailable` makes is "no delta was computable", and it
+   * names the run it could not be computed against. That name is what makes it
+   * checkable: the loader opens that committed file and confirms the
+   * instrument really differs.
+   *
+   * Three earlier versions tried to INFER the run instead — the current
+   * baseline, the newest phase, a candidate set — and each inference broke
+   * differently. These cases are the failures those versions allowed, kept so
+   * the inference cannot come back.
+   */
+  describe('the run a phase says it cannot be compared against', () => {
+    const claiming = (notComparableTo: string) => {
+      const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+      return {
+        ...rest,
+        deltaUnavailable: {
+          reason: 'The golden set grew from 22 cases to 27, so no comparison is possible.',
+          notComparableTo
+        }
+      };
+    };
+    const history = [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }];
+
+    it('accepts a claim naming a run whose instrument genuinely differs', () => {
+      const dir = fixture({
+        manifest: { publishedRuns: [claiming('results/other.json')], baselineHistory: history }
+      });
+      expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+    it('refuses a claim naming a run that scored the SAME instrument', () => {
+      // The original exploit: a real regression published behind "not
+      // comparable" while the two runs share both hashes.
+      const dir = fixture({
+        manifest: { publishedRuns: [claiming('results/twin.json')], baselineHistory: history },
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          corpusHash: 'corpus-SAME',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        }),
+        extraResults: {
+          'twin.json': runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' })
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow(/scored the SAME dataset/);
+    });
+
+    it('refuses a claim naming the other rerank arm on the same hashes (pre deploy gate, 2026-09-24)', () => {
+      // The original exploit again, across arms. Phase six's own migration
+      // plan computes exactly this enforce against off delta at one commit and
+      // says to publish it, so "no delta was computable" is false. The first
+      // version of the arm rule accepted it: a regressed enforce run could be
+      // published as prose with no results file edited. A different arm alone
+      // does not make a delta impossible to compute.
+      for (const [runArm, twinArm] of [
+        ['enforce', undefined],
+        ['enforce', 'off'],
+        ['shadow', 'off'],
+        ['off', 'shadow']
+      ] as const) {
+        const dir = fixture({
+          manifest: { publishedRuns: [claiming('results/twin.json')], baselineHistory: history },
+          results: runFile({
+            datasetHash: 'hash-SAME',
+            corpusHash: 'corpus-SAME',
+            rerankArm: runArm,
+            cases: [{ ...caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) }), rerankFallbacks: 0 }]
+          }),
+          extraResults: {
+            'twin.json': runFile({
+              datasetHash: 'hash-SAME',
+              corpusHash: 'corpus-SAME',
+              ...(twinArm !== undefined && { rerankArm: twinArm })
+            })
+          }
+        });
+        expect(() => loadPublished(dir), `${runArm} naming a ${twinArm ?? 'no arm'} twin`).toThrow(
+          /scored the SAME dataset/
+        );
+      }
+    });
+
+    it('is not silenced by appending a later measured phase', () => {
+      // The hole in the version scoped to "the newest measured phase": the
+      // shield was an edit to the list rather than a fact about the run, and
+      // both rows could be written in one commit. Position is now irrelevant.
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [
+            claiming('results/twin.json'),
+            {
+              ...measuredEntry,
+              phase: 4,
+              phaseTitle: 'A later phase',
+              writeupFile: 'phase-two.md',
+              specPath: unmeasuredEntry.specPath,
+              resultsFile: 'results/later.json'
+            }
+          ],
+          baselineHistory: history
+        },
+        results: runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' }),
+        extraResults: {
+          'twin.json': runFile({ datasetHash: 'hash-SAME', corpusHash: 'corpus-SAME' }),
+          'later.json': runFile({ datasetHash: 'hash-MOVED' })
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow(/scored the SAME dataset/);
+    });
+
+    it('is not silenced by the baseline moving on afterwards', () => {
+      // The time bomb in the version keyed to "is this run the current
+      // baseline": an untouched older row must neither start failing nor stop
+      // being checked when a later baseline lands. Here the claim is TRUE, so
+      // it stays accepted no matter what the baseline does.
+      const dir = fixture({
+        manifest: { publishedRuns: [claiming('results/other.json')], baselineHistory: history },
+        baseline: {
+          noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 },
+          run: runFile({
+            datasetHash: 'hash-a',
+            gitCommit: '9999999000000000000000000000000000000000',
+            date: '2026-09-10T00:00:00.000Z'
+          })
+        }
+      });
+      expect(() => loadPublished(dir)).not.toThrow();
+    });
+
+
+
+
+    it('refuses a claim naming a file that does not exist', () => {
+      const dir = fixture({
+        manifest: { publishedRuns: [claiming('results/nope.json')], baselineHistory: history }
+      });
+      expect(() => loadPublished(dir)).toThrow(/notComparableTo does not exist/);
+    });
+
+    it('refuses a claim pointing outside the evals directory', () => {
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [claiming('../../../etc/passwd')],
+          baselineHistory: history
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow();
+    });
+
+    it('still refuses the same lie when it is told as a number rather than prose', () => {
+      // The control that made this a finding rather than a nitpick: told as a
+      // number it was always caught, and the gap between the two is what the
+      // whole mechanism closes.
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [{ ...measuredEntry, delta: { honesty: 0, grounding: 0, persona: 0 } }],
+          baselineHistory: history
+        },
+        results: runFile({
+          datasetHash: 'hash-SAME',
+          cases: [caseRow({ honesty: scored(0), grounding: scored(0), persona: scored(0) })]
+        }),
+        baseline: {
+          noiseBand: { honesty: 0.05, grounding: 0.05, persona: 0.05 },
+          run: runFile({ datasetHash: 'hash-SAME', cases: [caseRow({})] })
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow(/recorded delta for honesty is 0/);
+    });
+  });
+
+  it('refuses a reason that is only whitespace', () => {
+    // `min(1)` rejects '' and nothing else, so a space satisfied it and the
+    // page rendered "No delta is published for this phase." with the reason
+    // collapsed to nothing by HTML — the blank cell the field exists to
+    // prevent, wearing a heading.
+    //
+    // U+200B and friends are in this list because `String.trim` does not
+    // strip them, so the first fix closed the space case and left the
+    // zero-width one open — same blank cell, same heading.
+    const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+    for (const blank of [' ', '   \t\n  ', '​', '⁠', '⠀']) {
+      const dir = fixture({
+        manifest: {
+          publishedRuns: [{ ...rest, deltaUnavailable: { reason: blank, notComparableTo: 'results/other.json' } }],
+          baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+        }
+      });
+      expect(() => loadPublished(dir)).toThrow();
+    }
+  });
+
+  it('refuses a reason long enough to swamp the page', () => {
+    // Inlined verbatim into statically generated HTML; 50k took the page from
+    // 15KB to 65KB. A ceiling, not a style rule.
+    const { delta: _delta, verdict: _verdict, ...rest } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [{ ...rest, deltaUnavailable: { reason: 'B'.repeat(50_000), notComparableTo: 'results/other.json' } }],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow();
+  });
+
+  it('tells a half-stated delta what is actually wrong with it', () => {
+    // Telling the author to explain why there is no delta, when a delta is
+    // sitting in their file, points at the wrong fix.
+    const { verdict: _verdict, ...halfStated } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [halfStated],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/delta and verdict together or neither/);
+    expect(() => loadPublished(dir)).not.toThrow(/deltaUnavailable must say why not/);
+  });
+
+  it('refuses an entry carrying both a delta and a reason it has none', () => {
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [{ ...measuredEntry, deltaUnavailable: { reason: 'cannot be both', notComparableTo: 'results/other.json' } }],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/both a delta and a reason there is none/);
+  });
+
+  it('refuses a delta with no verdict beside it', () => {
+    // Half a comparison renders as a number with nothing saying whether it
+    // means anything, which is the reading the noise band exists to prevent.
+    const { verdict: _verdict, ...halfStated } = measuredEntry;
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [halfStated],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/delta and verdict together or neither/);
+  });
+
+  it('refuses deltaUnavailable on a phase that took no measurement', () => {
+    const dir = fixture({
+      manifest: {
+        publishedRuns: [
+          measuredEntry,
+          { ...unmeasuredEntry, deltaUnavailable: { reason: 'no run was taken', notComparableTo: 'results/other.json' } }
+        ],
+        baselineHistory: [{ date: '2026-08-29', cases: 20, reason: 'the original baseline' }]
+      }
+    });
+    expect(() => loadPublished(dir)).toThrow(/is not measured, so deltaUnavailable must be absent/);
   });
 
   it('refuses an unmeasured entry that carries scores anyway (AC-2)', () => {
@@ -300,7 +722,11 @@ describe('loadRun', () => {
       'gitDirty',
       'judgeModel',
       'perDimension',
-      'provider'
+      'provider',
+      // Spec 0012 phase six, AC-14: the arm, resolved (a run with none reads
+      // as off), and the fall back total. Both run level, never case content.
+      'rerankArm',
+      'rerankFallbacks'
     ]);
     const serialized = JSON.stringify(run);
     for (const leaked of ['interviewerQuestion', 'tonyRaw', 'tonyEmitted', 'honestyLayers', 'reason']) {

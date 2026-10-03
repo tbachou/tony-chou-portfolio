@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard';
+import { CollapsedIpThrottlerGuard } from '../../common/guards/collapsed-ip-throttler.guard.js';
 
 /**
  * In-memory throttle for POST /feedback: 5 per hour per collapsed IP

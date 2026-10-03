@@ -1,4 +1,5 @@
 import type { GradePhotoSourceValue as GradePhotoSource } from '@portfolio/shared';
+import { readServerMessage } from './http-error';
 
 // Owned by @portfolio/shared, alongside the schema the api validates with.
 export {
@@ -17,7 +18,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 /** Kept in step with the api's MAX_UPLOAD_BYTES, so the form can say so up front. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-
 
 /** How each provenance value reads in the UI, and what it means for release. */
 export const SOURCE_LABELS: Record<GradePhotoSource, string> = {
@@ -60,16 +60,6 @@ export class GradePhotoRequestError extends Error {
   }
 }
 
-function extractServerMessage(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null;
-  const message = (body as { message?: unknown }).message;
-  if (typeof message === 'string') return message;
-  if (Array.isArray(message)) {
-    return message.filter((m): m is string => typeof m === 'string').join(' ');
-  }
-  return null;
-}
-
 /**
  * Turn a failed response into an error worth reading.
  *
@@ -77,12 +67,7 @@ function extractServerMessage(body: unknown): string | null {
  * but terse, and these four are the ones an upload actually hits.
  */
 async function toError(res: Response): Promise<GradePhotoRequestError> {
-  let message: string | null = null;
-  try {
-    message = extractServerMessage(await res.json());
-  } catch {
-    // Non-JSON body (a proxy's own 413 page, for instance): fall through.
-  }
+  const message = await readServerMessage(res);
 
   const fallback =
     res.status === 401

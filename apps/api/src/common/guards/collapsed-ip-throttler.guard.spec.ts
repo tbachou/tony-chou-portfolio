@@ -1,5 +1,5 @@
-import { CollapsedIpThrottlerGuard } from './collapsed-ip-throttler.guard';
-import { rateLimitIdentity } from '../utils/ip-hash.util';
+import { CollapsedIpThrottlerGuard } from './collapsed-ip-throttler.guard.js';
+import { rateLimitIdentity } from '../utils/ip-hash.util.js';
 
 /**
  * The base ThrottlerGuard constructor demands the throttler module's own

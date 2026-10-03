@@ -1,13 +1,13 @@
 import { createFeedbackSchema, type CreateFeedback } from '@portfolio/shared';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import type { Request } from 'express';
-import { hashIp, rateLimitIdentity, resolveClientIp } from '../../common/utils/ip-hash.util';
-import { FeedbackThrottlerGuard } from './feedback-throttler.guard';
-import { FeedbackService } from './feedback.service';
-import { FEEDBACK_THROTTLE_LIMIT, FEEDBACK_THROTTLE_TTL_MS } from './feedback.constants';
+import { hashIp, rateLimitIdentity, resolveClientIp } from '../../common/utils/ip-hash.util.js';
+import { FeedbackThrottlerGuard } from './feedback-throttler.guard.js';
+import { FeedbackService } from './feedback.service.js';
+import { FEEDBACK_THROTTLE_LIMIT, FEEDBACK_THROTTLE_TTL_MS } from './feedback.constants.js';
 
 @Controller('feedback')
 @AllowAnonymous()

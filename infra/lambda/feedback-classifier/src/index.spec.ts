@@ -80,7 +80,7 @@ describe('handler', () => {
     );
     mockSesSend.mockResolvedValueOnce({});
 
-    const { handler } = await import('./index');
+    const { handler } = await import('./index.js');
     await handler(buildEvent());
 
     expect(mockSesSend).toHaveBeenCalledTimes(1);
@@ -102,7 +102,7 @@ describe('handler', () => {
     mockBedrockSend.mockRejectedValueOnce(new Error('ThrottlingException'));
     mockSesSend.mockResolvedValueOnce({});
 
-    const { handler } = await import('./index');
+    const { handler } = await import('./index.js');
     await handler(buildEvent());
 
     expect(mockSesSend).toHaveBeenCalledTimes(1);
@@ -119,7 +119,7 @@ describe('handler', () => {
     });
     mockSesSend.mockResolvedValueOnce({});
 
-    const { handler } = await import('./index');
+    const { handler } = await import('./index.js');
     await handler(buildEvent());
 
     expect(mockSesSend).toHaveBeenCalledTimes(1);
@@ -128,7 +128,7 @@ describe('handler', () => {
   });
 
   it('throws and never calls SES when the payload is invalid, without logging message text', async () => {
-    const { handler } = await import('./index');
+    const { handler } = await import('./index.js');
     const badEvent = buildEvent({ source: 'not-a-real-source' });
 
     await expect(handler(badEvent)).rejects.toThrow();
@@ -145,7 +145,7 @@ describe('handler', () => {
     mockBedrockSend.mockResolvedValueOnce(toolUseResponse({ label: 'bug', summary: 's' }));
     mockSesSend.mockRejectedValueOnce(new Error('MessageRejected'));
 
-    const { handler } = await import('./index');
+    const { handler } = await import('./index.js');
     await expect(handler(buildEvent())).rejects.toThrow('MessageRejected');
 
     const logged = JSON.parse(consoleLogSpy.mock.calls[0][0] as string);
