@@ -52,6 +52,15 @@ describe('toArchiveDate', () => {
 });
 
 describe('fetchPreviousRuns', () => {
+  async function rejectionOf(promise: Promise<unknown>): Promise<Error> {
+    try {
+      await promise;
+    } catch (error) {
+      return error as Error;
+    }
+    throw new Error('expected a rejection');
+  }
+
   const payload = {
     hourly: {
       time: ['2024-02-01T00:00'],
@@ -138,5 +147,53 @@ describe('fetchPreviousRuns', () => {
 
     expect(values).toHaveLength(1);
     expect(values[0].validTime.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  // sanitizeError reads the message alone, so a reason left only on `cause`
+  // never reaches the run record.
+  it('names a dropped connection and its socket code in the message', async () => {
+    const thrown = new TypeError('fetch failed', {
+      cause: Object.assign(new Error('other side closed'), { code: 'ECONNRESET' }),
+    });
+    const fetchImpl = jest.fn().mockRejectedValue(thrown);
+
+    const error = await rejectionOf(
+      fetchPreviousRuns(WINDOW, 24, fetchImpl as unknown as typeof fetch),
+    );
+
+    expect(error.message).toMatch(/TypeError: fetch failed \(ECONNRESET\)/);
+    expect(error.message).toMatch(/lead 24/);
+    expect(error.cause).toBe(thrown);
+  });
+
+  // In jest a DOMException is not `instanceof Error`, and a timeout arrives as one.
+  it('names a timeout in the message', async () => {
+    const thrown = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    const fetchImpl = jest.fn().mockRejectedValue(thrown);
+
+    const error = await rejectionOf(
+      fetchPreviousRuns(WINDOW, 24, fetchImpl as unknown as typeof fetch),
+    );
+
+    expect(error.message).toMatch(/TimeoutError: The operation was aborted due to timeout/);
+    expect(error.cause).toBe(thrown);
+  });
+
+  it('names a body that could not be read in the message', async () => {
+    const thrown = new SyntaxError('Unexpected end of JSON input');
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw thrown;
+      },
+    });
+
+    const error = await rejectionOf(
+      fetchPreviousRuns(WINDOW, 24, fetchImpl as unknown as typeof fetch),
+    );
+
+    expect(error.message).toMatch(/body.*SyntaxError: Unexpected end of JSON input/);
+    expect(error.cause).toBe(thrown);
   });
 });

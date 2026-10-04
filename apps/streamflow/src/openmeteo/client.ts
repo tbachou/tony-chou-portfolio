@@ -11,6 +11,24 @@ import { assertStorableLead, parsePreviousRuns, previousRunColumn } from './pars
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
 /**
+ * Why a fetch or a body read threw, written into the message.
+ *
+ * `sanitizeError` is the only path to `PipelineRun` and the log, and it reads
+ * the message alone, so a reason left only on `cause` is lost. The reason is
+ * what tells a timeout (`TimeoutError`) from a dropped connection (`fetch
+ * failed` with a socket code). Mirrors `describeCause` in the USGS client, but
+ * reads any object carrying a name and a message rather than only an `Error`,
+ * because a `DOMException` (which is how the timeout arrives) is not always one.
+ */
+function describeCause(cause: unknown): string {
+  if (typeof cause !== 'object' || cause === null) return String(cause);
+  const { name, message } = cause as { name?: unknown; message?: unknown };
+  if (typeof name !== 'string' || typeof message !== 'string') return String(cause);
+  const code = ((cause as { cause?: unknown }).cause as { code?: unknown } | undefined)?.code;
+  return `${name}: ${message}${typeof code === 'string' ? ` (${code})` : ''}`;
+}
+
+/**
  * Formats an instant as the plain calendar day Open-Meteo's date parameters
  * take. Derived in UTC, because the request pins GMT and the store holds
  * nothing else.
@@ -69,17 +87,36 @@ export async function fetchPreviousRuns(
   leadHours: number,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ForecastValue[]> {
-  const response = await fetchImpl(buildPreviousRunsUrl(window, leadHours), {
-    // A hung upstream used to block the job until the CI timeout killed it,
-    // burning the whole window instead of failing into the FAILED run path in
-    // seconds. Everything else about a failure here is recorded promptly.
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-  });
+  const where = `lead ${leadHours} over ${toArchiveDate(window.start)} to ${toArchiveDate(window.end)}`;
+
+  let response: Response;
+  try {
+    response = await fetchImpl(buildPreviousRunsUrl(window, leadHours), {
+      // A hung upstream used to block the job until the CI timeout killed it,
+      // burning the whole window instead of failing into the FAILED run path in
+      // seconds. Everything else about a failure here is recorded promptly.
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    // A refused connection, a DNS blip or the timeout above.
+    throw new Error(`Open-Meteo request threw for ${where}: ${describeCause(cause)}`, {
+      cause,
+    });
+  }
 
   if (!response.ok) {
-    throw new Error(
-      `Open-Meteo request failed with ${response.status} for lead ${leadHours} over ${toArchiveDate(window.start)} to ${toArchiveDate(window.end)}`,
-    );
+    throw new Error(`Open-Meteo request failed with ${response.status} for ${where}`);
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (cause) {
+    // A body that stalls into the timeout, a reset mid body, or a page that is
+    // not JSON.
+    throw new Error(`Open-Meteo response body failed for ${where}: ${describeCause(cause)}`, {
+      cause,
+    });
   }
 
   // Trimmed to the window actually asked for. Open-Meteo's date parameters have
@@ -88,7 +125,7 @@ export async function fetchPreviousRuns(
   // those would put rows in the archive that were never forecast at the lead
   // they carry, which is the same defect clamping the window exists to prevent;
   // the clamp alone does not close it, because the request can only name a day.
-  return parsePreviousRuns(await response.json(), leadHours).filter(
+  return parsePreviousRuns(body, leadHours).filter(
     (value) =>
       value.validTime.getTime() >= window.start.getTime() &&
       value.validTime.getTime() <= window.end.getTime(),
