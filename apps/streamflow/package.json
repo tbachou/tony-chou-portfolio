@@ -30,11 +30,11 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^22.10.0",
+    "@types/node": "^22.20.5",
     "@types/pg": "^8.20.3",
     "jest": "^30.0.0",
     "prisma": "^7.9.1",
-    "ts-jest": "^29.4.12",
+    "ts-jest": "^29.4.14",
     "tsx": "^4.23.5",
     "typescript": "^6.0.3"
   },
