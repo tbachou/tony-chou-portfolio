@@ -17,7 +17,7 @@
     "@portfolio/shared": "*",
     "@portfolio/streamflow": "*",
     "better-auth": "^1.6.26",
-    "next": "^16.3.5",
+    "next": "^16.4.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.86.0",
